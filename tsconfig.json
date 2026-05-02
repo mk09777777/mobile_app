@@ -1,0 +1,32 @@
+{
+  "extends": "@react-native/typescript-config/tsconfig.json",
+  "compilerOptions": {
+    // Allow importing .js files from .ts/.tsx files
+    "allowJs": true,
+    // Do not type-check existing .js files (they have no types)
+    "checkJs": false,
+    // Required for JSX in .tsx files
+    "jsx": "react-native",
+    // No output — Metro bundler handles compilation
+    "noEmit": true,
+    // Allows bare imports like '../utils/helpers' to resolve without extension
+    "baseUrl": "."
+  },
+  "include": [
+    // TypeScript source files
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    // JavaScript source files (existing codebase)
+    "src/**/*.js",
+    "src/**/*.jsx",
+    // Root entry points
+    "App.tsx",
+    "index.js",
+    "nativewind-env.d.ts"
+  ],
+  "exclude": [
+    "**/node_modules",
+    "**/Pods",
+    "**/__tests__/**"
+  ]
+}

@@ -1,0 +1,51 @@
+diff --git a/node_modules/react-native-screens/RNScreens.podspec b/node_modules/react-native-screens/RNScreens.podspec
+--- a/node_modules/react-native-screens/RNScreens.podspec
++++ b/node_modules/react-native-screens/RNScreens.podspec
+@@ -22,8 +22,34 @@
+ rnscreens_cpp_flags << "-DRNS_DEBUG_LOGGING=1" if debug_logging
+ rnscreens_cpp_flags << "-DRNS_GAMMA_ENABLED=1" if gamma_project_enabled
+ 
++# Root-level files under ios/bottom-tabs/ duplicate the same ObjC classes as
++# ios/bottom-tabs/host/ and ios/bottom-tabs/screen/. Compiling both yields
++# "Duplicate interface definition" for RNSBottomTabs*, RNSTabsScreenViewController, etc.
++bottom_tabs_root_duplicates = [
++  'ios/bottom-tabs/RNSBottomTabsHostComponentView.h',
++  'ios/bottom-tabs/RNSBottomTabsHostComponentView.mm',
++  'ios/bottom-tabs/RNSBottomTabsHostComponentViewManager.h',
++  'ios/bottom-tabs/RNSBottomTabsHostComponentViewManager.mm',
++  'ios/bottom-tabs/RNSBottomTabsHostEventEmitter.h',
++  'ios/bottom-tabs/RNSBottomTabsHostEventEmitter.mm',
++  'ios/bottom-tabs/RNSTabBarController.h',
++  'ios/bottom-tabs/RNSTabBarController.mm',
++  'ios/bottom-tabs/RNSTabBarControllerDelegate.h',
++  'ios/bottom-tabs/RNSTabBarControllerDelegate.mm',
++  'ios/bottom-tabs/RNSBottomTabsScreenComponentView.h',
++  'ios/bottom-tabs/RNSBottomTabsScreenComponentView.mm',
++  'ios/bottom-tabs/RNSBottomTabsScreenComponentViewManager.h',
++  'ios/bottom-tabs/RNSBottomTabsScreenComponentViewManager.mm',
++  'ios/bottom-tabs/RNSBottomTabsScreenEventEmitter.h',
++  'ios/bottom-tabs/RNSBottomTabsScreenEventEmitter.mm',
++  'ios/bottom-tabs/RNSTabsScreenViewController.h',
++  'ios/bottom-tabs/RNSTabsScreenViewController.mm',
++]
++
+ rnscreens_config  =  {
+-  'OTHER_CPLUSPLUSFLAGS' => rnscreens_cpp_flags.join(" ")
++  'OTHER_CPLUSPLUSFLAGS' => rnscreens_cpp_flags.join(" "),
++  # After excluding root duplicates, quoted imports like "RNSTabBarController.h" resolve from host/screen.
++  'HEADER_SEARCH_PATHS' => '$(inherited) "$(PODS_TARGET_SRCROOT)/ios/bottom-tabs/host" "$(PODS_TARGET_SRCROOT)/ios/bottom-tabs/screen"',
+ }
+ 
+ if gamma_project_enabled
+@@ -53,9 +79,9 @@
+   s.requires_arc = true
+ 
+   if !gamma_project_enabled
+-    s.exclude_files = "ios/gamma/**/*.#{source_files_exts}"
++    s.exclude_files = ["ios/gamma/**/*.#{source_files_exts}"] + bottom_tabs_root_duplicates
+   else
+-    s.exclude_files = "ios/stubs/**/*.#{source_files_exts}"
++    s.exclude_files = ["ios/stubs/**/*.#{source_files_exts}"] + bottom_tabs_root_duplicates
+     Pod::UI.puts "[RNScreens] Gamma project enabled. Including source files."
+   end
+ 
