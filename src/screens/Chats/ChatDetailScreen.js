@@ -335,60 +335,6 @@ const ChatDetailScreen = ({ route, navigation }) => {
     }, [chat?._id, chatId, refetchMessages, messagesLoading])
   );
 
-  // Mark messages as read when user views the chat
-  // This ensures unread counts are updated when user opens and views messages
-  useFocusEffect(
-    React.useCallback(() => {
-      if (chat?._id && messages.length > 0 && !messagesLoading) {
-        // Helper function to mark messages as read
-        const markMessagesAsRead = () => {
-          // Get unread messages (messages not sent by current user)
-          const unreadMessages = messages.filter(msg => {
-            const senderId = msg.SenderId || msg.senderId;
-            const isMyMessage = user && String(senderId).trim() === String(user.id).trim();
-            const isRead = msg.IsRead || msg.isRead || false;
-            const readBy = msg.ReadBy || msg.readBy || [];
-            const isReadByMe = Array.isArray(readBy) && readBy.some(item => {
-              const readerId = typeof item === 'object' && item !== null && !Array.isArray(item)
-                ? String(item.userId || item.user_id || item.id || item.UserId || item.Id || '').trim()
-                : String(item).trim();
-              return readerId === String(user.id).trim();
-            });
-            
-            // Mark as read if: not my message, not already read, and not already read by me
-            return !isMyMessage && !isRead && !isReadByMe;
-          });
-
-          if (unreadMessages.length > 0) {
-            const messageIds = unreadMessages.map(msg => msg._id || msg.id).filter(Boolean);
-            if (messageIds.length > 0 && socketService.isConnected()) {
-              if (__DEV__) {
-                console.log('📖 [ChatDetailScreen] Marking messages as read', {
-                  chatId: chat?._id,
-                  messageCount: messageIds.length,
-                });
-              }
-              socketService.markMessagesRead(chat?._id || chat?.id, user?.id, messageIds);
-            }
-          }
-        };
-
-        // Mark as read after a short delay (gives user time to see messages)
-        const markReadTimer = setTimeout(() => {
-          markMessagesAsRead();
-        }, 1000); // Reduced to 1 second for faster update
-        
-        // Cleanup: Also mark as read when user leaves the screen
-        // This ensures messages are marked even if user leaves quickly
-        return () => {
-          clearTimeout(markReadTimer);
-          // Mark as read immediately when leaving (user has viewed the chat)
-          markMessagesAsRead();
-        };
-      }
-    }, [chat?._id, messages, messagesLoading, user])
-  );
-
   // Socket listeners for message edit/delete events and error handling
   useEffect(() => {
     if (!user || !chat?._id) return;
