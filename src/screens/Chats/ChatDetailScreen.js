@@ -580,7 +580,7 @@ const ChatDetailScreen = ({ route, navigation }) => {
   const [recordingPath, setRecordingPath] = useState(null);
   const recordingTimerRef = useRef(null);
   const audioRecorderPlayerRef = useRef(new AudioRecorderPlayer());
-  // WhatsApp-like recording UX state (hold to record; slide left to cancel; slide up to lock)
+  // iOS: WhatsApp-like hold/slide/lock (PanResponder). Android: single tap starts hands-free (locked) recording.
   const [isLocked, setIsLocked] = useState(false);
   const isRecordingRef = useRef(false);
   const isLockedRef = useRef(false);
@@ -588,7 +588,6 @@ const ChatDetailScreen = ({ route, navigation }) => {
   const [shouldCancel, setShouldCancel] = useState(false);
   const recordingStartTimeRef = useRef(null);
   const recordingTimeRef = useRef(0);
-  const panResponderRef = useRef(null);
   const startRecordingRef = useRef(async () => {});
   const stopRecordingRef = useRef(async () => {});
   const startLockPulseRef = useRef(() => {});
@@ -1689,47 +1688,64 @@ const ChatDetailScreen = ({ route, navigation }) => {
     startLockPulseRef.current = startLockPulse;
   }, [startLockPulse]);
 
-  // Single PanResponder instance so the finger that started recording keeps the gesture (WhatsApp-style).
-  useEffect(() => {
-    panResponderRef.current = PanResponder.create({
-      onStartShouldSetPanResponder: () => !isRecordingRef.current && !isLockedRef.current,
-      onMoveShouldSetPanResponder: (_, gestureState) =>
-        isRecordingRef.current &&
-        !isLockedRef.current &&
-        (Math.abs(gestureState.dx) > 12 || Math.abs(gestureState.dy) > 12),
-      onPanResponderGrant: () => {
-        if (!isRecordingRef.current && !isLockedRef.current) {
-          startRecordingRef.current();
-        }
-      },
-      onPanResponderMove: (_, gestureState) => {
-        if (!isRecordingRef.current || isLockedRef.current) return;
-        const { dx, dy } = gestureState;
-        setSlideOffsetX(Math.min(0, dx));
-        setShouldCancel(dx < VOICE_CANCEL_DX * 0.65);
-        if (dy < VOICE_LOCK_DY && Math.abs(dx) < 56) {
-          isLockedRef.current = true;
-          setIsLocked(true);
-          startLockPulseRef.current();
-        }
-      },
-      onPanResponderRelease: (_, gestureState) => {
-        if (isRecordingRef.current && !isLockedRef.current) {
-          const cancel = gestureState.dx < VOICE_CANCEL_DX;
-          const elapsed = recordingTimeRef.current;
-          if (cancel) {
-            stopRecordingRef.current(false);
-          } else {
-            stopRecordingRef.current(elapsed >= 0.5);
+  // useMemo (not useEffect) so panHandlers exist on the first render; stale {} broke iOS until a random re-render.
+  const voiceNotePanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => !isRecordingRef.current && !isLockedRef.current,
+        onStartShouldSetPanResponderCapture: () => !isRecordingRef.current && !isLockedRef.current,
+        onMoveShouldSetPanResponder: (_, gestureState) =>
+          isRecordingRef.current &&
+          !isLockedRef.current &&
+          (Math.abs(gestureState.dx) > 12 || Math.abs(gestureState.dy) > 12),
+        onMoveShouldSetPanResponderCapture: (_, gestureState) =>
+          isRecordingRef.current &&
+          !isLockedRef.current &&
+          (Math.abs(gestureState.dx) > 10 || Math.abs(gestureState.dy) > 10),
+        onPanResponderGrant: () => {
+          if (!isRecordingRef.current && !isLockedRef.current) {
+            startRecordingRef.current();
           }
-        }
-        setSlideOffsetX(0);
-        setShouldCancel(false);
-      },
-    });
-  }, []);
+        },
+        onPanResponderMove: (_, gestureState) => {
+          if (!isRecordingRef.current || isLockedRef.current) return;
+          const { dx, dy } = gestureState;
+          setSlideOffsetX(Math.min(0, dx));
+          setShouldCancel(dx < VOICE_CANCEL_DX * 0.65);
+          if (dy < VOICE_LOCK_DY && Math.abs(dx) < 56) {
+            isLockedRef.current = true;
+            setIsLocked(true);
+            startLockPulseRef.current();
+          }
+        },
+        onPanResponderRelease: (_, gestureState) => {
+          if (isRecordingRef.current && !isLockedRef.current) {
+            const cancel = gestureState.dx < VOICE_CANCEL_DX;
+            const elapsed = recordingTimeRef.current;
+            if (cancel) {
+              stopRecordingRef.current(false);
+            } else {
+              stopRecordingRef.current(elapsed >= 0.5);
+            }
+          }
+          setSlideOffsetX(0);
+          setShouldCancel(false);
+        },
+      }),
+    []
+  );
 
-  /** Locked recording: tap send to finish. Do not start recording on tap (WhatsApp is hold-only). */
+  /** Android: one tap on mic starts recording in locked (hands-free) mode; use send / overlay to finish. */
+  const handleAndroidMicTap = useCallback(async () => {
+    if (isRecordingRef.current) return;
+    await startRecording();
+    if (!isRecordingRef.current) return;
+    isLockedRef.current = true;
+    setIsLocked(true);
+    startLockPulse();
+  }, [startRecording, startLockPulse]);
+
+  /** Locked recording: tap send to finish. */
   const handleMicPress = useCallback(() => {
     if (isRecording && isLocked) {
       stopRecording(true);
@@ -4500,10 +4516,7 @@ const ChatDetailScreen = ({ route, navigation }) => {
                     </TouchableOpacity>
                   </Animated.View>
                 ) : (
-                  <View
-                    {...(panResponderRef.current?.panHandlers || {})}
-                    style={styles.recordingBarMicButton}
-                  >
+                  <View {...voiceNotePanResponder.panHandlers} style={styles.recordingBarMicButton}>
                     <Icon name="mic" size={24} color={colors.textWhite} />
                   </View>
                 )}
@@ -4533,11 +4546,20 @@ const ChatDetailScreen = ({ route, navigation }) => {
                 <TouchableOpacity style={styles.sendButton} onPress={sendMessage}>
                   <Icon name="send" size={20} color={colors.textWhite} />
                 </TouchableOpacity>
+              ) : Platform.OS === 'android' ? (
+                <TouchableOpacity
+                  style={styles.micButton}
+                  onPress={handleAndroidMicTap}
+                  activeOpacity={0.7}
+                  disabled={isRecording}
+                >
+                  <Icon name="mic" size={20} color={colors.textSecondary} />
+                </TouchableOpacity>
               ) : (
-                <View {...(panResponderRef.current?.panHandlers || {})} style={styles.micButton}>
+                <View {...voiceNotePanResponder.panHandlers} style={styles.micButton}>
                   <Icon name="mic" size={20} color={colors.textSecondary} />
                 </View>
-            )}
+              )}
             </View>
             )}
           </View>
