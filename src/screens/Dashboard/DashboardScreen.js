@@ -857,6 +857,11 @@ const DashboardScreen = ({ navigation }) => {
           title: 'Clients List',
           icon: 'people',
           onPress: () => navigation.navigate('ClientsList'),
+        },
+        {
+          title: 'Users List',
+          icon: 'account',
+          onPress: () => navigation.navigate('UsersList'),
         }
       );
     }

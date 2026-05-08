@@ -33,6 +33,7 @@ const ClientPricingScreen = ({ route, navigation }) => {
   const [labour, setLabour] = useState('0');
   const [extraCharges, setExtraCharges] = useState('0');
   const [duties, setDuties] = useState('0');
+  const [pricingMessageFormat, setPricingMessageFormat] = useState('');
   const [diamonds, setDiamonds] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isDownloadingExcel, setIsDownloadingExcel] = useState(false);
@@ -85,12 +86,15 @@ const ClientPricingScreen = ({ route, navigation }) => {
   }, []);
 
   useEffect(() => {
+
     if (clientData) {
+      console.log('Fetched client data:', clientData);
       const pricing = clientData.Pricing || clientData.pricing || {};
       setLoss(pricing.Loss?.toString() || pricing.loss?.toString() || '0');
       setLabour(pricing.Labour?.toString() || pricing.labour?.toString() || '0');
       setExtraCharges(pricing.ExtraCharges?.toString() || pricing.extraCharges?.toString() || '0');
       setDuties(pricing.Duties?.toString() || pricing.duties?.toString() || '0');
+      setPricingMessageFormat(pricing.PricingMessageFormat || pricing.pricingMessageFormat || '');
 
       const diamondsData = pricing.Diamonds || pricing.diamonds || [];
       setDiamonds(
@@ -387,6 +391,7 @@ const ClientPricingScreen = ({ route, navigation }) => {
           Labour: parseFloat(labour) || 0,
           ExtraCharges: parseFloat(extraCharges) || 0,
           Duties: parseFloat(duties) || 0,
+          PricingMessageFormat: pricingMessageFormat || '',
           Diamonds: diamonds.map(d => ({
             Type: d.Type || '',
             Shape: d.Shape || '',
@@ -453,6 +458,18 @@ const ClientPricingScreen = ({ route, navigation }) => {
           </View>
         </View>
 
+        <View style={styles.messageFormatContainer}>
+          <Text style={styles.label}>Pricing Message Format</Text>
+          <Input
+            value={pricingMessageFormat}
+            onChangeText={setPricingMessageFormat}
+            placeholder="Enter pricing message format"
+            multiline
+            numberOfLines={3}
+            style={styles.messageFormatInput}
+          />
+        </View>
+
         <View style={styles.excelButtonsContainer}>
           <TouchableOpacity
             style={[styles.excelButton, styles.downloadButton]}
@@ -502,7 +519,7 @@ const ClientPricingScreen = ({ route, navigation }) => {
         </View>
       </View>
     </View>
-  ), [clientData, clientName, loss, labour, extraCharges, duties, isDownloadingExcel, isImportingExcel, handleAddDiamond]);
+  ), [clientData, clientName, loss, labour, extraCharges, duties, pricingMessageFormat, isDownloadingExcel, isImportingExcel, handleAddDiamond]);
 
   // Render type sections
   const renderTypeSection = useCallback(({ item: [type, rows] }) => {
@@ -812,6 +829,13 @@ const styles = StyleSheet.create({
     fontSize: fonts.sm,
     color: colors.textSecondary,
     fontStyle: 'italic',
+  },
+  messageFormatContainer: {
+    marginBottom: 24,
+  },
+  messageFormatInput: {
+    minHeight: 80,
+    textAlignVertical: 'top',
   },
 });
 
