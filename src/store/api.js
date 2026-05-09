@@ -273,11 +273,13 @@ export const api = createApi({
         // Handle different response formats
         const user = response.user || response;
         return {
-          id: user._id || user.id,
+          id: user._id || user.id || user.Id,
           name: user.name || user.Name,
           email: user.email || user.Email,
           phone: user.phone || user.Phone,
           role: user.role || user.Role,
+          clientId: user.clientId || user.ClientId,
+          skills: user.skills || user.Skills,
           ...user,
         };
       },
@@ -288,19 +290,75 @@ export const api = createApi({
       },
     }),
 
+    // Update user endpoint
+    updateUser: builder.mutation({
+      query: ({ userId, ...data }) => ({
+        url: `/api/users/${userId}`,
+        method: 'PUT',
+        body: data,
+      }),
+      transformResponse: (response) => {
+        return {
+          success: true,
+          user: response.user || response,
+          message: response.message || 'User updated successfully',
+        };
+      },
+      transformErrorResponse: (response) => {
+        return {
+          success: false,
+          error: response.data?.message || response.data?.error || 'Failed to update user',
+        };
+      },
+    }),
+
+    // Delete user endpoint
+    deleteUser: builder.mutation({
+      query: (userId) => ({
+        url: `/api/users/${userId}`,
+        method: 'DELETE',
+      }),
+      transformResponse: (response) => {
+        return {
+          success: true,
+          message: response.message || 'User deleted successfully',
+        };
+      },
+      transformErrorResponse: (response) => {
+        return {
+          success: false,
+          error: response.data?.message || response.data?.error || 'Failed to delete user',
+        };
+      },
+    }),
+
     // Get users list endpoint
     getUsers: builder.query({
       query: () => '/api/users',
       transformResponse: (data) => {
+        console.log('🔍 [getUsers] Raw API Response:', JSON.stringify(data, null, 2));
+        console.log('🔍 [getUsers] Response Type:', Array.isArray(data) ? 'Array' : typeof data);
+        
         let usersArray = [];
         if (Array.isArray(data)) {
           usersArray = data;
+          console.log('🔍 [getUsers] Using direct array format');
         } else if (data.users && Array.isArray(data.users)) {
           usersArray = data.users;
+          console.log('🔍 [getUsers] Using data.users format');
         } else if (data.data && Array.isArray(data.data)) {
           usersArray = data.data;
+          console.log('🔍 [getUsers] Using data.data format');
         } else {
+          console.log('🔍 [getUsers] No valid array found in response');
           return [];
+        }
+        
+        console.log('🔍 [getUsers] Users Array Length:', usersArray.length);
+        if (usersArray.length > 0) {
+          console.log('🔍 [getUsers] First User (raw):', JSON.stringify(usersArray[0], null, 2));
+          console.log('🔍 [getUsers] First User Keys:', Object.keys(usersArray[0]));
+          console.log('🔍 [getUsers] First User Skills field:', usersArray[0].Skills || usersArray[0].skills || 'NOT FOUND');
         }
 
         return usersArray.map(user => ({
@@ -309,9 +367,132 @@ export const api = createApi({
           email: user.email || user.Email || 'N/A',
           phone: user.phone || user.Phone || 'N/A',
           role: user.role || user.Role || 'user',
+          skills: user.skills || user.Skills || '',
           ...user,
         }));
       },
+    }),
+
+    // ==================== ENQUIRY PARSING ====================
+    parseEnquiry: builder.mutation({
+      query: ({ message, mediaType }) => ({
+        url: '/api/enquiries/parse',
+        method: 'POST',
+        body: {
+          message,
+          mediaType,
+        },
+      }),
+      transformResponse: (response) => {
+        if (__DEV__) {
+          console.log('✅ Parse enquiry response:', response);
+        }
+        return response;
+      },
+      transformErrorResponse: (response) => {
+        if (__DEV__) {
+          console.error('❌ Parse enquiry error:', response);
+        }
+        return {
+          status: response.status,
+          data: response.data,
+          error: response.data?.message || response.data?.error || 'Failed to parse enquiry',
+        };
+      },
+    }),
+
+    // Submit final enquiry with images and data
+    submitEnquiry: builder.mutation({
+      queryFn: async ({ data, referenceImages }, { dispatch }, extraOptions, baseQuery) => {
+        try {
+          const token = await secureStorage.getItem('token');
+          if (!token) {
+            return {
+              error: {
+                status: 'CUSTOM_ERROR',
+                data: 'Authentication token not found',
+              },
+            };
+          }
+
+          // Create FormData
+          const formData = new FormData();
+          
+          // Add data as JSON string
+          formData.append('data', JSON.stringify(data));
+          
+          // Add reference images
+          if (referenceImages && referenceImages.length > 0) {
+            referenceImages.forEach((image, index) => {
+              const defaultType = 'image/jpeg';
+              const defaultName = `image_${index}_${Date.now()}.jpg`;
+              
+              formData.append('referenceImages', {
+                uri: image.uri,
+                type: image.type || defaultType,
+                name: image.name || defaultName,
+              });
+            });
+          }
+
+          const endpoint = '/api/enquiries';
+          const fullUrl = `${API_BASE_URL}${endpoint}`;
+          
+          if (__DEV__) {
+            console.log('📤 [submitEnquiry] Submitting enquiry:', {
+              endpoint: fullUrl,
+              dataKeys: Object.keys(data),
+              imagesCount: referenceImages?.length || 0,
+            });
+          }
+
+          const response = await fetch(fullUrl, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+            body: formData,
+          });
+
+          if (response.ok) {
+            const result = await response.json();
+            if (__DEV__) {
+              console.log('✅ [submitEnquiry] Success:', result);
+            }
+            return { data: result };
+          } else {
+            const errorText = await response.text();
+            let errorData;
+            try {
+              errorData = JSON.parse(errorText);
+            } catch {
+              errorData = { message: errorText || 'Failed to submit enquiry' };
+            }
+            
+            if (__DEV__) {
+              console.error('❌ [submitEnquiry] Error:', errorData);
+            }
+            
+            return {
+              error: {
+                status: response.status,
+                data: errorData,
+              },
+            };
+          }
+        } catch (error) {
+          if (__DEV__) {
+            console.error('❌ [submitEnquiry] Exception:', error);
+          }
+          return {
+            error: {
+              status: 'CUSTOM_ERROR',
+              data: error.message || 'Failed to submit enquiry',
+            },
+          };
+        }
+      },
+      invalidatesTags: ['Enquiry', 'Dashboard'],
     }),
 
     // ==================== ENQUIRIES ====================
@@ -4058,7 +4239,13 @@ export const {
   useLoginMutation,
   useCreateUserMutation,
   useGetUserByIdQuery,
+  useUpdateUserMutation,
+  useDeleteUserMutation,
   useGetUsersQuery,
+  
+  // Enquiry Parsing
+  useParseEnquiryMutation,
+  useSubmitEnquiryMutation,
   
   // Enquiries
   useGetEnquiriesQuery,

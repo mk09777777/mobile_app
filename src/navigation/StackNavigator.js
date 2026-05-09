@@ -18,6 +18,8 @@ import MetalPricesScreen from '../screens/Admin/MetalPricesScreen';
 import ClientsListScreen from '../screens/Admin/ClientsListScreen';
 import CreateClientScreen from '../screens/Admin/CreateClientScreen';
 import ClientPricingScreen from '../screens/Admin/ClientPricingScreen';
+import UsersListScreen from '../screens/Admin/UsersListScreen';
+import CreateUserScreen from '../screens/Admin/CreateUserScreen';
 import NotificationsScreen from '../screens/Notifications/NotificationsScreen';
 import DesignViewerScreen from '../screens/DesignViewer/DesignViewerScreen';
 import PricingScreen from '../screens/Pricing/PricingScreen';
@@ -134,6 +136,20 @@ const StackNavigator = ({ isAuthenticated, showOnboarding, onOnboardingComplete 
             component={ClientPricingScreen}
             options={({ route }) => ({
               title: `Pricing - ${route.params?.clientName || 'Client'}`,
+            })}
+          />
+          <Stack.Screen
+            name="UsersList"
+            component={UsersListScreen}
+            options={{
+              title: 'Users',
+            }}
+          />
+          <Stack.Screen
+            name="CreateUser"
+            component={CreateUserScreen}
+            options={({ route }) => ({
+              title: route.params?.userId ? 'Edit User' : 'Create User',
             })}
           />
           <Stack.Screen

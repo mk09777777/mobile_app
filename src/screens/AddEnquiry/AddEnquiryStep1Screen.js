@@ -9,14 +9,23 @@ import {
   Text,
   Image,
   ActivityIndicator,
+   KeyboardAvoidingView, Platform ,
 } from 'react-native';
 import { Input, Button } from '../../components/common';
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
 import IconComponent from '../../components/common/Icon';
-import { useGetUsersQuery, useCreateEnquiryMutation, useGetStoneTypesQuery } from '../../store/api';
+import {
+  useGetUsersQuery,
+  useGetStoneTypesQuery,
+  useParseEnquiryMutation,
+  useSubmitEnquiryMutation,
+} from '../../store/api';
 import { useClients } from '../../features/clients/clientsHooks';
 import { useAuth } from '../../context/AuthContext';
+import { launchImageLibrary, launchCamera } from 'react-native-image-picker';
+
+
 
 /** Default remark text when client picks a track on step 1 */
 const CLIENT_REMARK_BY_PROJECT_TYPE = {
@@ -29,22 +38,23 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
   // This screen is only for creating new enquiries
   const isEditMode = false;
   const { user } = useAuth();
-  const [createEnquiry, { isLoading: isCreatingEnquiry }] = useCreateEnquiryMutation();
-  
-  // Check if user is a client
+  const [parseEnquiry, { isLoading: isParsing }] = useParseEnquiryMutation();
+  const [submitEnquiry, { isLoading: isSubmitting }] = useSubmitEnquiryMutation();
+
+ 
   const roleLower = user?.role?.toLowerCase();
-  const isClient = 
+  const isClient =
     roleLower === 'client' ||
     roleLower === 'cl' ||
     user?.roleId === 4 ||
     user?.roleNumber === 4;
 
-  /** Client & admin: step 1 = status tiles, step 2 = details. Summary is on the next screen (upload + instructions + summary). */
-  const totalSteps = 2;
+  /** Client & admin: step 1 = status tiles, step 2 = details, step 3 = upload images. */
+  const totalSteps = 3;
   const [currentStep, setCurrentStep] = useState(1);
   /** coral | cad | approvedCad — drives Status sent to API (client & admin) */
   const [projectType, setProjectType] = useState('coral');
-  
+
   // Initialize form data for new enquiry
   const getInitialFormData = () => {
     return {
@@ -73,14 +83,21 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
   const [errors, setErrors] = useState({});
   const [showClientDropdown, setShowClientDropdown] = useState(false);
   const [showAssignedToDropdown, setShowAssignedToDropdown] = useState(false);
-  
+  // new states
+  const [TextSubmitted, setTextSubmitted] = useState(false);
+  const [referenceImages, setReferenceImages] = useState([]);
+  const [missingFieldsData, setMissingFieldsData] = useState({});
+  const [enquiryDescription, setEnquiryDescription] = useState('');
+  const [parsedData, setParsedData] = useState(null);
+  const [dynamicMissingFields, setDynamicMissingFields] = useState([]);
+
   // Fetch clients for dropdown (using cached hook)
   const { clients: clientsData = [] } = useClients({
     skip: false,
   });
-  
+
   const clients = Array.isArray(clientsData) ? clientsData : [];
-  
+
   // Create client options for dropdown
   const clientOptions = clients.map(client => ({
     label: client.name || 'Unknown Client',
@@ -100,17 +117,18 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
   // - Otherwise, show all non-client users
   const assignedToOptions = useMemo(() => {
     const statusLower = String(formData.status || '').toLowerCase();
-    
+
     return users
       .filter(user => {
         const roleString = String(user.role || '').toLowerCase();
-        const roleNumber = typeof user.role === 'number' ? user.role : parseInt(user.role);
-        
+        const roleNumber =
+          typeof user.role === 'number' ? user.role : parseInt(user.role);
+
         // Always exclude clients
         if (roleString === 'client' || roleNumber === 4) {
           return false;
         }
-        
+
         // Coral → role 2; CAD and Approved Cad → role 3
         if (statusLower.includes('coral') && !statusLower.includes('cad')) {
           return roleNumber === 2;
@@ -135,9 +153,7 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
     setFormData({
       ...initialData,
       status: 'Coral',
-      ...(isClient
-        ? { remark: CLIENT_REMARK_BY_PROJECT_TYPE.coral }
-        : {}),
+      ...(isClient ? { remark: CLIENT_REMARK_BY_PROJECT_TYPE.coral } : {}),
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -153,11 +169,7 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
     const nameFromDirectory =
       userClient && (userClient.name || userClient.Name || '');
     const nameFromUser =
-      user.name ||
-      user.fullName ||
-      user.Name ||
-      user.email ||
-      '';
+      user.name || user.fullName || user.Name || user.email || '';
 
     setFormData(prev => ({
       ...prev,
@@ -166,9 +178,12 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
     }));
 
     if (__DEV__ && clients.length > 0 && !userClient) {
-      console.warn('⚠️ [ADD ENQUIRY] Client user clientId not in clients list; using profile name.', {
-        userClientId: user.clientId,
-      });
+      console.warn(
+        '⚠️ [ADD ENQUIRY] Client user clientId not in clients list; using profile name.',
+        {
+          userClientId: user.clientId,
+        },
+      );
     }
   }, [
     isClient,
@@ -180,6 +195,124 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
     clients,
   ]);
 
+  const handleSelectImages = async () => {
+    const result = await launchImageLibrary({
+      mediaType: 'mixed',
+      selectionLimit: 10,
+    });
+    if (result.assets) {
+      setReferenceImages(prev => [
+        ...prev,
+        ...result.assets.map(a => ({
+          uri: a.uri,
+          name: a.fileName,
+          type: a.type,
+        })),
+      ]);
+    }
+  };
+
+  // handle text submit toggle
+  const handleTextSubmit = async () => {
+    try {
+      const result = await parseEnquiry({
+        message: enquiryDescription,
+        mediaType: projectType,
+      }).unwrap();
+      
+      console.log('✅ Parsed data from API:', result);
+      
+      // Store parsed data and missing fields
+      setParsedData(result.parsed);
+      setDynamicMissingFields(result.missingFields || []);
+      
+      // Pre-fill form with parsed data
+      setFormData(prev => ({
+        ...prev,
+        title: result.parsed.Name || prev.title,
+        metalColor: result.parsed.Metal?.Color || prev.metalColor,
+        metalQuality: result.parsed.Metal?.Quality || prev.metalQuality,
+        stoneType: result.parsed.StoneType || prev.stoneType,
+        category: result.parsed.Category || prev.category,
+        priority: result.parsed.Priority || prev.priority,
+        budget: result.parsed.Budget || prev.budget,
+        remark: result.parsed.Remarks || prev.remark,
+        specialRemarks: result.parsed.SpecialRemarks || prev.specialRemarks,
+        status: result.parsed.Status || prev.status,
+      }));
+      
+      setTextSubmitted(true);
+    } catch (error) {
+      console.error('❌ Error parsing enquiry:', error);
+      
+      // Show error alert with option to continue manually
+      Alert.alert(
+        'Parsing Failed',
+        'AI parsing failed. Would you like to fill the form manually?',
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
+          {
+            text: 'Fill Manually',
+            onPress: () => {
+              // Move to next step to show manual input fields
+              setTextSubmitted(true);
+              // Set empty parsed data to trigger manual input
+              setParsedData(null);
+              setDynamicMissingFields([]);
+            },
+          },
+        ]
+      );
+    }
+  };
+  const handleCamera = async () => {
+    const result = await launchCamera({
+      mediaType: 'photo',
+      quality: 0.8,
+      saveToPhotos: true,
+    });
+    if (result.assets?.length > 0) {
+      const a = result.assets[0];
+      setReferenceImages(prev => [
+        ...prev,
+        {
+          uri: a.uri,
+          type: a.type || 'image/jpeg',
+          name: a.fileName || `camera_${Date.now()}.jpg`,
+        },
+      ]);
+    }
+  };
+
+  const handleGallery = async () => {
+    const result = await launchImageLibrary({
+      mediaType: 'mixed',
+      quality: 0.8,
+      selectionLimit: 10,
+    });
+    if (result.assets?.length > 0) {
+      setReferenceImages(prev => [
+        ...prev,
+        ...result.assets.map(a => ({
+          uri: a.uri,
+          type: a.type || 'image/jpeg',
+          name: a.fileName || `image_${Date.now()}.jpg`,
+        })),
+      ]);
+    }
+  };
+
+  const handleImagePicker = () => {
+    Alert.alert('Select Media', 'Choose source', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Camera', onPress: handleCamera },
+      { text: 'Gallery', onPress: handleGallery },
+    ]);
+  };
+
   const handleInputChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     // Clear error when user starts typing
@@ -189,19 +322,22 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
   };
 
   // Handle status change - clear assignedTo if current user is not valid for new status
-  const handleStatusChange = (newStatus) => {
+  const handleStatusChange = newStatus => {
     handleInputChange('status', newStatus);
-    
+
     // If there's a currently assigned user, check if they're still valid for the new status
     if (formData.assignedTo) {
       const statusLower = String(newStatus || '').toLowerCase();
-      const assignedUser = users.find(u => (u.id || u._id) === formData.assignedTo);
-      
+      const assignedUser = users.find(
+        u => (u.id || u._id) === formData.assignedTo,
+      );
+
       if (assignedUser) {
-        const roleNumber = typeof assignedUser.role === 'number' 
-          ? assignedUser.role 
-          : parseInt(assignedUser.role);
-        
+        const roleNumber =
+          typeof assignedUser.role === 'number'
+            ? assignedUser.role
+            : parseInt(assignedUser.role);
+
         // Check if assigned user is still valid for the new status
         let isValid = true;
         if (statusLower.includes('cad')) {
@@ -209,7 +345,7 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
         } else if (statusLower.includes('coral')) {
           isValid = roleNumber === 2;
         }
-        
+
         // Clear assignedTo if user is not valid for the new status
         if (!isValid) {
           handleInputChange('assignedTo', '');
@@ -221,48 +357,170 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
   const validateForm = () => {
     const newErrors = {};
 
-    if (!formData.title.trim()) {
-      newErrors.title = 'Name of the piece is required';
+    console.log('🔍 [validateForm] Starting validation...');
+    console.log('🔍 formData.title:', formData.title);
+    console.log('🔍 formData.clientId:', formData.clientId);
+    console.log('🔍 formData.clientName:', formData.clientName);
+    console.log('🔍 formData.status:', formData.status);
+    console.log('🔍 isClient:', isClient);
+    console.log('🔍 TextSubmitted:', TextSubmitted);
+    console.log('🔍 parsedData:', parsedData);
+    console.log('🔍 missingFieldsData:', missingFieldsData);
+    console.log('🔍 user.id:', user?.id);
+    console.log('🔍 user.clientId:', user?.clientId);
+
+    // Title validation - check all possible sources
+    if (TextSubmitted && parsedData) {
+      // AI parsing flow - title can come from parsedData or missingFieldsData
+      const hasTitle = parsedData?.Name || missingFieldsData.Name;
+      if (!hasTitle) {
+        newErrors.title = 'Name of the piece is required';
+        console.log('❌ Title validation failed (AI parsing flow)');
+      } else {
+        console.log('✅ Title validation passed (AI parsing flow):', hasTitle);
+      }
+    } else {
+      // Manual flow - title must be in formData
+      if (!formData.title.trim()) {
+        newErrors.title = 'Name of the piece is required';
+        console.log('❌ Title validation failed (manual flow)');
+      } else {
+        console.log('✅ Title validation passed (manual flow)');
+      }
     }
 
-    if (!formData.clientId && !formData.clientName.trim()) {
-      newErrors.clientId = 'Client is required';
+    // Client validation - different logic based on flow
+    if (!isClient) {
+      // Admin user validation
+      if (TextSubmitted && parsedData) {
+        // AI parsing flow - client can come from parsedData OR missingFieldsData OR formData
+        const hasClient = parsedData?.ClientId || missingFieldsData.ClientId || formData.clientId;
+        if (!hasClient) {
+          newErrors.clientId = 'Client is required';
+          console.log('❌ Client validation failed (AI parsing flow)');
+        } else {
+          console.log('✅ Client validation passed (from parsedData/missingFields/formData):', hasClient);
+        }
+      } else {
+        // Manual flow (parsing failed or user chose "Fill Manually")
+        // Use old validation logic - client must be in formData
+        if (!formData.clientId && !formData.clientName.trim()) {
+          newErrors.clientId = 'Client is required';
+          console.log('❌ Client validation failed (manual flow, no client selected)');
+        } else {
+          console.log('✅ Client validation passed (manual flow)');
+        }
+      }
+    } else {
+      // Client user - should have clientId from user object
+      if (!formData.clientId && !user?.clientId) {
+        newErrors.clientId = 'Client is required';
+        console.log('❌ Client validation failed (client user, no clientId)');
+      } else {
+        console.log('✅ Client validation passed (client user)');
+      }
     }
 
     const st = String(formData.status || '').trim();
     if (!st) {
       newErrors.status = 'Status is required';
+      console.log('❌ Status validation failed');
     }
 
     if (isClient && !formData.metalQuality) {
       newErrors.metalQuality = 'Metal quality is required';
+      console.log('❌ Metal quality validation failed');
     }
 
+    console.log('🔍 [validateForm] Validation complete. Errors:', newErrors);
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const validateCurrentStep = () => {
+    console.log('🔍 [validateCurrentStep] Starting step validation...');
+    console.log('🔍 currentStep:', currentStep);
+    console.log('🔍 isClient:', isClient);
+    console.log('🔍 TextSubmitted:', TextSubmitted);
+    console.log('🔍 parsedData:', parsedData);
+    console.log('🔍 formData:', formData);
+    console.log('🔍 missingFieldsData:', missingFieldsData);
+    
     const stepErrors = {};
 
     if (isClient) {
       if (currentStep === 1) {
+        console.log('✅ [validateCurrentStep] Step 1 - no validation needed');
         return true;
       }
-      if (!formData.title.trim()) stepErrors.title = 'Name of the piece is required';
-      if (!formData.clientId && !formData.clientName.trim()) {
-        stepErrors.clientId = 'Client is required';
+      
+      // Client step 2 validation
+      if (TextSubmitted && parsedData) {
+        // AI parsing flow - check parsedData and missingFieldsData
+        const hasTitle = parsedData?.Name || missingFieldsData.Name;
+        if (!hasTitle) {
+          stepErrors.title = 'Name of the piece is required';
+          console.log('❌ Title validation failed (AI parsing flow)');
+        }
+        
+        const hasClient = formData.clientId || user?.clientId;
+        if (!hasClient) {
+          stepErrors.clientId = 'Client is required';
+          console.log('❌ Client validation failed (AI parsing flow)');
+        }
+        
+        const hasMetalQuality = parsedData?.Metal?.Quality || missingFieldsData.MetalQuality || formData.metalQuality;
+        if (!hasMetalQuality) {
+          stepErrors.metalQuality = 'Metal quality is required';
+          console.log('❌ Metal quality validation failed (AI parsing flow)');
+        }
+      } else {
+        // Manual flow - check formData
+        if (!formData.title.trim()) {
+          stepErrors.title = 'Name of the piece is required';
+          console.log('❌ Title validation failed (manual flow)');
+        }
+        if (!formData.clientId && !formData.clientName.trim()) {
+          stepErrors.clientId = 'Client is required';
+          console.log('❌ Client validation failed (manual flow)');
+        }
+        if (!formData.metalQuality) {
+          stepErrors.metalQuality = 'Metal quality is required';
+          console.log('❌ Metal quality validation failed (manual flow)');
+        }
       }
-      if (!formData.metalQuality) stepErrors.metalQuality = 'Metal quality is required';
     } else if (currentStep === 1) {
+      console.log('✅ [validateCurrentStep] Step 1 - no validation needed');
       return true;
     } else if (currentStep === 2) {
-      if (!formData.title.trim()) stepErrors.title = 'Name of the piece is required';
-      if (!formData.clientId && !formData.clientName.trim()) {
-        stepErrors.clientId = 'Client is required';
+      // Admin step 2 validation
+      if (TextSubmitted && parsedData) {
+        // AI parsing flow - check parsedData and missingFieldsData
+        const hasTitle = parsedData?.Name || missingFieldsData.Name;
+        if (!hasTitle) {
+          stepErrors.title = 'Name of the piece is required';
+          console.log('❌ Title validation failed (AI parsing flow)');
+        }
+        
+        const hasClient = parsedData?.ClientId || missingFieldsData.ClientId || formData.clientId;
+        if (!hasClient) {
+          stepErrors.clientId = 'Client is required';
+          console.log('❌ Client validation failed (AI parsing flow)');
+        }
+      } else {
+        // Manual flow - check formData
+        if (!formData.title.trim()) {
+          stepErrors.title = 'Name of the piece is required';
+          console.log('❌ Title validation failed (manual flow)');
+        }
+        if (!formData.clientId && !formData.clientName.trim()) {
+          stepErrors.clientId = 'Client is required';
+          console.log('❌ Client validation failed (manual flow)');
+        }
       }
     }
 
+    console.log('🔍 [validateCurrentStep] Step errors:', stepErrors);
     setErrors(prev => ({ ...prev, ...stepErrors }));
     return Object.keys(stepErrors).length === 0;
   };
@@ -274,202 +532,256 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
     return null;
   };
 
-  const renderDropdown = (label, value, options, onSelect, isVisible, onToggle) => {
-    const selectedOption = value ? options.find(opt => opt.value === value) : null;
+  const renderDropdown = (
+    label,
+    value,
+    options,
+    onSelect,
+    isVisible,
+    onToggle,
+  ) => {
+    const selectedOption = value
+      ? options.find(opt => opt.value === value)
+      : null;
     const displayText = selectedOption?.label || `Select ${label}`;
-    
-    return (
-    <View style={styles.dropdownContainer}>
-      <Text style={styles.dropdownLabel}>{label}</Text>
-      <TouchableOpacity
-        style={styles.dropdown}
-        onPress={onToggle}
-        activeOpacity={0.7}
-      >
-        <Text style={[styles.dropdownText, !value && styles.dropdownPlaceholder]}>
-          {displayText}
-        </Text>
-        <IconComponent name="arrow-drop-down" size={24} color={colors.textSecondary} />
-      </TouchableOpacity>
 
-      <Modal
-        visible={isVisible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={onToggle}
-      >
+    return (
+      <View style={styles.dropdownContainer}>
+        <Text style={styles.dropdownLabel}>{label}</Text>
         <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
+          style={styles.dropdown}
           onPress={onToggle}
+          activeOpacity={0.7}
         >
-          <View style={styles.dropdownModal}>
-            <ScrollView showsVerticalScrollIndicator={false}  style={{height: '100%'}}   >
-            {options.map((option) => {
-              const isSelected = value === option.value || (!value && option.value === '');
-              return (
-              <TouchableOpacity
-                key={option.value || 'none'}
-                activeOpacity={0.7}
-                style={[
-                  styles.dropdownOption,
-                  isSelected && styles.dropdownOptionSelected,
-                ]}
-                onPress={() => {
-                  // If "None" is selected, pass empty string
-                  onSelect(option.value === 'None' ? '' : option.value);
-                  onToggle();
-                }}
-              >
-                {/* <Image source={} /> */}
-                <Text
-                  style={[
-                    styles.dropdownOptionText,
-                    isSelected && styles.dropdownOptionTextSelected,
-                  ]}
-                >
-                  {option.label}
-                </Text>
-                {isSelected && (
-                  <IconComponent name="check" size={20} color={colors.primary} />
-                )}
-              </TouchableOpacity>
-            );
-            })}
-              </ScrollView>
-            
-          </View>
+          <Text
+            style={[styles.dropdownText, !value && styles.dropdownPlaceholder]}
+          >
+            {displayText}
+          </Text>
+          <IconComponent
+            name="arrow-drop-down"
+            size={24}
+            color={colors.textSecondary}
+          />
         </TouchableOpacity>
-      </Modal>
-    </View>
+
+        <Modal
+          visible={isVisible}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={onToggle}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={onToggle}
+          >
+            <View style={styles.dropdownModal}>
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                style={{ height: '100%' }}
+              >
+                {options.map(option => {
+                  const isSelected =
+                    value === option.value || (!value && option.value === '');
+                  return (
+                    <TouchableOpacity
+                      key={option.value || 'none'}
+                      activeOpacity={0.7}
+                      style={[
+                        styles.dropdownOption,
+                        isSelected && styles.dropdownOptionSelected,
+                      ]}
+                      onPress={() => {
+                        // If "None" is selected, pass empty string
+                        onSelect(option.value === 'None' ? '' : option.value);
+                        onToggle();
+                      }}
+                    >
+                      {/* <Image source={} /> */}
+                      <Text
+                        style={[
+                          styles.dropdownOptionText,
+                          isSelected && styles.dropdownOptionTextSelected,
+                        ]}
+                      >
+                        {option.label}
+                      </Text>
+                      {isSelected && (
+                        <IconComponent
+                          name="check"
+                          size={20}
+                          color={colors.primary}
+                        />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+      </View>
     );
   };
 
   const handleSubmit = async () => {
+    console.log('🚀 [handleSubmit] ===== FUNCTION CALLED =====');
+    console.log('🚀 Current Step:', currentStep);
+    console.log('🚀 TextSubmitted:', TextSubmitted);
+    console.log('🚀 Form Data:', formData);
+    console.log('🚀 Missing Fields Data:', missingFieldsData);
+    console.log('🚀 Reference Images Count:', referenceImages.length);
+    
     if (!validateForm()) {
+      console.log('❌ [handleSubmit] Form validation failed!');
+      console.log('❌ Validation Errors:', errors);
       return;
     }
+    
+    console.log('✅ [handleSubmit] Form validation passed!');
 
     if (!user?.id) {
+      console.log('❌ [handleSubmit] User ID not found!');
       Alert.alert('Error', 'User not found. Please login again.');
       return;
     }
+    
+    console.log('✅ [handleSubmit] User ID found:', user.id);
 
     try {
-      // Map Priority from form values to API format
-      const priorityMap = {
-        'low': 'Low',
-        'medium': 'Medium',
-        'normal': 'Normal',
-        'high': 'High',
-        'super high': 'Super High',
-        'urgent': 'Urgent',
-        'Low': 'Low',
-        'Medium': 'Medium',
-        'Normal': 'Normal',
-        'High': 'High',
-        'Super High': 'Super High',
-        'Urgent': 'Urgent',
-      };
-      
-      const mappedPriority = priorityMap[formData.priority?.toLowerCase()] || priorityMap[formData.priority] || formData.priority || 'Normal';
-
-      const enquiryStatus = formData.status || 'Enquiry Created';
-
-      // Prepare enquiry data according to API structure (without images)
-      const enquiryData = {
-        Name: formData.title || '',
-        ClientId: isClient
+      // Prepare final enquiry data - merge formData with missingFieldsData and parsedData
+      // Priority: missingFieldsData > parsedData > formData > defaults
+      const finalData = {
+        Name: missingFieldsData.Name || parsedData?.Name || formData.title || '',
+        ClientId: missingFieldsData.ClientId || parsedData.ClientId || (isClient
           ? formData.clientId || user.clientId || user.id
-          : formData.clientId || user.id,
-        AssignedTo: isClient ? null : (formData.assignedTo || null), // Client users can't assign
-        Status: enquiryStatus,
-        Priority: mappedPriority,
-        Quantity: parseInt(formData.quantity) || 1,
+          : formData.clientId || user.id),
+        AssignedTo: missingFieldsData.AssignedTo || parsedData?.AssignedTo || (isClient ? null : formData.assignedTo || null),
+        Status: missingFieldsData.Status || parsedData?.Status || formData.status || 'Enquiry Created',
+        Priority: missingFieldsData.Priority || parsedData?.Priority || formData.priority || 'Normal',
+        Quantity: missingFieldsData.Quantity || parsedData?.Quantity || parseInt(formData.quantity) || 1,
         Metal: {
-          Color: formData.metalColor && formData.metalColor.trim() ? formData.metalColor.trim() : null,
-          Quality: formData.metalQuality || '10K',
+          Color: missingFieldsData.MetalColor || parsedData?.Metal?.Color || (
+            formData.metalColor && formData.metalColor.trim()
+              ? formData.metalColor.trim()
+              : null
+          ),
+          Quality: missingFieldsData.MetalQuality || parsedData?.Metal?.Quality || formData.metalQuality || '10K',
         },
-        StyleNumber: null,
-        GatiOrderNumber: null,
-        StoneType: formData.stoneType && formData.stoneType.trim() ? formData.stoneType.trim() : null,
-        MetalWeight: {
-          From: null,
-          To: null,
-          Exact: null,
-        },
-        DiamondWeight: {
-          From: null,
-          To: null,
-          Exact: null,
-        },
-        Stamping: formData.stamping || null,
-        Remarks: buildRemarksForApi() || '',
-        ShippingDate: null,
-        CoralCode: null,
-        CadCode: null,
-        Category: formData.category || 'Ring',
-        Budget: formData.budget && formData.budget.trim() ? formData.budget.trim() : null,
-        SpecialRemarks:
+        StoneType: missingFieldsData.StoneType || parsedData?.StoneType || (
+          formData.stoneType && formData.stoneType.trim()
+            ? formData.stoneType.trim()
+            : null
+        ),
+        Stamping: missingFieldsData.Stamping || parsedData?.Stamping || formData.stamping || null,
+        Remarks: missingFieldsData.Remarks || parsedData?.Remarks || buildRemarksForApi() || '',
+        Category: missingFieldsData.Category || parsedData?.Category || formData.category || 'Ring',
+        Budget: missingFieldsData.Budget || parsedData?.Budget || (
+          formData.budget && formData.budget.trim()
+            ? formData.budget.trim()
+            : null
+        ),
+        SpecialRemarks: missingFieldsData.SpecialRemarks || parsedData?.SpecialRemarks || (
           !isClient && formData.remark && formData.remark.trim()
             ? formData.remark.trim()
             : formData.specialRemarks && formData.specialRemarks.trim()
-              ? formData.specialRemarks.trim()
-              : null,
-        ApprovedDate: formData.approvedDate && formData.approvedDate.trim() ? formData.approvedDate : null,
-        // Do NOT include ReferenceImages here - they will be uploaded in Step 2
+            ? formData.specialRemarks.trim()
+            : null
+        ),
+        StyleNumber: missingFieldsData.StyleNumber || parsedData?.StyleNumber || null,
+        GatiOrderNumber: missingFieldsData.GatiOrderNumber || parsedData?.GatiOrderNumber || null,
+        ShippingDate: missingFieldsData.ShippingDate || parsedData?.ShippingDate || null,
+        CoralCode: missingFieldsData.CoralCode || parsedData?.CoralCode || null,
+        CadCode: missingFieldsData.CadCode || parsedData?.CadCode || null,
+        ApprovedDate: missingFieldsData.ApprovedDate || parsedData?.ApprovedDate || null,
       };
 
-      console.log('📤 Creating enquiry (Step 1):', JSON.stringify(enquiryData, null, 2));
-      console.log('📋 [ENQUIRY CREATION] Initial Status:', enquiryStatus);
-      console.log('📋 [ENQUIRY CREATION] User Role:', user?.role);
-      console.log('📋 [ENQUIRY CREATION] Is Client:', isClient);
-      console.log('📋 [ENQUIRY CREATION] Status Flow: Enquiry Created → Coral → CAD → Design Approval Pending → Completed');
-
-      // Create enquiry first - show loading spinner
-      const createResult = await createEnquiry(enquiryData).unwrap();
-      
-      // Get enquiry ID from response
-      // The API can return either:
-      // 1. Just the ID as a string: "6920d151d1b48a5c0c082d52"
-      // 2. An object with id/_id: { id: "...", ... }
-      let enquiryId = null;
-      
-      if (typeof createResult === 'string') {
-        // Response is directly the ID string
-        enquiryId = createResult;
-      } else if (createResult?.id) {
-        enquiryId = createResult.id;
-      } else if (createResult?._id) {
-        enquiryId = createResult._id;
-      }
-      
-      if (!enquiryId) {
-        console.error('❌ Failed to extract enquiry ID from response:', createResult);
-        Alert.alert('Error', 'Failed to create enquiry. Enquiry ID not returned.');
-        return;
+      // Add MetalWeight if provided in missing fields
+      if (missingFieldsData.MetalWeightFrom || missingFieldsData.MetalWeightTo || missingFieldsData.MetalWeightExact) {
+        finalData.MetalWeight = {
+          From: missingFieldsData.MetalWeightFrom || null,
+          To: missingFieldsData.MetalWeightTo || null,
+          Exact: missingFieldsData.MetalWeightExact || null,
+        };
       }
 
-      console.log('✅ Enquiry created successfully:', {
-        'Enquiry ID': enquiryId,
-        'Name': createResult?.Name || createResult?.name || enquiryData.Name,
-      });
+      // Add DiamondWeight if provided in missing fields
+      if (missingFieldsData.DiamondWeightFrom || missingFieldsData.DiamondWeightTo || missingFieldsData.DiamondWeightExact) {
+        finalData.DiamondWeight = {
+          From: missingFieldsData.DiamondWeightFrom || null,
+          To: missingFieldsData.DiamondWeightTo || null,
+          Exact: missingFieldsData.DiamondWeightExact || null,
+        };
+      }
 
-      const formDataForUpload = {
-        ...formData,
-        description: buildRemarksForApi() || '',
-      };
+      if (__DEV__) {
+        console.log('📤 ===== FINAL ENQUIRY SUBMISSION DATA =====');
+        console.log('📤 Submitting enquiry with payload:');
+        console.log('📤 Final Data Object (Full):', JSON.stringify(finalData, null, 2));
+        console.log('📤 ===== DATA SOURCES =====');
+        console.log('📤 missingFieldsData:', JSON.stringify(missingFieldsData, null, 2));
+        console.log('📤 parsedData:', JSON.stringify(parsedData, null, 2));
+        console.log('📤 formData:', JSON.stringify(formData, null, 2));
+        console.log('📤 ===== CLIENT ID RESOLUTION =====');
+        console.log('📤 missingFieldsData.ClientId:', missingFieldsData.ClientId);
+        console.log('📤 parsedData?.ClientId:', parsedData?.ClientId);
+        console.log('📤 formData.clientId:', formData.clientId);
+        console.log('📤 user.clientId:', user.clientId);
+        console.log('📤 user.id:', user.id);
+        console.log('📤 isClient:', isClient);
+        console.log('📤 FINAL ClientId being sent:', finalData.ClientId);
+        console.log('📤 ===== REFERENCE IMAGES =====');
+        console.log('📤 Reference Images Count:', referenceImages.length);
+        console.log('📤 Reference Images:', referenceImages.map((img, i) => ({
+          index: i,
+          uri: img.uri?.substring(0, 50) + '...',
+          type: img.type,
+          name: img.name,
+        })));
+        console.log('📤 ===== ALL FIELD VALUES =====');
+        console.log('📤 Name:', finalData.Name);
+        console.log('📤 ClientId:', finalData.ClientId);
+        console.log('📤 AssignedTo:', finalData.AssignedTo);
+        console.log('📤 Status:', finalData.Status);
+        console.log('📤 Priority:', finalData.Priority);
+        console.log('📤 Category:', finalData.Category);
+        console.log('📤 Metal:', finalData.Metal);
+        console.log('📤 StoneType:', finalData.StoneType);
+        console.log('📤 Quantity:', finalData.Quantity);
+        console.log('📤 Budget:', finalData.Budget);
+        console.log('📤 Remarks:', finalData.Remarks);
+        console.log('📤 SpecialRemarks:', finalData.SpecialRemarks);
+        console.log('📤 ==========================================');
+      }
 
-      navigation.navigate('AddEnquiryStep2', {
-        formData: formDataForUpload,
-        enquiryId,
-        isEditMode: false,
-      });
+      const result = await submitEnquiry({
+        data: finalData,
+        referenceImages: referenceImages,
+      }).unwrap();
+
+      if (__DEV__) {
+        console.log('✅ ===== ENQUIRY SUBMISSION RESPONSE =====');
+        console.log('✅ Enquiry submitted successfully!');
+        console.log('✅ Response from backend:', JSON.stringify(result, null, 2));
+        console.log('✅ Response ClientId:', result?.ClientId || result?.clientId || result?.data?.ClientId);
+        console.log('✅ Response Enquiry ID:', result?.id || result?._id || result?.data?.id);
+        console.log('✅ ==========================================');
+      }
+
+      Alert.alert('Success', 'Enquiry created successfully!', [
+        {
+          text: 'OK',
+          onPress: () => navigation.goBack(),
+        },
+      ]);
     } catch (error) {
-      console.error('❌ Error creating enquiry:', error);
+      console.error('❌ Error submitting enquiry:', error);
       Alert.alert(
         'Error',
-        error?.data?.message || error?.data?.error || 'Failed to create enquiry. Please try again.'
+        error?.data?.message ||
+          error?.data?.error ||
+          'Failed to create enquiry. Please try again.',
       );
     }
   };
@@ -486,8 +798,14 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
     { label: 'Rose Gold', value: 'Rose Gold' },
     { label: 'Yellow Gold', value: 'Yellow Gold' },
     { label: 'Two Tone Rose White Gold', value: 'Two Tone Rose White Gold' },
-    { label: 'Two Tone Yellow White Gold', value: 'Two Tone Yellow White Gold' },
-    { label: 'Three Tone Rose Yellow White Gold', value: 'Three Tone Rose Yellow White Gold' },
+    {
+      label: 'Two Tone Yellow White Gold',
+      value: 'Two Tone Yellow White Gold',
+    },
+    {
+      label: 'Three Tone Rose Yellow White Gold',
+      value: 'Three Tone Rose Yellow White Gold',
+    },
   ];
 
   const metalQualityOptions = [
@@ -500,7 +818,10 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
   ];
 
   // Stone type options from API - add "None" option at the beginning for optional field
-  const stoneTypeOptions = [{ label: 'None', value: '' }, ...(stoneTypesData || [])];
+  const stoneTypeOptions = [
+    { label: 'None', value: '' },
+    ...(stoneTypesData || []),
+  ];
 
   const goToNextStep = () => {
     if (currentStep < totalSteps) {
@@ -511,7 +832,9 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
   };
 
   const goToPrevStep = () => {
-    if (currentStep > 1) {
+    if (TextSubmitted) {
+      setTextSubmitted(false);
+    } else if (currentStep > 1) {
       setCurrentStep(prev => prev - 1);
     }
   };
@@ -526,7 +849,7 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
     );
   };
 
-  const handleSelectProjectType = (type) => {
+  const handleSelectProjectType = type => {
     setProjectType(type);
     if (type === 'coral') {
       handleStatusChange('Coral');
@@ -612,13 +935,15 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
           'Client*',
           formData.clientId,
           clientOptions,
-          (clientId) => {
-            const selectedClient = clients.find(c => (c.id || c._id) === clientId);
+          clientId => {
+            const selectedClient = clients.find(
+              c => (c.id || c._id) === clientId,
+            );
             handleInputChange('clientId', clientId);
             handleInputChange('clientName', selectedClient?.name || '');
           },
           showClientDropdown,
-          () => setShowClientDropdown(!showClientDropdown)
+          () => setShowClientDropdown(!showClientDropdown),
         )}
         {errors.clientId && (
           <Text style={styles.errorText}>{errors.clientId}</Text>
@@ -636,7 +961,7 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
             label="Name of the Piece*"
             placeholder="Name of the piece"
             value={formData.title}
-            onChangeText={(value) => handleInputChange('title', value)}
+            onChangeText={value => handleInputChange('title', value)}
             error={errors.title}
           />
         </View>
@@ -652,9 +977,9 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
             'Assign To',
             formData.assignedTo,
             assignedToOptions,
-            (value) => handleInputChange('assignedTo', value),
+            value => handleInputChange('assignedTo', value),
             showAssignedToDropdown,
-            () => setShowAssignedToDropdown(!showAssignedToDropdown)
+            () => setShowAssignedToDropdown(!showAssignedToDropdown),
           )}
         </View>
       </View>
@@ -668,8 +993,10 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
                   key={option.value}
                   style={[
                     styles.priorityOption,
-                    formData.priority === option.value && styles.priorityOptionActive,
-                    index === priorityOptions.length - 1 && styles.priorityOptionLast,
+                    formData.priority === option.value &&
+                      styles.priorityOptionActive,
+                    index === priorityOptions.length - 1 &&
+                      styles.priorityOptionLast,
                   ]}
                   onPress={() => handleInputChange('priority', option.value)}
                   activeOpacity={0.85}
@@ -677,7 +1004,8 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
                   <Text
                     style={[
                       styles.priorityOptionText,
-                      formData.priority === option.value && styles.priorityOptionTextActive,
+                      formData.priority === option.value &&
+                        styles.priorityOptionTextActive,
                     ]}
                   >
                     {option.label}
@@ -694,7 +1022,7 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
             label="Remark"
             placeholder="Internal remark (optional)"
             value={formData.remark}
-            onChangeText={(value) => handleInputChange('remark', value)}
+            onChangeText={value => handleInputChange('remark', value)}
             multiline
             numberOfLines={3}
           />
@@ -763,6 +1091,282 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
     </View>
   );
 
+  const renderClientInputTab = () => {
+    const isSubmitReady =
+      enquiryDescription.trim().length > 0 && referenceImages.length > 0;
+    return (
+      <View style={styles.inputBox}>
+        <Text style={styles.inputLabel}>Upload Reference Images</Text>
+        <TouchableOpacity
+          style={styles.uploadArea}
+          onPress={handleImagePicker}
+          activeOpacity={0.7}
+        >
+          <IconComponent name="cloud-upload" size={40} color={colors.primary} />
+          <Text style={styles.uploadText}>Tap to add images / videos</Text>
+          <Text style={styles.uploadSubtext}>Camera or Gallery</Text>
+        </TouchableOpacity>
+        {referenceImages.length > 0 && (
+          <View style={styles.previewRow}>
+            {referenceImages.map((img, i) => (
+              <View key={i} style={styles.previewItem}>
+                <Image source={{ uri: img.uri }} style={styles.previewThumb} />
+                <TouchableOpacity
+                  onPress={() =>
+                    setReferenceImages(prev =>
+                      prev.filter((_, idx) => idx !== i),
+                    )
+                  }
+                >
+                  <IconComponent name="close" size={16} color={colors.error} />
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        )}
+        <View style={{ marginTop: 16 }}>
+          <Input
+            placeholder="Describe your custom jewelry piece"
+            multiline
+            numberOfLines={10}
+            value={enquiryDescription}
+            onChangeText={setEnquiryDescription}
+            style={{ minHeight: 200, textAlignVertical: 'top' }}
+          />
+        </View>
+        <TouchableOpacity onPress={handleTextSubmit} disabled={!isSubmitReady || isParsing}>
+          <View
+            style={[
+              styles.SubmitButton,
+              (!isSubmitReady || isParsing) && styles.submitButtonDisabled,
+            ]}
+          >
+            {isParsing ? (
+              <ActivityIndicator size="small" color={colors.textWhite} />
+            ) : (
+              <Text style={[
+                styles.SubmitButtonText,
+                !isSubmitReady && styles.SubmitButtonText2,
+              ]}>{isParsing ? 'Parsing...' : 'Submit'}</Text>
+            )}
+          </View>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  const renderImageUploadStep = () => {
+    return (
+      <View style={styles.stepContent}>
+        <Text style={styles.stepQuestion}>Upload Reference Images</Text>
+        <Text style={styles.stepHint}>
+          Add images or videos to help us understand your design requirements
+        </Text>
+        <TouchableOpacity
+          style={styles.uploadArea}
+          onPress={handleImagePicker}
+          activeOpacity={0.7}
+        >
+          <IconComponent name="cloud-upload" size={40} color={colors.primary} />
+          <Text style={styles.uploadText}>Tap to add images / videos</Text>
+          <Text style={styles.uploadSubtext}>Camera or Gallery</Text>
+        </TouchableOpacity>
+        {referenceImages.length > 0 && (
+          <View style={styles.previewRow}>
+            {referenceImages.map((img, i) => (
+              <View key={i} style={styles.previewItem}>
+                <Image source={{ uri: img.uri }} style={styles.previewThumb} />
+                <TouchableOpacity
+                  onPress={() =>
+                    setReferenceImages(prev =>
+                      prev.filter((_, idx) => idx !== i),
+                    )
+                  }
+                  style={styles.removeImageButton}
+                >
+                  <IconComponent name="close" size={16} color={colors.error} />
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
+    );
+  };
+
+  const renderRequiredFields = () => {
+    const fieldsToRender = dynamicMissingFields.length > 0 ? dynamicMissingFields : [];
+    
+    if (fieldsToRender.length === 0) return null;
+    
+    return (
+      <View style={styles.stepContent}>
+        <Text style={styles.stepQuestion}>Complete Missing Details</Text>
+        <Text style={styles.stepHint}>
+          Please provide the following required information:
+        </Text>
+        {fieldsToRender.map((item, index) => {
+        // Special handling for ClientId field - show client name instead of ID
+        if (item.field === 'ClientId' && item.options.length > 0) {
+          return (
+            <View key={index} style={styles.tileGroup}>
+              <Text style={styles.dropdownLabel}>{item.label}</Text>
+              <View style={styles.chipRowWrap}>
+                {item.options.map(option => {
+                  const selected = missingFieldsData[item.field] === option.value;
+                  // Resolve client name from ClientId
+                  const clientName = clients.find(c => (c.id || c._id) === option.value)?.name || option.label;
+                  return (
+                    <TouchableOpacity
+                      key={option.value}
+                      style={[
+                        styles.choiceChip,
+                        selected && styles.choiceChipActive,
+                      ]}
+                      activeOpacity={0.85}
+                      onPress={() =>
+                        setMissingFieldsData(prev => ({
+                          ...prev,
+                          [item.field]: option.value,
+                        }))
+                      }
+                    >
+                      <Text
+                        style={[
+                          styles.choiceChipLabel,
+                          selected && styles.choiceChipLabelActive,
+                        ]}
+                      >
+                        {clientName}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          );
+        } else if (item.options.length > 0) {
+          // Render dropdown for fields with options
+          return (
+            <View key={index} style={styles.tileGroup}>
+              <Text style={styles.dropdownLabel}>{item.label}</Text>
+              <View style={styles.chipRowWrap}>
+                {item.options.map(option => {
+                  const selected = missingFieldsData[item.field] === option.value;
+                  return (
+                    <TouchableOpacity
+                      key={option.value}
+                      style={[
+                        styles.choiceChip,
+                        selected && styles.choiceChipActive,
+                      ]}
+                      activeOpacity={0.85}
+                      onPress={() =>
+                        setMissingFieldsData(prev => ({
+                          ...prev,
+                          [item.field]: option.value,
+                        }))
+                      }
+                    >
+                      <Text
+                        style={[
+                          styles.choiceChipLabel,
+                          selected && styles.choiceChipLabelActive,
+                        ]}
+                      >
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          );
+        } else {
+          // Render text input for fields without options
+          return (
+            <View key={index} style={styles.formRow}>
+              <View style={[styles.formField, styles.fullWidthField]}>
+                <Input
+                  label={item.label}
+                  placeholder={`Enter ${item.label.toLowerCase()}`}
+                  value={missingFieldsData[item.field] || ''}
+                  onChangeText={value =>
+                    setMissingFieldsData(prev => ({
+                      ...prev,
+                      [item.field]: value,
+                    }))
+                  }
+                />
+              </View>
+            </View>
+          );
+        }
+      })}
+      </View>
+    );
+  };
+
+  // const renderClientStepFields = () => (
+  //   <View style={styles.stepContent}>
+  //     <Text style={styles.stepQuestion}>Your enquiry</Text>
+  //     <View style={styles.formRow}>
+  //       <View style={[styles.formField, styles.fullWidthField]}>
+  //         <Input
+  //           label="Name of the Piece*"
+  //           placeholder="Name of the piece"
+  //           value={formData.title}
+  //           onChangeText={(value) => handleInputChange('title', value)}
+  //           error={errors.title}
+  //         />
+  //       </View>
+  //     </View>
+  //     {renderChipRow(
+  //       'Stone type',
+  //       formData.stoneType,
+  //       stoneTypeOptions,
+  //       (val) => handleInputChange('stoneType', val),
+  //     )}
+  //     {renderChipRow(
+  //       'Metal quality*',
+  //       formData.metalQuality,
+  //       metalQualityOptions,
+  //       (val) => handleInputChange('metalQuality', val),
+  //     )}
+  //     {errors.metalQuality ? (
+  //       <Text style={styles.errorText}>{errors.metalQuality}</Text>
+  //     ) : null}
+  //     {renderChipRow(
+  //       'Metal color',
+  //       formData.metalColor,
+  //       metalColorOptions,
+  //       (val) => handleInputChange('metalColor', val),
+  //     )}
+  //     <View style={styles.formRow}>
+  //       <View style={[styles.formField, styles.fullWidthField]}>
+  //         <Input
+  //           label="Remark"
+  //           placeholder="Any other notes"
+  //           value={formData.remark}
+  //           onChangeText={(value) => handleInputChange('remark', value)}
+  //           multiline
+  //           numberOfLines={3}
+  //         />
+  //       </View>
+  //     </View>
+  //     <View style={styles.formRow}>
+  //       <View style={[styles.formField, styles.fullWidthField]}>
+  //         <Input
+  //           label="Budget"
+  //           placeholder="Budget (optional)"
+  //           value={formData.budget}
+  //           onChangeText={(value) => handleInputChange('budget', value)}
+  //         />
+  //       </View>
+  //     </View>
+  //   </View>
+  // );
+
   const renderChipRow = (label, value, options, onSelect) => (
     <View style={styles.tileGroup}>
       <Text style={styles.dropdownLabel}>{label}</Text>
@@ -772,10 +1376,7 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
           return (
             <TouchableOpacity
               key={option.value}
-              style={[
-                styles.choiceChip,
-                selected && styles.choiceChipActive,
-              ]}
+              style={[styles.choiceChip, selected && styles.choiceChipActive]}
               activeOpacity={0.85}
               onPress={() => onSelect(option.value)}
             >
@@ -795,32 +1396,113 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
   );
 
   const renderStepContent = () => {
-    if (currentStep === 1) {
-      return renderStep1TypeSelection();
+    if (currentStep === 1) return renderStep1TypeSelection();
+    
+    if (isClient || roleLower === 'admin') {
+      // AI Parser Flow
+      if (!TextSubmitted) return renderClientInputTab();
+      
+      // If parsing succeeded, show parsed data and missing fields on step 2
+      if (parsedData && dynamicMissingFields.length > 0) {
+        if (currentStep === 2) {
+          // Resolve client name from ClientId
+          const clientId = parsedData.ClientId || missingFieldsData.ClientId || formData.clientId;
+          const clientName = clientId 
+            ? (clients.find(c => (c.id || c._id) === clientId)?.name || 'Unknown Client')
+            : 'Not specified';
+          
+          return (
+            <View>
+              <View style={styles.stepContent}>
+                <Text style={styles.stepQuestion}>Extracted Details</Text>
+                <View style={styles.parsedDataCard}>
+                  <Text style={styles.parsedDataLabel}>Name: <Text style={styles.parsedDataValue}>{parsedData.Name || 'Not specified'}</Text></Text>
+                  {!isClient && (
+                    <Text style={styles.parsedDataLabel}>Client: <Text style={styles.parsedDataValue}>{clientName}</Text></Text>
+                  )}
+                  <Text style={styles.parsedDataLabel}>Category: <Text style={styles.parsedDataValue}>{parsedData.Category || 'Not specified'}</Text></Text>
+                  <Text style={styles.parsedDataLabel}>Metal: <Text style={styles.parsedDataValue}>{parsedData.Metal?.Quality || ''} {parsedData.Metal?.Color || ''}</Text></Text>
+                  <Text style={styles.parsedDataLabel}>Stone Type: <Text style={styles.parsedDataValue}>{parsedData.StoneType || 'Not specified'}</Text></Text>
+                  <Text style={styles.parsedDataLabel}>Priority: <Text style={styles.parsedDataValue}>{parsedData.Priority || 'Normal'}</Text></Text>
+                  <Text style={styles.parsedDataLabel}>Status: <Text style={styles.parsedDataValue}>{parsedData.Status || 'Not specified'}</Text></Text>
+                </View>
+              </View>
+              {renderRequiredFields()}
+            </View>
+          );
+        } else if (currentStep === 3) {
+          // Step 3: Already have images from AI parser flow, just show them
+          return renderImageUploadStep();
+        }
+      }
+      
+      // Manual Flow (parsing failed or user chose "Fill Manually")
+      if (parsedData === null) {
+        if (currentStep === 2) {
+          // Step 2: Show manual form fields
+          if (isClient) {
+            return renderClientStepFields();
+          } else {
+            return renderAdminStep2Fields();
+          }
+        } else if (currentStep === 3) {
+          // Step 3: Upload images (NEW - same as AI parser flow)
+          return renderImageUploadStep();
+        }
+      }
     }
-    if (isClient) {
-      return renderClientStepFields();
-    }
-    return renderAdminStep2Fields();
+    return null;
   };
 
   const mainActionLabel =
     currentStep === totalSteps ? 'Create enquiry' : 'Next';
+  
+  // Disable submit button on step 3 if no images uploaded (manual flow only)
+  const isSubmitDisabled = currentStep === 3 && parsedData === null && referenceImages.length === 0;
 
   const onPrimaryPress = () => {
+    console.log('🔘 [onPrimaryPress] Button clicked!');
+    console.log('🔘 Current Step:', currentStep);
+    console.log('🔘 Total Steps:', totalSteps);
+    console.log('🔘 TextSubmitted:', TextSubmitted);
+    console.log('🔘 Is Client:', isClient);
+    console.log('🔘 Role:', roleLower);
+    
     if (!validateCurrentStep()) {
+      console.log('❌ [onPrimaryPress] Validation failed!');
+      console.log('❌ Errors:', errors);
       return;
     }
+    
+    console.log('✅ [onPrimaryPress] Validation passed!');
+    
     // If we're on the last step, validateCurrentStep already ran full validation
     if (currentStep === totalSteps) {
+      console.log('🎯 [onPrimaryPress] Calling handleSubmit...');
+      console.log('📊 [DATA SNAPSHOT] ===== BEFORE SUBMIT =====');
+      console.log('📊 formData:', JSON.stringify(formData, null, 2));
+      console.log('📊 parsedData:', JSON.stringify(parsedData, null, 2));
+      console.log('📊 missingFieldsData:', JSON.stringify(missingFieldsData, null, 2));
+      console.log('📊 referenceImages count:', referenceImages.length);
+      console.log('📊 user.id:', user?.id);
+      console.log('📊 user.clientId:', user?.clientId);
+      console.log('📊 ==========================================');
       handleSubmit();
     } else {
+      console.log('➡️ [onPrimaryPress] Going to next step...');
       goToNextStep();
     }
   };
 
   return (
-    <ScrollView style={styles.container}>
+    <KeyboardAvoidingView
+    style={{ flex: 1 }}
+    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+  >
+    <ScrollView
+      style={styles.container}
+      keyboardShouldPersistTaps="handled"
+    >
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Create Enquiry</Text>
         <Text style={styles.headerSubtitle}>
@@ -831,51 +1513,74 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
 
       <View style={styles.form}>
         {renderStepContent()}
-
-        <View style={styles.footerActions}>
-          {currentStep > 1 && (
-            <TouchableOpacity
-              onPress={goToPrevStep}
-              style={[styles.adminActionButton, styles.adminActionButtonSecondary]}
-              activeOpacity={0.85}
-              disabled={isCreatingEnquiry}
-            >
-              <IconComponent name="arrow-back" size={18} color={colors.primary} />
-              <Text style={[styles.adminActionText, styles.adminActionSecondaryText]}>
-                Back
-              </Text>
-            </TouchableOpacity>
-          )}
-
-          <TouchableOpacity
-            onPress={onPrimaryPress}
-            style={[
-              styles.adminActionButton,
-              styles.adminActionButtonPrimary,
-              isCreatingEnquiry && styles.disabledButton,
-            ]}
-            activeOpacity={0.85}
-            disabled={isCreatingEnquiry}
-          >
-            {isCreatingEnquiry ? (
-              <>
-                <ActivityIndicator size="small" color={colors.textWhite} style={{ marginRight: 8 }} />
-                <Text style={styles.adminActionText}>Creating Enquiry...</Text>
-              </>
-            ) : (
-              <>
+        {currentStep >= 1 && (currentStep === 1 || TextSubmitted) && (
+          <View style={styles.footerActions}>
+            {currentStep > 1 && (
+              <TouchableOpacity
+                onPress={goToPrevStep}
+                style={[
+                  styles.adminActionButton,
+                  styles.adminActionButtonSecondary,
+                ]}
+                activeOpacity={0.85}
+                disabled={isSubmitting}
+              >
                 <IconComponent
-                  name={currentStep === totalSteps ? 'check-circle' : 'arrow-forward'}
+                  name="arrow-back"
                   size={18}
-                  color={colors.textWhite}
+                  color={colors.primary}
                 />
-                <Text style={styles.adminActionText}>{mainActionLabel}</Text>
-              </>
+                <Text
+                  style={[
+                    styles.adminActionText,
+                    styles.adminActionSecondaryText,
+                  ]}
+                >
+                  Back
+                </Text>
+              </TouchableOpacity>
             )}
-          </TouchableOpacity>
-        </View>
+            <TouchableOpacity
+              onPress={onPrimaryPress}
+              style={[
+                styles.adminActionButton,
+                styles.adminActionButtonPrimary,
+                (isSubmitting || isSubmitDisabled) && styles.disabledButton,
+              ]}
+              activeOpacity={0.85}
+              disabled={isSubmitting || isSubmitDisabled}
+            >
+              {isSubmitting ? (
+                <>
+                  <ActivityIndicator
+                    size="small"
+                    color={colors.textWhite}
+                    style={{ marginRight: 8 }}
+                  />
+                  <Text style={styles.adminActionText}>
+                    Submitting...
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <IconComponent
+                    name={
+                      currentStep === totalSteps
+                        ? 'check-circle'
+                        : 'arrow-forward'
+                    }
+                    size={18}
+                    color={colors.textWhite}
+                  />
+                  <Text style={styles.adminActionText}>{mainActionLabel}</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
     </ScrollView>
+      </KeyboardAvoidingView>
   );
 };
 
@@ -997,8 +1702,8 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: colors.primaryLight ,
-    backgroundColor: colors.primaryExtraLight ,
+    borderColor: colors.primaryLight,
+    backgroundColor: colors.primaryExtraLight,
     marginRight: 8,
     marginBottom: 8,
   },
@@ -1159,7 +1864,6 @@ const styles = StyleSheet.create({
     elevation: 8,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 10 },
-    
   },
   dropdownOption: {
     flexDirection: 'row',
@@ -1173,10 +1877,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.backgroundSecondary,
     borderRadius: 10,
     margin: 10,
-   borderBottomColor: colors.primary,
-   borderBottomWidth: 2,
-   borderRadius: 10,
-   shadowColor: colors.shadow || colors.textPrimary,
+    borderBottomColor: colors.primary,
+    borderBottomWidth: 2,
+    borderRadius: 10,
+    shadowColor: colors.shadow || colors.textPrimary,
   },
   dropdownOptionText: {
     fontSize: fonts.sm,
@@ -1239,6 +1943,104 @@ const styles = StyleSheet.create({
   datePicker: {
     width: '100%',
     height: 200,
+  },
+  // new input styles
+  inputBox: {
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 10,
+    display: 'flex',
+    flexDirection: 'column',
+    minHeight: 300,
+  },
+  inputLabel: {
+    fontSize: fonts.base,
+    fontFamily: fonts.medium,
+    color: colors.textPrimary,
+    marginBottom: 16,
+  },
+  SubmitButton: {
+    marginTop: 20,
+    backgroundColor: colors.primary,
+    paddingVertical: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 12,
+  },
+  SubmitButtonText: {
+    fontSize: fonts.base,
+    color: colors.textWhite,
+    fontWeight: '600',
+  },
+  SubmitButtonText2: {
+    fontSize: fonts.base,
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  // uploadimage styles
+  uploadArea: {
+    borderWidth: 2,
+    borderColor: colors.border,
+    borderStyle: 'dashed',
+    borderRadius: 8,
+    padding: 30,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  uploadText: {
+    fontSize: fonts.sm,
+    color: colors.textSecondary,
+    marginTop: 8,
+  },
+  previewRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+  previewItem: {
+    alignItems: 'center',
+    position: 'relative',
+  },
+  removeImageButton: {
+    marginTop: 4,
+  },
+  previewThumb: {
+    width: 60,
+    height: 60,
+    borderRadius: 6,
+  },
+  submitButtonDisabled: {
+    marginTop: 20,
+    backgroundColor: colors.border,
+    paddingVertical: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 12,
+    opacity: 0.5,
+  },
+  parsedDataCard: {
+    backgroundColor: colors.backgroundSecondary,
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  parsedDataLabel: {
+    fontSize: fonts.sm,
+    fontFamily: fonts.medium,
+    color: colors.textSecondary,
+    marginBottom: 8,
+  },
+  parsedDataValue: {
+    fontSize: fonts.sm,
+    fontFamily: fonts.regular,
+    color: colors.textPrimary,
+  },
+  uploadSubtext: {
+    fontSize: fonts.sm,
+    color: colors.textSecondary,
+    marginTop: 4,
   },
 });
 
