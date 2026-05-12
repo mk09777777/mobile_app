@@ -473,9 +473,7 @@ const PricingScreen = ({ route, navigation }) => {
         LossAndLabourDuties: formData.lossAndLabourDuties,
       });
       const undercutPriceValue = parseFloat(formData.undercutPrice) || 0;
-      // Quantity comes from "Total Pieces" input field (formData.totalPieces)
-      // const quantity = parseInt(formData.totalPieces);
-      const quantity = 1;
+      const quantity = 1; //TODO fix
 
       // Validate numeric values
       if (isNaN(loss) || loss < 0) {
@@ -507,14 +505,25 @@ const PricingScreen = ({ route, navigation }) => {
 
       // Prepare payload with validated data
       // Ensure all numeric values are properly formatted (no NaN, Infinity, etc.)
+      // Build Metal payload separately so we can optionally include numeric Rate
+      const metalPayload = {
+        Weight: Math.max(0, metalWeight), // Ensure non-negative
+        Quality: metalQuality.trim(), // Remove whitespace
+      };
+
+      // If user provided a metal rate override in the top-level form, include it as a number
+      let topMetalRate = null;
+      if (formData?.metalRateOverride && formData.metalRateOverride.trim() !== '') {
+        topMetalRate = parseFloat(formData.metalRateOverride);
+      }
+      if (topMetalRate !== null && !isNaN(topMetalRate)) {
+        metalPayload.Rate = topMetalRate;
+      }
+
       payload = {
         clientId: null, // Calculate button does not send client ID
         details: {
-          Metal: {
-            Weight: Math.max(0, metalWeight), // Ensure non-negative
-            Color: metalColor.trim(), // Remove whitespace
-            Quality: metalQuality.trim(), // Remove whitespace
-          },
+          Metal: metalPayload,
           Stones: transformedStones,
           Loss: Math.max(0, loss),
           Labour: Math.max(0, labour),
@@ -525,7 +534,6 @@ const PricingScreen = ({ route, navigation }) => {
           GoldDuties: Math.max(0, dutyRates.GoldDuties),
           SilverAndLabsDuties: Math.max(0, dutyRates.SilverAndLabsDuties),
           LossAndLabourDuties: Math.max(0, dutyRates.LossAndLabourDuties),
-          // Quantity is added to payload from "Total Pieces" input field (formData.totalPieces)
           Quantity: Math.max(1, Math.floor(quantity)), // Ensure integer and at least 1
         },
       };
@@ -1183,10 +1191,10 @@ const PricingScreen = ({ route, navigation }) => {
           DutiesAmount: parseFloat(entryFormData.dutiesAmount) || 0, // Match web structure, backend will recalculate
           DiamondWeight: parseFloat(entryFormData.diamondWeight) || 0,
           TotalPieces: parseInt(entryFormData.totalPieces) || 0,
-        Metal: {
-            Weight: parseFloat(entryFormData.metalWeight) || 0,
-          Quality: entryMetalQuality,
-            Rate: entryMetalRate,
+          Metal: {
+              Weight: parseFloat(entryFormData.metalWeight) || 0,
+              Quality: entryMetalQuality,
+              Rate: entryMetalRate,
           },
           ExtraCharges: parseFloat(entryFormData.extraCharges) || 0,
           NaturalDuties: parseFloat(entryFormData.naturalDuties) || 0,
@@ -1197,7 +1205,7 @@ const PricingScreen = ({ route, navigation }) => {
           Loss: parseFloat(entryFormData.lossPercent) || 0,
           Labour: parseFloat(entryFormData.labour) || 0,
           UndercutPrice: entryUndercutEnabled ? (parseFloat(entryFormData.undercutPrice) || 0) : 0,
-        Stones: formattedStones,
+          Stones: formattedStones,
           ClientPricingMessage: entryFormData.clientPricingMessage || '',
         };
       });
@@ -1668,8 +1676,7 @@ const PricingScreen = ({ route, navigation }) => {
       // Build payload
       const metalPayload = {
         Weight: metalWeight,
-        Quality: metalQuality,
-        Color: metalColor,
+        Quality: metalQuality
       };
       
       // Add Rate to Metal payload if override is provided
@@ -2022,7 +2029,7 @@ const PricingScreen = ({ route, navigation }) => {
             Quality: metalQuality,
           },
           Stones: formattedStones,
-          Quantity: parseInt(entryFormData.totalPieces) || 1,
+          Quantity: 1 //TODO fix
         },
       };
 
@@ -2114,6 +2121,30 @@ const PricingScreen = ({ route, navigation }) => {
             if (v !== undefined && v !== null) {
               updatePricingEntryFormData(entryIndex, syncDutyFormKeys[i], v.toString());
             }
+          });
+        }
+
+        // If backend returned updated stones, map them into our entry state
+        if (response.Stones && Array.isArray(response.Stones) && response.Stones.length > 0) {
+          const updatedStones = response.Stones.map(stone => ({
+            Type: stone.Type || '',
+            Color: stone.Color || '',
+            Shape: stone.Shape || '',
+            MM: (stone.MmSize || stone.MM || '0').toString(),
+            Sieve: (stone.SieveSize || stone.Sieve || '0').toString(),
+            Weight: (stone.Weight || 0).toString(),
+            Pieces: (stone.Pcs || stone.Pieces || 0).toString(),
+            CaratWeight: (stone.CtWeight || stone.CaratWeight || 0).toString(),
+            Price: (stone.Price || 0).toString(),
+          }));
+
+          console.log('Updated Stones (sync):', JSON.stringify(updatedStones, null, 2));
+          setPricingEntriesState(prev => {
+            const updated = [...prev];
+            if (updated[entryIndex]) {
+              updated[entryIndex] = { ...updated[entryIndex], stones: updatedStones };
+            }
+            return updated;
           });
         }
 
