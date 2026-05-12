@@ -1673,8 +1673,9 @@ const PricingScreen = ({ route, navigation }) => {
       };
       
       // Add Rate to Metal payload if override is provided
+      // Keep this as a number so backend receives numeric Rate (not string)
       if (metalRate !== null && !isNaN(metalRate)) {
-        metalPayload.Rate = metalRate.toString();
+        metalPayload.Rate = metalRate;
       }
 
       const payload = {
