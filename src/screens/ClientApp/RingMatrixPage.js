@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Animated, Easing, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Keyboard } from 'react-native';
 import catalogApi from '../../services/catalogApi';
 import RingProductMatrixCard from '../../components/client/RingProductMatrixCard';
 import { computeUnitPriceFromSource, getPricingContext } from '../../services/clientPricingEngine';
@@ -27,10 +27,27 @@ const RingMatrixPage = ({ route, navigation }) => {
   const [specialNotesByShape, setSpecialNotesByShape] = useState({});
   const [specialRemark, setSpecialRemark] = useState('');
   const [pricingContext, setPricingContext] = useState(null);
-  const [isTopFiltersVisible, setIsTopFiltersVisible] = useState(true);
-  const [topSectionHeight, setTopSectionHeight] = useState(null);
-  const lastScrollYRef = useRef(0);
-  const topSectionAnim = useRef(new Animated.Value(1)).current;
+  const [isKeyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener(
+      'keyboardDidShow',
+      () => {
+        setKeyboardVisible(true);
+      }
+    );
+    const keyboardDidHideListener = Keyboard.addListener(
+      'keyboardDidHide',
+      () => {
+        setKeyboardVisible(false);
+      }
+    );
+
+    return () => {
+      keyboardDidHideListener.remove();
+      keyboardDidShowListener.remove();
+    };
+  }, []);
 
   const pills = useMemo(() => {
     const next = [];
@@ -306,72 +323,10 @@ const RingMatrixPage = ({ route, navigation }) => {
 
   const canProceed = totalSelectedQty > 0;
 
-  useEffect(() => {
-    Animated.timing(topSectionAnim, {
-      toValue: isTopFiltersVisible ? 1 : 0,
-      duration: 220,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
-  }, [isTopFiltersVisible, topSectionAnim]);
-
-  const animatedTopSectionHeight =
-    topSectionHeight === null
-      ? undefined
-      : topSectionAnim.interpolate({
-          inputRange: [0, 1],
-          outputRange: [0, Math.max(topSectionHeight, 1)],
-        });
-
-  const animatedTopSectionTranslateY = topSectionAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [-12, 0],
-  });
-
-  const handleMatrixScroll = useCallback((event) => {
-    const offsetY = Number(event?.nativeEvent?.contentOffset?.y || 0);
-    const currentY = Math.max(0, offsetY);
-    const delta = currentY - lastScrollYRef.current;
-
-    // Hide on deliberate downward scroll, show again on slight upward movement.
-    if (delta > 8 && currentY > 20) {
-      setIsTopFiltersVisible(false);
-    } else if (delta < -4) {
-      setIsTopFiltersVisible(true);
-    } else if (currentY <= 2) {
-      setIsTopFiltersVisible(true);
-    }
-
-    lastScrollYRef.current = currentY;
-  }, []);
-
   return (
     <View style={styles.container}>
-      <Animated.View
-        style={[
-          styles.topSectionAnimatedWrap,
-          topSectionHeight === null
-            ? isTopFiltersVisible
-              ? null
-              : styles.topSectionCollapsed
-            : {
-                height: animatedTopSectionHeight,
-              },
-          {
-            opacity: topSectionAnim,
-            transform: [{ translateY: animatedTopSectionTranslateY }],
-          },
-        ]}
-      >
-        <View
-          style={styles.topWhiteSection}
-          onLayout={(event) => {
-            const measured = Math.round(Number(event?.nativeEvent?.layout?.height || 0));
-            if (measured > 0 && measured !== topSectionHeight) {
-              setTopSectionHeight(measured);
-            }
-          }}
-        >
+      <View style={styles.topSectionAnimatedWrap}>
+        <View style={styles.topWhiteSection}>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -414,14 +369,12 @@ const RingMatrixPage = ({ route, navigation }) => {
             })}
           </ScrollView>
         </View>
-      </Animated.View>
+      </View>
       <ScrollView
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
         contentInsetAdjustmentBehavior="never"
-        automaticallyAdjustContentInsets={false}
-        onScroll={handleMatrixScroll}
-        scrollEventThrottle={16}>
+        automaticallyAdjustContentInsets={false}>
         {loading ? (
           <View style={styles.stateCard}>
             <Text style={styles.stateText}>Loading matrix...</Text>
@@ -516,32 +469,34 @@ const RingMatrixPage = ({ route, navigation }) => {
           </View>
         ) : null}
       </ScrollView>
-      <TouchableOpacity
-        style={[styles.proceedButton, !canProceed && styles.proceedButtonDisabled]}
-        disabled={!canProceed}
-        onPress={() =>
-          navigation.navigate('OrderReview', {
-            categoryName,
-            subcategoryProfileName,
-            subcategoryId,
-            subcategoryName,
-            subcategorySubtext,
-            totalSelectedQty,
-            selectedProductLines,
-            selectedFilters: {
-              ...(selectedFilters || {}),
-              stoneShape: selectedStoneShapes,
-            },
-            specialNotePlaceholderText,
-            productImageUrl,
-            productDescription,
-            subcategoryThumbnailImage,
-            specialRemark: specialRemark.trim(),
-          })
-        }
-      >
-        <Text style={styles.proceedText}>Add to order - {totalSelectedQty} pcs</Text>
-      </TouchableOpacity>
+      {!isKeyboardVisible && (
+        <TouchableOpacity
+          style={[styles.proceedButton, !canProceed && styles.proceedButtonDisabled]}
+          disabled={!canProceed}
+          onPress={() =>
+            navigation.navigate('OrderReview', {
+              categoryName,
+              subcategoryProfileName,
+              subcategoryId,
+              subcategoryName,
+              subcategorySubtext,
+              totalSelectedQty,
+              selectedProductLines,
+              selectedFilters: {
+                ...(selectedFilters || {}),
+                stoneShape: selectedStoneShapes,
+              },
+              specialNotePlaceholderText,
+              productImageUrl,
+              productDescription,
+              subcategoryThumbnailImage,
+              specialRemark: specialRemark.trim(),
+            })
+          }
+        >
+          <Text style={styles.proceedText}>Add to order - {totalSelectedQty} pcs</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 };
@@ -560,9 +515,6 @@ const styles = StyleSheet.create({
   topSectionAnimatedWrap: {
     overflow: 'hidden',
     backgroundColor: '#FFFFFF',
-  },
-  topSectionCollapsed: {
-    height: 0,
   },
   contentContainer: {
     paddingTop: 2,

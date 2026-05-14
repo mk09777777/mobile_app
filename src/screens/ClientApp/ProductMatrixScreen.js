@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View, Keyboard } from 'react-native';
 import { colors } from '../../constants/colors';
 import ProductMatrixCard from '../../components/client/ProductMatrixCard';
 import catalogApi from '../../services/catalogApi';
@@ -32,6 +32,16 @@ const ProductMatrixScreen = ({ route, navigation }) => {
   const [quantitiesByProduct, setQuantitiesByProduct] = useState({});
   const [notesByProduct, setNotesByProduct] = useState({});
   const [pricingContext, setPricingContext] = useState(null);
+  const [isKeyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
+    const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+    return () => {
+      keyboardDidShowListener.remove();
+      keyboardDidHideListener.remove();
+    };
+  }, []);
 
   const normalizeToken = useCallback(
     (value) =>
@@ -317,32 +327,34 @@ const ProductMatrixScreen = ({ route, navigation }) => {
           : null}
       </ScrollView>
 
-      <View style={styles.footerWrap}>
-        <View style={styles.totalBadge}>
-          <Text style={styles.totalBadgeText}>{totalSelectedQty} Designs Added</Text>
+      {!isKeyboardVisible && (
+        <View style={styles.footerWrap}>
+          <View style={styles.totalBadge}>
+            <Text style={styles.totalBadgeText}>{totalSelectedQty} Designs Added</Text>
+          </View>
+          <TouchableOpacity
+            activeOpacity={canProceed ? 0.85 : 1}
+            disabled={!canProceed}
+            style={[styles.proceedButton, !canProceed && styles.proceedButtonDisabled]}
+            onPress={() =>
+              navigation.navigate('OrderReview', {
+                categoryName,
+                subcategoryProfileName,
+                subcategoryId,
+                subcategoryName,
+                totalSelectedQty,
+                selectedProductLines,
+                selectedFilters,
+                specialNotePlaceholderText,
+                productImageUrl,
+                productDescription,
+                subcategoryThumbnailImage,
+              })
+            }>
+            <Text style={styles.proceedText}>Proceed</Text>
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity
-          activeOpacity={canProceed ? 0.85 : 1}
-          disabled={!canProceed}
-          style={[styles.proceedButton, !canProceed && styles.proceedButtonDisabled]}
-          onPress={() =>
-            navigation.navigate('OrderReview', {
-              categoryName,
-              subcategoryProfileName,
-              subcategoryId,
-              subcategoryName,
-              totalSelectedQty,
-              selectedProductLines,
-              selectedFilters,
-              specialNotePlaceholderText,
-              productImageUrl,
-              productDescription,
-              subcategoryThumbnailImage,
-            })
-          }>
-          <Text style={styles.proceedText}>Proceed</Text>
-        </TouchableOpacity>
-      </View>
+      )}
     </View>
   );
 };
