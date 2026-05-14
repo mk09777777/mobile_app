@@ -63,6 +63,29 @@ target 'chandrajewellery' do
       end
     end
     
+    # Fix fmt consteval error by forcing C++17 for the fmt target
+    installer.pods_project.targets.each do |target|
+      if target.name == 'fmt'
+        target.build_configurations.each do |config|
+          config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
+        end
+      end
+    end
+    
+    # Also patch the fmt base.h header to ensure FMT_USE_CONSTEVAL is disabled
+    # because other targets compiled with C++20 might still trigger the error
+    fmt_base = File.join(installer.sandbox.root, 'fmt', 'include', 'fmt', 'base.h')
+    if File.exist?(fmt_base)
+      # Make file writable
+      File.chmod(0644, fmt_base)
+      content = File.read(fmt_base)
+      if content.include?('define FMT_USE_CONSTEVAL 1')
+        patched = content.gsub(/define FMT_USE_CONSTEVAL 1/, 'define FMT_USE_CONSTEVAL 0')
+        File.write(fmt_base, patched)
+        puts "  Patched fmt/base.h to disable consteval"
+      end
+    end
+    
     # Remove Sentry from aggregate targets
     installer.aggregate_targets.each do |aggregate_target|
       aggregate_target.pod_targets.each do |pod_target|
