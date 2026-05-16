@@ -94,7 +94,13 @@ const ClientPricingScreen = ({ route, navigation }) => {
       setLabour(pricing.Labour?.toString() || pricing.labour?.toString() || '0');
       setExtraCharges(pricing.ExtraCharges?.toString() || pricing.extraCharges?.toString() || '0');
       setDuties(pricing.Duties?.toString() || pricing.duties?.toString() || '0');
-      setPricingMessageFormat(pricing.PricingMessageFormat || pricing.pricingMessageFormat || '');
+      setPricingMessageFormat(
+        clientData.PricingMessageFormat || 
+        clientData.pricingMessageFormat || 
+        pricing.PricingMessageFormat || 
+        pricing.pricingMessageFormat || 
+        ''
+      );
 
       const diamondsData = pricing.Diamonds || pricing.diamonds || [];
       setDiamonds(
@@ -386,12 +392,12 @@ const ClientPricingScreen = ({ route, navigation }) => {
 
       const pricingData = {
         Name: clientData?.Name || clientData?.name || clientName || '',
+        PricingMessageFormat: pricingMessageFormat || '',
         Pricing: {
           Loss: parseFloat(loss) || 0,
           Labour: parseFloat(labour) || 0,
           ExtraCharges: parseFloat(extraCharges) || 0,
           Duties: parseFloat(duties) || 0,
-          PricingMessageFormat: pricingMessageFormat || '',
           Diamonds: diamonds.map(d => ({
             Type: d.Type || '',
             Shape: d.Shape || '',

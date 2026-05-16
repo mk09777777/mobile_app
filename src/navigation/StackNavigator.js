@@ -24,6 +24,7 @@ import NotificationsScreen from '../screens/Notifications/NotificationsScreen';
 import DesignViewerScreen from '../screens/DesignViewer/DesignViewerScreen';
 import PricingScreen from '../screens/Pricing/PricingScreen';
 import UploadDesignScreen from '../screens/UploadDesign/UploadDesignScreen';
+import UploadExcelScreen from '../screens/UploadDesign/uploadExcel';
 // TEST SCREENS - Commented out for production
 // Uncomment these lines if you need to test notifications in the future
 // import FontTest from '../components/FontTest';
@@ -178,6 +179,11 @@ const StackNavigator = ({ isAuthenticated, showOnboarding, onOnboardingComplete 
             options={({ route }) => ({
               title: `Add ${route.params?.designType === 'coral' ? 'Coral' : 'CAD'}`,
             })}
+          />
+          {/*New screen Upload excel*/}
+          <Stack.Screen
+            name="UploadExcel"
+            component={UploadExcelScreen}
           />
           <Stack.Screen
             name="Notifications"

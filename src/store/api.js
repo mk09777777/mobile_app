@@ -1201,14 +1201,21 @@ export const api = createApi({
     }),
 
     updateClientPricing: builder.mutation({
-      query: ({ clientId, ...data }) => ({
-        url: `/api/clients/${clientId}`,
-        method: 'PUT',
-        body: {
-          Id: clientId,
-          ...data,
-        },
-      }),
+      query: ({ clientId, ...data }) => {
+        // Extract PricingMessageFormat from data if it exists
+        const { PricingMessageFormat, pricingMessageFormat, ...restData } = data;
+        const messageFormat = PricingMessageFormat || pricingMessageFormat;
+        
+        return {
+          url: `/api/clients/${clientId}`,
+          method: 'PUT',
+          body: {
+            Id: clientId,
+            ...(messageFormat && { PricingMessageFormat: messageFormat }),
+            ...restData,
+          },
+        };
+      },
       invalidatesTags: (result, error, { clientId }) => [
         { type: 'Client', id: clientId },
         'Client',
@@ -1649,6 +1656,151 @@ export const api = createApi({
       providesTags: ['Dashboard'],
     }),
 
+    
+    // ============= VALIDATE IMAGE UPLOAD =============
+    validateImageUpload: builder.mutation({
+      queryFn: async ({ image, enquiryId }, { dispatch }, extraOptions, baseQuery) => {
+        const startTime = Date.now();
+        
+        if (__DEV__) {
+          console.log('🔍 [validateImageUpload] ===== START VALIDATION =====');
+          console.log('🔍 [validateImageUpload] Timestamp:', new Date().toISOString());
+          console.log('🔍 [validateImageUpload] Enquiry ID:', enquiryId);
+          console.log('🔍 [validateImageUpload] Image:', {
+            uri: image?.uri?.substring(0, 50) + '...',
+            type: image?.type,
+            name: image?.name,
+          });
+        }
+
+        try {
+          const token = await secureStorage.getItem('token');
+          if (!token) {
+            if (__DEV__) {
+              console.error('❌ [validateImageUpload] Authentication token not found');
+            }
+            return {
+              error: {
+                status: 'CUSTOM_ERROR',
+                data: 'Authentication token not found',
+              },
+            };
+          }
+
+          // Create FormData
+          const formData = new FormData();
+          
+          // Add image file
+          const imageFile = {
+            uri: image.uri,
+            type: image.type || 'image/jpeg',
+            name: image.name || `image_${Date.now()}.jpg`,
+          };
+          formData.append('image', imageFile);
+          
+          // Add enquiryId
+          formData.append('enquiryId', enquiryId);
+
+          const endpoint = '/api/validate-image';
+          const fullUrl = `${API_BASE_URL}${endpoint}`;
+          
+          if (__DEV__) {
+            console.log('📤 [validateImageUpload] Request:', {
+              endpoint: fullUrl,
+              enquiryId,
+              imageFile: {
+                uri: imageFile.uri?.substring(0, 50) + '...',
+                type: imageFile.type,
+                name: imageFile.name,
+              },
+            });
+          }
+
+          const requestStartTime = Date.now();
+          const response = await fetch(fullUrl, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+            body: formData,
+          });
+          
+          const requestDuration = Date.now() - requestStartTime;
+          
+          if (__DEV__) {
+            console.log('📡 [validateImageUpload] Response received:', {
+              status: response.status,
+              statusText: response.statusText,
+              ok: response.ok,
+              requestDuration: `${requestDuration}ms`,
+            });
+          }
+
+          if (response.ok) {
+            const data = await response.json();
+            const totalDuration = Date.now() - startTime;
+            
+            if (__DEV__) {
+              console.log('✅ [validateImageUpload] SUCCESS');
+              console.log('📊 Response Data:', JSON.stringify(data, null, 2));
+              console.log('⏱️  Total Duration:', `${totalDuration}ms`);
+            }
+            
+            return { data };
+          } else {
+            const totalDuration = Date.now() - startTime;
+            let errorData;
+            let errorText = '';
+            
+            try {
+              errorText = await response.text();
+              try {
+                errorData = errorText ? JSON.parse(errorText) : { message: 'Validation failed' };
+              } catch (jsonError) {
+                errorData = { 
+                  message: errorText || `Validation failed with status ${response.status}`,
+                  rawError: errorText 
+                };
+              }
+            } catch (parseError) {
+              errorData = { message: `Validation failed with status ${response.status}` };
+            }
+            
+            if (__DEV__) {
+              console.log('❌ [validateImageUpload] FAILED');
+              console.log('📊 Response Status:', response.status, response.statusText);
+              console.log('❌ Error Message:', errorData?.message || 'Unknown error');
+              console.log('📄 Error Data:', errorData);
+              console.log('⏱️  Total Duration:', `${totalDuration}ms`);
+            }
+            
+            return {
+              error: {
+                status: response.status,
+                data: errorData,
+              },
+            };
+          }
+        } catch (error) {
+          const totalDuration = Date.now() - startTime;
+          
+          if (__DEV__) {
+            console.log('💥 [validateImageUpload] EXCEPTION');
+            console.error('❌ Error:', error);
+            console.error('❌ Error Message:', error.message);
+            console.log('⏱️  Total Duration:', `${totalDuration}ms`);
+          }
+          
+          return {
+            error: {
+              status: 'CUSTOM_ERROR',
+              data: error.message || 'Failed to validate image',
+            },
+          };
+        }
+      },
+    }),
+
     // ==================== FILE UPLOAD ====================
     uploadDesign: builder.mutation({
       queryFn: async ({ enquiryId, designType, version, images, excel, designCode }, { dispatch }, extraOptions, baseQuery) => {
@@ -1664,6 +1816,8 @@ export const api = createApi({
           console.log('🚀 [uploadDesign] Has Excel:', !!excel);
           console.log('🚀 [uploadDesign] Design Code:', designCode);
         }
+
+
         
         // Note: invalidatesTags is set in the mutation definition below
         try {
@@ -4281,6 +4435,7 @@ export const {
   useUploadImageMutation,
   useUploadReferenceImagesMutation,
   useUploadDesignMutation,
+  useValidateImageUploadMutation,
   useUpdateAssetDescriptionMutation,
   useApproveDesignVersionMutation,
   useRejectDesignVersionMutation,

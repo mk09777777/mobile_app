@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+  useCallback,
+} from 'react';
 import {
   View,
   StyleSheet,
@@ -19,15 +25,33 @@ import Share from 'react-native-share';
 import RNFS from 'react-native-fs';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../../context/AuthContext';
-import { useGetEnquiryByIdQuery, useDeleteEnquiryMutation, useApproveDesignVersionMutation, useRejectDesignVersionMutation, useUploadReferenceImagesMutation } from '../../store/api';
+import {
+  useGetEnquiryByIdQuery,
+  useDeleteEnquiryMutation,
+  useApproveDesignVersionMutation,
+  useRejectDesignVersionMutation,
+  useUploadReferenceImagesMutation,
+} from '../../store/api';
 import { useClients } from '../../features/clients/clientsHooks';
 import { Card } from '../../components/cards/Cards';
-import { Button, Input, EnquiryImage, OptimizedImage } from '../../components/common';
+import {
+  Button,
+  Input,
+  EnquiryImage,
+  OptimizedImage,
+} from '../../components/common';
 import { AnimatedLogoLoader } from '../../components/common';
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
 import Icon from '../../components/common/Icon';
-import { formatCurrency, formatDate, getStatusColor, getPriorityColor, imageSizes, spacing } from '../../utils';
+import {
+  formatCurrency,
+  formatDate,
+  getStatusColor,
+  getPriorityColor,
+  imageSizes,
+  spacing,
+} from '../../utils';
 import { EnquiryHistoryModal } from '../../components/modals';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE_URL } from '../../config/apiConfig';
@@ -36,7 +60,11 @@ import { getUserName, useUserName } from '../../utils/userUtils';
 
 const SingleEnquiryScreen = ({ route, navigation }) => {
   const { user } = useAuth();
-  const { enquiry: initialEnquiry, enquiryId: routeEnquiryId, shouldRefresh } = route.params || {};
+  const {
+    enquiry: initialEnquiry,
+    enquiryId: routeEnquiryId,
+    shouldRefresh,
+  } = route.params || {};
 
   // Store initial AssignedTo as fallback (in case refetch loses it)
   const initialAssignedToRef = useRef(null);
@@ -44,21 +72,27 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
   // Capture initial AssignedTo from initialEnquiry if available
   useEffect(() => {
     if (initialEnquiry && !initialAssignedToRef.current) {
-      const initialId = initialEnquiry?._originalData?.AssignedTo ||
+      const initialId =
+        initialEnquiry?._originalData?.AssignedTo ||
         initialEnquiry?.AssignedTo ||
         initialEnquiry?.assignedTo;
       if (initialId) {
         initialAssignedToRef.current = initialId;
-        console.log('[SingleEnquiry] 💾 Stored initial AssignedTo as fallback:', initialId);
+        console.log(
+          '[SingleEnquiry] 💾 Stored initial AssignedTo as fallback:',
+          initialId,
+        );
       }
     }
   }, [initialEnquiry]);
 
-
   // Log route params when screen loads or params change
-  useEffect(() => {
-
-  }, [route.params, initialEnquiry, routeEnquiryId, shouldRefresh]);
+  useEffect(() => {}, [
+    route.params,
+    initialEnquiry,
+    routeEnquiryId,
+    shouldRefresh,
+  ]);
 
   // Fetch and cache users for name resolution
   const { users: usersList, isLoading: usersLoading } = useUsers();
@@ -66,7 +100,7 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
   // Debug: Log users loading status
   useEffect(() => {
     console.log('[SingleEnquiry] 👥 Users Debug:', {
-      'usersLoading': usersLoading,
+      usersLoading: usersLoading,
       'usersList length': usersList?.length || 0,
       'sample users': usersList?.slice(0, 3).map(u => ({
         id: u.id || u._id,
@@ -122,7 +156,9 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
               .sort((a, b) => a.timestamp - b.timestamp);
 
             const toRemove = Math.floor(remainingEntries.length * 0.3);
-            const oldestKeys = remainingEntries.slice(0, toRemove).map(e => e.key);
+            const oldestKeys = remainingEntries
+              .slice(0, toRemove)
+              .map(e => e.key);
 
             if (oldestKeys.length > 0) {
               await AsyncStorage.multiRemove(oldestKeys);
@@ -146,16 +182,14 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
   const enquiryId = routeEnquiryId || initialEnquiry?.id || initialEnquiry?._id;
 
   // Log enquiryId
-  useEffect(() => {
-
-  }, [enquiryId]);
+  useEffect(() => {}, [enquiryId]);
 
   // Redux hooks - refetch when screen comes into focus to get latest pricing updates
   const {
     data: enquiryData,
     isLoading: loading,
     error: queryError,
-    refetch
+    refetch,
   } = useGetEnquiryByIdQuery(enquiryId, {
     skip: !enquiryId,
     refetchOnFocus: true, // Refetch when screen comes into focus to get latest data (including pricing)
@@ -167,15 +201,25 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
   const maxRetries = 3;
   useEffect(() => {
     // If we have an error and enquiryId, and haven't retried too many times, auto-retry
-    if (queryError && enquiryId && retryCountRef.current < maxRetries && !loading) {
-      const isServerError = queryError?.status === 500 || queryError?.originalStatus === 500;
-      const isNotFound = queryError?.status === 404 || queryError?.originalStatus === 404;
+    if (
+      queryError &&
+      enquiryId &&
+      retryCountRef.current < maxRetries &&
+      !loading
+    ) {
+      const isServerError =
+        queryError?.status === 500 || queryError?.originalStatus === 500;
+      const isNotFound =
+        queryError?.status === 404 || queryError?.originalStatus === 404;
 
       // Only auto-retry for server errors (might be timing issue) or not found (might be newly created)
       if (isServerError || isNotFound) {
         retryCountRef.current += 1;
         const delay = retryCountRef.current * 1000; // 1s, 2s, 3s delays
-        console.log(`[SingleEnquiry] 🔄 Auto-retry ${retryCountRef.current}/${maxRetries} in ${delay}ms for enquiry:`, enquiryId);
+        console.log(
+          `[SingleEnquiry] 🔄 Auto-retry ${retryCountRef.current}/${maxRetries} in ${delay}ms for enquiry:`,
+          enquiryId,
+        );
 
         const retryTimer = setTimeout(() => {
           refetch();
@@ -191,19 +235,24 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
     retryCountRef.current = 0;
   }, [enquiryId]);
 
-
   // Watch for status changes and log them
   useEffect(() => {
     if (enquiryData && enquiryId) {
-      const currentStatus = enquiryData?.status || enquiryData?.Status || enquiryData?._originalData?.Status;
-
+      const currentStatus =
+        enquiryData?.status ||
+        enquiryData?.Status ||
+        enquiryData?._originalData?.Status;
     }
   }, [enquiryData, enquiryId]);
 
   // Log enquiryData changes - reduced logging to prevent performance issues
-  useEffect(() => {
-
-  }, [enquiryData?.id, enquiryData?.StoneType, enquiryData?.StyleNumber, enquiryData?.GatiOrderNumber, shouldRefresh]);
+  useEffect(() => {}, [
+    enquiryData?.id,
+    enquiryData?.StoneType,
+    enquiryData?.StyleNumber,
+    enquiryData?.GatiOrderNumber,
+    shouldRefresh,
+  ]);
 
   const [deleteEnquiry, { isLoading: isDeleting }] = useDeleteEnquiryMutation();
 
@@ -235,7 +284,10 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
           map.set(noSpaces, clientName);
 
           // Handle MongoDB ObjectId format variations
-          const cleanId = idStr.replace(/^ObjectId\(/, '').replace(/\)$/, '').trim();
+          const cleanId = idStr
+            .replace(/^ObjectId\(/, '')
+            .replace(/\)$/, '')
+            .trim();
           if (cleanId !== idStr) {
             map.set(cleanId, clientName);
             map.set(cleanId.replace(/\s/g, ''), clientName);
@@ -246,17 +298,14 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
           map.set(noSpaces.toLowerCase(), clientName);
         }
       });
-
     } else {
-
     }
     return map;
   }, [clients]);
 
   // Helper to get client name from ID - try multiple matching strategies
-  const getClientName = (clientId) => {
+  const getClientName = clientId => {
     if (!clientId) {
-
       return 'Unknown Client';
     }
 
@@ -264,7 +313,6 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
 
     // Try exact match first
     if (clientNameMap.has(idStr)) {
-
       return clientNameMap.get(idStr);
     }
 
@@ -275,7 +323,10 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
     }
 
     // Try cleaned ObjectId format
-    const cleanId = idStr.replace(/^ObjectId\(/, '').replace(/\)$/, '').trim();
+    const cleanId = idStr
+      .replace(/^ObjectId\(/, '')
+      .replace(/\)$/, '')
+      .trim();
     if (cleanId !== idStr && clientNameMap.has(cleanId)) {
       return clientNameMap.get(cleanId);
     }
@@ -297,16 +348,17 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
         const cIdNoSpaces = cId.replace(/\s/g, '');
         const enquiryIdNoSpaces = idStr.replace(/\s/g, '');
 
-        return cId === idStr ||
+        return (
+          cId === idStr ||
           cIdNoSpaces === enquiryIdNoSpaces ||
           cId.toLowerCase() === idStr.toLowerCase() ||
-          cIdNoSpaces.toLowerCase() === enquiryIdNoSpaces.toLowerCase();
+          cIdNoSpaces.toLowerCase() === enquiryIdNoSpaces.toLowerCase()
+        );
       });
 
       if (foundClient) {
         const name = foundClient.name || foundClient.Name;
         if (name && name !== 'Unknown Client') {
-
           return name;
         }
       }
@@ -349,7 +401,8 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
 
       const isVideo = currentMedia.isVideo;
       const mediaKey = currentMedia.imageKey || currentMedia.imageId;
-      const mediaUri = currentMedia.imageUri || currentMedia.cachedUri || selectedImageUri;
+      const mediaUri =
+        currentMedia.imageUri || currentMedia.cachedUri || selectedImageUri;
 
       if (!mediaKey && !mediaUri) {
         Alert.alert('Error', 'Media URL not available');
@@ -367,25 +420,37 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
       let fileUrl = mediaUri;
 
       // If we don't have a direct URL, fetch presigned URL
-      if (!fileUrl || (!fileUrl.startsWith('http') && !fileUrl.startsWith('file://'))) {
+      if (
+        !fileUrl ||
+        (!fileUrl.startsWith('http') && !fileUrl.startsWith('file://'))
+      ) {
         try {
           const encodedKey = encodeURIComponent(mediaKey);
-          const response = await fetch(`${API_BASE_URL}/api/enquiries/files/${encodedKey}`, {
-            headers: {
-              'Authorization': `Bearer ${token}`,
+          const response = await fetch(
+            `${API_BASE_URL}/api/enquiries/files/${encodedKey}`,
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
             },
-          });
+          );
 
           if (response.ok) {
             const contentType = response.headers.get('content-type') || '';
             if (contentType.includes('application/json')) {
               const jsonData = await response.json();
-              fileUrl = jsonData.url || jsonData.videoUrl || jsonData.src || jsonData.location;
+              fileUrl =
+                jsonData.url ||
+                jsonData.videoUrl ||
+                jsonData.src ||
+                jsonData.location;
             } else {
               // Direct file response - download to temp file
               const arrayBuffer = await response.arrayBuffer();
               const tempDir = RNFS.CachesDirectoryPath;
-              const fileName = mediaKey.split('/').pop() || `media_${Date.now()}.${isVideo ? 'mp4' : 'jpg'}`;
+              const fileName =
+                mediaKey.split('/').pop() ||
+                `media_${Date.now()}.${isVideo ? 'mp4' : 'jpg'}`;
               const tempFilePath = `${tempDir}/${fileName}`;
 
               // Convert to base64
@@ -423,15 +488,19 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
       if (fileUrl.startsWith('http') && !fileUrl.startsWith('file://')) {
         try {
           const response = await fetch(fileUrl, {
-            headers: fileUrl.includes('amazonaws.com') ? {} : {
-              'Authorization': `Bearer ${token}`,
-            },
+            headers: fileUrl.includes('amazonaws.com')
+              ? {}
+              : {
+                  Authorization: `Bearer ${token}`,
+                },
           });
 
           if (response.ok) {
             const arrayBuffer = await response.arrayBuffer();
             const tempDir = RNFS.CachesDirectoryPath;
-            const fileName = mediaKey ? mediaKey.split('/').pop() : `media_${Date.now()}.${isVideo ? 'mp4' : 'jpg'}`;
+            const fileName = mediaKey
+              ? mediaKey.split('/').pop()
+              : `media_${Date.now()}.${isVideo ? 'mp4' : 'jpg'}`;
             const tempFilePath = `${tempDir}/${fileName}`;
 
             // Convert to base64
@@ -465,7 +534,9 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
       }
 
       // Share via WhatsApp
-      const shareMessage = `Reference ${isVideo ? 'Video' : 'Image'} from Enquiry`;
+      const shareMessage = `Reference ${
+        isVideo ? 'Video' : 'Image'
+      } from Enquiry`;
 
       try {
         await Share.open({
@@ -478,7 +549,9 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
         // If WhatsApp sharing fails, try general share
         if (shareError.message !== 'User did not share') {
           await Share.open({
-            message: `${shareMessage}\n\n${isVideo ? 'Video' : 'Image'}: ${fileUrl}`,
+            message: `${shareMessage}\n\n${
+              isVideo ? 'Video' : 'Image'
+            }: ${fileUrl}`,
             url: fileUrl,
             type: isVideo ? 'video/mp4' : 'image/jpeg',
           });
@@ -523,9 +596,13 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
         // For videos, we need to fetch the URL if not available
         if (targetImage.isVideo) {
           // Video URL will be fetched by Video component in modal
-          setSelectedImageUri(targetImage.imageUri || targetImage.cachedUri || null);
+          setSelectedImageUri(
+            targetImage.imageUri || targetImage.cachedUri || null,
+          );
         } else {
-          setSelectedImageUri(targetImage.cachedUri || targetImage.imageUri || null);
+          setSelectedImageUri(
+            targetImage.cachedUri || targetImage.imageUri || null,
+          );
         }
       }
 
@@ -552,46 +629,66 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
   const ZOOM_ON_THRESHOLD = 1.05;
   const ZOOM_OFF_THRESHOLD = 1.02;
 
-  const handleZoomMove = useCallback((event) => {
-    const scale = event?.scale ?? 1;
-    setIsModalZoomed((prev) => {
-      if (!prev && scale >= ZOOM_ON_THRESHOLD) {
-        return true;
-      }
-      if (prev && scale <= ZOOM_OFF_THRESHOLD) {
-        return false;
-      }
-      return prev;
-    });
-  }, [ZOOM_ON_THRESHOLD, ZOOM_OFF_THRESHOLD]);
+  const handleZoomMove = useCallback(
+    event => {
+      const scale = event?.scale ?? 1;
+      setIsModalZoomed(prev => {
+        if (!prev && scale >= ZOOM_ON_THRESHOLD) {
+          return true;
+        }
+        if (prev && scale <= ZOOM_OFF_THRESHOLD) {
+          return false;
+        }
+        return prev;
+      });
+    },
+    [ZOOM_ON_THRESHOLD, ZOOM_OFF_THRESHOLD],
+  );
 
   // Viewability config for modal FlatList - must be at component level
-  const updateModalIndex = useCallback((index, scrollList = true) => {
-    const boundedIndex = Math.max(0, Math.min((modalImages?.length || 1) - 1, index));
-    if (modalFlatListRef.current && scrollList && modalImages.length > 1) {
-      modalFlatListRef.current.scrollToIndex({
-        index: boundedIndex,
-        animated: true,
-      });
-    }
-
-    requestAnimationFrame(() => {
-      setModalCurrentIndex((prev) => (prev === boundedIndex ? prev : boundedIndex));
-      const targetImage = modalImages?.[boundedIndex];
-      if (targetImage) {
-        // For videos, use imageUri or cachedUri
-        if (targetImage.isVideo) {
-          setSelectedImageUri(targetImage.imageUri || targetImage.cachedUri || null);
-        } else {
-          setSelectedImageUri(targetImage.cachedUri || targetImage.imageUri || null);
-        }
+  const updateModalIndex = useCallback(
+    (index, scrollList = true) => {
+      const boundedIndex = Math.max(
+        0,
+        Math.min((modalImages?.length || 1) - 1, index),
+      );
+      if (modalFlatListRef.current && scrollList && modalImages.length > 1) {
+        modalFlatListRef.current.scrollToIndex({
+          index: boundedIndex,
+          animated: true,
+        });
       }
-      setIsModalZoomed(false);
-    });
-  }, [modalImages]);
+
+      requestAnimationFrame(() => {
+        setModalCurrentIndex(prev =>
+          prev === boundedIndex ? prev : boundedIndex,
+        );
+        const targetImage = modalImages?.[boundedIndex];
+        if (targetImage) {
+          // For videos, use imageUri or cachedUri
+          if (targetImage.isVideo) {
+            setSelectedImageUri(
+              targetImage.imageUri || targetImage.cachedUri || null,
+            );
+          } else {
+            setSelectedImageUri(
+              targetImage.cachedUri || targetImage.imageUri || null,
+            );
+          }
+        }
+        setIsModalZoomed(false);
+      });
+    },
+    [modalImages],
+  );
 
   const getModalImageKey = useCallback((item, index) => {
-    return item?.imageKey || item?.imageId || item?.imageUri || `modal-image-${index}`;
+    return (
+      item?.imageKey ||
+      item?.imageId ||
+      item?.imageUri ||
+      `modal-image-${index}`
+    );
   }, []);
 
   const handleModalPrev = useCallback(() => {
@@ -604,30 +701,38 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
     updateModalIndex(modalCurrentIndex + 1);
   }, [modalImages, modalCurrentIndex, updateModalIndex]);
 
-  const modalOnViewableItemsChanged = useCallback(({ viewableItems }) => {
-    if (viewableItems.length > 0) {
-      const nextIndex = viewableItems[0].index || 0;
-      if (nextIndex !== modalCurrentIndex) {
-        updateModalIndex(nextIndex, false);
+  const modalOnViewableItemsChanged = useCallback(
+    ({ viewableItems }) => {
+      if (viewableItems.length > 0) {
+        const nextIndex = viewableItems[0].index || 0;
+        if (nextIndex !== modalCurrentIndex) {
+          updateModalIndex(nextIndex, false);
+        }
       }
-    }
-  }, [modalCurrentIndex, updateModalIndex]);
+    },
+    [modalCurrentIndex, updateModalIndex],
+  );
 
-  const modalViewabilityConfig = useMemo(() => ({
-    itemVisiblePercentThreshold: 50,
-  }), []);
+  const modalViewabilityConfig = useMemo(
+    () => ({
+      itemVisiblePercentThreshold: 50,
+    }),
+    [],
+  );
 
   // API mutations
-  const [approveDesignVersion, { isLoading: isApproving }] = useApproveDesignVersionMutation();
-  const [rejectDesignVersion, { isLoading: isRejecting }] = useRejectDesignVersionMutation();
-  const [uploadReferenceImages, { isLoading: isUploadingReference }] = useUploadReferenceImagesMutation();
+  const [approveDesignVersion, { isLoading: isApproving }] =
+    useApproveDesignVersionMutation();
+  const [rejectDesignVersion, { isLoading: isRejecting }] =
+    useRejectDesignVersionMutation();
+  const [uploadReferenceImages, { isLoading: isUploadingReference }] =
+    useUploadReferenceImagesMutation();
 
   // Use enquiry from query if available, otherwise use initialEnquiry
   const enquiry = enquiryData || initialEnquiry || {};
 
   // Log which enquiry source is being used
-  useEffect(() => {
-  }, [enquiryData, initialEnquiry, enquiry]);
+  useEffect(() => {}, [enquiryData, initialEnquiry, enquiry]);
 
   // Get original data for accessing raw API fields
   const originalData = enquiry?._originalData || enquiry;
@@ -639,7 +744,8 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
     let id = null;
 
     // Priority 1: Check StatusHistory (most accurate source - latest assignment)
-    const statusHistory = enquiry?._originalData?.StatusHistory ||
+    const statusHistory =
+      enquiry?._originalData?.StatusHistory ||
       originalData?.StatusHistory ||
       enquiry?.StatusHistory ||
       [];
@@ -656,7 +762,10 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
       for (const entry of sortedHistory) {
         if (entry.AssignedTo || entry.assignedTo) {
           id = entry.AssignedTo || entry.assignedTo;
-          console.log('[SingleEnquiry] ✅ Found AssignedTo in StatusHistory:', id);
+          console.log(
+            '[SingleEnquiry] ✅ Found AssignedTo in StatusHistory:',
+            id,
+          );
           break;
         }
       }
@@ -664,18 +773,21 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
 
     // Priority 2: Check _originalData (raw API response) - this is most reliable if StatusHistory doesn't have it
     if (!id) {
-      id = enquiry?._originalData?.AssignedTo ||
+      id =
+        enquiry?._originalData?.AssignedTo ||
         originalData?.AssignedTo ||
         originalData?.assignedTo;
       if (id) {
-        console.log('[SingleEnquiry] ✅ Found AssignedTo in _originalData:', id);
+        console.log(
+          '[SingleEnquiry] ✅ Found AssignedTo in _originalData:',
+          id,
+        );
       }
     }
 
     // Priority 3: Check normalized enquiry fields
     if (!id) {
-      id = enquiry?.AssignedTo ||
-        enquiry?.assignedTo;
+      id = enquiry?.AssignedTo || enquiry?.assignedTo;
       if (id) {
         console.log('[SingleEnquiry] ✅ Found AssignedTo in enquiry:', id);
       }
@@ -696,7 +808,10 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
 
     // Handle case where id might be an object (shouldn't happen, but just in case)
     if (id && typeof id === 'object') {
-      console.warn('[SingleEnquiry] ⚠️ AssignedTo is an object, extracting ID:', id);
+      console.warn(
+        '[SingleEnquiry] ⚠️ AssignedTo is an object, extracting ID:',
+        id,
+      );
       id = id.id || id._id || id.toString();
     }
 
@@ -735,22 +850,24 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
   // Debug: Log assignedToName from hook
   useEffect(() => {
     console.log('[SingleEnquiry] 👤 AssignedToName from hook:', {
-      'assignedToId': assignedToId,
-      'assignedToName': assignedToName,
+      assignedToId: assignedToId,
+      assignedToName: assignedToName,
       'assignedToName type': typeof assignedToName,
     });
   }, [assignedToId, assignedToName]);
 
   // Log originalData for debugging - Enhanced to show all fields
-  useEffect(() => {
-  }, [enquiry, originalData]);
+  useEffect(() => {}, [enquiry, originalData]);
 
   // Debug: Log enquiry structure to understand data format
-  useEffect(() => {
-  }, [enquiry]);
+  useEffect(() => {}, [enquiry]);
 
   // Get priority from API (show as badge)
-  const priority = originalData?.Priority || enquiry?.Priority || enquiry?.priority || 'Normal';
+  const priority =
+    originalData?.Priority ||
+    enquiry?.Priority ||
+    enquiry?.priority ||
+    'Normal';
 
   // Get status from API - use original value, not normalized
   // Resolution order:
@@ -762,7 +879,8 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
   let status = null;
 
   // First, try to get status from StatusHistory (most accurate source)
-  const statusHistory = originalData?.StatusHistory || enquiry?.StatusHistory || [];
+  const statusHistory =
+    originalData?.StatusHistory || enquiry?.StatusHistory || [];
   if (Array.isArray(statusHistory) && statusHistory.length > 0) {
     // Sort by timestamp (newest first) and get the latest status
     const sortedHistory = [...statusHistory].sort((a, b) => {
@@ -776,7 +894,8 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
 
   // If not found in StatusHistory, check other fields
   if (!status) {
-    status = originalData?.CurrentStatus ||
+    status =
+      originalData?.CurrentStatus ||
       originalData?.Status ||
       enquiry?.CurrentStatus ||
       enquiry?.Status;
@@ -788,7 +907,8 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
   }
 
   // Get client name from ClientId - prioritize already resolved name, then lookup
-  const clientId = originalData?.ClientId || enquiry?.ClientId || enquiry?.clientId;
+  const clientId =
+    originalData?.ClientId || enquiry?.ClientId || enquiry?.clientId;
 
   // First check if enquiry already has a valid client name (not "Unknown Client")
   let clientName = enquiry?.clientName || enquiry?.client;
@@ -806,12 +926,22 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
   }
 
   // Debug logging for client name resolution - moved to useEffect to avoid blocking render
-  useEffect(() => {
-  }, [clientId, clientName, clientsLoading, clients.length, clientNameMap]);
+  useEffect(() => {}, [
+    clientId,
+    clientName,
+    clientsLoading,
+    clients.length,
+    clientNameMap,
+  ]);
 
   // Get dates - check multiple possible fields
-  const createdAt = enquiry?.createdAt || originalData?.createdAt || new Date().toISOString();
-  const updatedAt = enquiry?.updatedAt || originalData?.updatedAt || enquiry?.createdAt || createdAt;
+  const createdAt =
+    enquiry?.createdAt || originalData?.createdAt || new Date().toISOString();
+  const updatedAt =
+    enquiry?.updatedAt ||
+    originalData?.updatedAt ||
+    enquiry?.createdAt ||
+    createdAt;
 
   // Use ref to track last shouldRefresh value to prevent duplicate refetches
   const lastShouldRefreshRef = useRef(shouldRefresh);
@@ -822,18 +952,15 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
       // Always refetch when screen comes into focus to get latest updates
       // This ensures client sees status changes made by admin AND fields added during editing
       if (enquiryId && refetch) {
-
         // Use a small delay to ensure navigation is complete
         const timeoutId = setTimeout(() => {
           refetch()
-            .then((result) => {
+            .then(result => {
               if (__DEV__) {
                 const data = result?.data;
               }
             })
-            .catch((error) => {
-
-            });
+            .catch(error => {});
         }, 100);
 
         return () => clearTimeout(timeoutId);
@@ -841,14 +968,15 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
         // Update ref even if not refetching
         lastShouldRefreshRef.current = shouldRefresh;
       }
-    }, [shouldRefresh, enquiryId, refetch])
+    }, [shouldRefresh, enquiryId, refetch]),
   );
 
   const showAllDetails = user?.role === 'admin';
 
   const handleOpenChat = useCallback(() => {
     const currentEnquiry = enquiry || initialEnquiry || {};
-    const currentEnquiryId = enquiryId || currentEnquiry?.id || currentEnquiry?._id;
+    const currentEnquiryId =
+      enquiryId || currentEnquiry?.id || currentEnquiry?._id;
 
     if (!currentEnquiryId) {
       Alert.alert('Error', 'Cannot open chat: Enquiry ID is missing');
@@ -861,7 +989,8 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
     });
   }, [enquiry, initialEnquiry, enquiryId, navigation]);
 
-  const canShowChatFab = user?.role === 'client' ||
+  const canShowChatFab =
+    user?.role === 'client' ||
     user?.role === 'admin' ||
     user?.role === 'coral' ||
     user?.role === 'cad';
@@ -884,7 +1013,7 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
     return null;
   }, []);
 
-  const getCachedImage = useCallback(async (cacheKey) => {
+  const getCachedImage = useCallback(async cacheKey => {
     if (!cacheKey) return null;
 
     // First check in-memory cache (works even when storage is full)
@@ -956,7 +1085,7 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
               key,
               timestamp: data.timestamp || 0,
               age,
-              expired: age > maxAge
+              expired: age > maxAge,
             };
           } catch {
             return { key, timestamp: 0, age: Infinity, expired: true };
@@ -969,15 +1098,29 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
 
       if (aggressive) {
         // Aggressive cleanup: Remove 50% of oldest entries + all expired
-        const expiredKeys = entriesWithTimestamps.filter(e => e.expired).map(e => e.key);
-        const toRemove = Math.max(1, Math.floor(entriesWithTimestamps.length * 0.5));
-        const oldestKeys = entriesWithTimestamps.slice(0, toRemove).map(e => e.key);
+        const expiredKeys = entriesWithTimestamps
+          .filter(e => e.expired)
+          .map(e => e.key);
+        const toRemove = Math.max(
+          1,
+          Math.floor(entriesWithTimestamps.length * 0.5),
+        );
+        const oldestKeys = entriesWithTimestamps
+          .slice(0, toRemove)
+          .map(e => e.key);
         keysToRemove = [...new Set([...expiredKeys, ...oldestKeys])];
       } else {
         // Normal cleanup: Remove expired entries + 30% of oldest
-        const expiredKeys = entriesWithTimestamps.filter(e => e.expired).map(e => e.key);
-        const toRemove = Math.max(1, Math.floor(entriesWithTimestamps.length * 0.3));
-        const oldestKeys = entriesWithTimestamps.slice(0, toRemove).map(e => e.key);
+        const expiredKeys = entriesWithTimestamps
+          .filter(e => e.expired)
+          .map(e => e.key);
+        const toRemove = Math.max(
+          1,
+          Math.floor(entriesWithTimestamps.length * 0.3),
+        );
+        const oldestKeys = entriesWithTimestamps
+          .slice(0, toRemove)
+          .map(e => e.key);
         keysToRemove = [...new Set([...expiredKeys, ...oldestKeys])];
       }
 
@@ -993,175 +1136,228 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
     }
   }, []);
 
-  const saveImageToCache = useCallback(async (cacheKey, dataUri) => {
-    if (!cacheKey || !dataUri) return false;
-    try {
-      const cacheData = {
-        dataUri,
-        timestamp: Date.now(),
-      };
-      await AsyncStorage.setItem(cacheKey, JSON.stringify(cacheData));
-      return true; // Success
-    } catch (error) {
-      // Storage is full - try to clean up old cache entries
-      if (error?.code === '13' || error?.message?.includes('SQLITE_FULL')) {
-        if (__DEV__) {
-          console.warn('⚠️ Storage full, attempting aggressive cache cleanup...');
-        }
-
-        // Get all cache keys first to check how many we have
-        const allKeys = await AsyncStorage.getAllKeys();
-        const cacheKeys = allKeys.filter(key => key.startsWith('image_cache_'));
-
-        // If we have very few cache entries but storage is full, clear ALL cache
-        // This suggests other data is filling storage, not image cache
-        if (cacheKeys.length <= 5) {
-          if (__DEV__) {
-            console.warn(`⚠️ Storage full but only ${cacheKeys.length} cache entries - clearing ALL image cache`);
-          }
-          if (cacheKeys.length > 0) {
-            await AsyncStorage.multiRemove(cacheKeys);
-            if (__DEV__) {
-              console.log(`🧹 Cleared all ${cacheKeys.length} image cache entries`);
-            }
-          }
-
-          // Try saving after clearing all cache
-          try {
-            await AsyncStorage.setItem(cacheKey, JSON.stringify({
-              dataUri,
-              timestamp: Date.now(),
-            }));
-            if (__DEV__) {
-              console.log('✅ Cache saved after clearing all image cache');
-            }
-            return true;
-          } catch (clearAllError) {
-            // Storage is consistently full - disable AsyncStorage caching and use memory cache only
-            storageFullRef.current = true;
-            if (__DEV__) {
-              console.warn('⚠️ Storage STILL full after clearing all image cache - switching to memory-only cache');
-              console.warn('💡 Consider clearing other AsyncStorage data (tokens, user data, etc.)');
-            }
-
-            // Store in memory cache as fallback
-            memoryCacheRef.current.set(cacheKey, {
-              dataUri,
-              timestamp: Date.now(),
-            });
-            // Limit memory cache size
-            if (memoryCacheRef.current.size > MAX_MEMORY_CACHE_SIZE) {
-              const firstKey = memoryCacheRef.current.keys().next().value;
-              memoryCacheRef.current.delete(firstKey);
-            }
-            if (__DEV__) {
-              console.log('💾 Stored in memory cache (AsyncStorage full):', cacheKey);
-            }
-            return true; // Consider it "saved" in memory cache
-          }
-        }
-
-        // Try normal cleanup first
-        let cleanupResult = await cleanupImageCache(false);
-
-        // If still full after normal cleanup, try aggressive cleanup
-        if (cleanupResult.remaining > 0) {
-          try {
-            await AsyncStorage.setItem(cacheKey, JSON.stringify({
-              dataUri,
-              timestamp: Date.now(),
-            }));
-            if (__DEV__) {
-              console.log('✅ Cache saved after normal cleanup');
-            }
-            return true; // Success after normal cleanup
-          } catch (retryError) {
-            if (__DEV__) {
-              console.warn('⚠️ Still full after normal cleanup, trying aggressive cleanup...');
-            }
-            // Try aggressive cleanup (removes 50%)
-            cleanupResult = await cleanupImageCache(true);
-
-            // Try saving again after aggressive cleanup
-            try {
-              await AsyncStorage.setItem(cacheKey, JSON.stringify({
-                dataUri,
-                timestamp: Date.now(),
-              }));
-              if (__DEV__) {
-                console.log('✅ Cache saved after aggressive cleanup');
-              }
-              return true; // Success after aggressive cleanup
-            } catch (finalError) {
-              // Last resort: clear ALL remaining cache
-              const remainingCacheKeys = allKeys.filter(key => key.startsWith('image_cache_'));
-              if (remainingCacheKeys.length > 0) {
-                if (__DEV__) {
-                  console.warn(`⚠️ Last resort: clearing ALL ${remainingCacheKeys.length} remaining cache entries`);
-                }
-                await AsyncStorage.multiRemove(remainingCacheKeys);
-                try {
-                  await AsyncStorage.setItem(cacheKey, JSON.stringify({
-                    dataUri,
-                    timestamp: Date.now(),
-                  }));
-                  if (__DEV__) {
-                    console.log('✅ Cache saved after clearing all remaining cache');
-                  }
-                  return true;
-                } catch (lastError) {
-                  // Storage is consistently full - use memory cache
-                  storageFullRef.current = true;
-                  if (__DEV__) {
-                    console.warn('⚠️ Storage still full after clearing ALL cache - switching to memory-only cache');
-                  }
-
-                  // Store in memory cache as fallback
-                  memoryCacheRef.current.set(cacheKey, {
-                    dataUri,
-                    timestamp: Date.now(),
-                  });
-                  // Limit memory cache size
-                  if (memoryCacheRef.current.size > MAX_MEMORY_CACHE_SIZE) {
-                    const firstKey = memoryCacheRef.current.keys().next().value;
-                    memoryCacheRef.current.delete(firstKey);
-                  }
-                  if (__DEV__) {
-                    console.log('💾 Stored in memory cache (all cleanup failed):', cacheKey);
-                  }
-                  return true; // Consider it "saved" in memory cache
-                }
-              }
-            }
-          }
-        }
-      } else if (__DEV__) {
-        console.warn('⚠️ Error saving image cache:', error);
-      }
-
-      // If storage is known to be full, use memory cache as fallback
-      if (storageFullRef.current) {
-        memoryCacheRef.current.set(cacheKey, {
+  const saveImageToCache = useCallback(
+    async (cacheKey, dataUri) => {
+      if (!cacheKey || !dataUri) return false;
+      try {
+        const cacheData = {
           dataUri,
           timestamp: Date.now(),
-        });
-        // Limit memory cache size
-        if (memoryCacheRef.current.size > MAX_MEMORY_CACHE_SIZE) {
-          const firstKey = memoryCacheRef.current.keys().next().value;
-          memoryCacheRef.current.delete(firstKey);
-        }
-        if (__DEV__) {
-          console.log('💾 Stored in memory cache (AsyncStorage disabled):', cacheKey);
-        }
-        return true;
-      }
+        };
+        await AsyncStorage.setItem(cacheKey, JSON.stringify(cacheData));
+        return true; // Success
+      } catch (error) {
+        // Storage is full - try to clean up old cache entries
+        if (error?.code === '13' || error?.message?.includes('SQLITE_FULL')) {
+          if (__DEV__) {
+            console.warn(
+              '⚠️ Storage full, attempting aggressive cache cleanup...',
+            );
+          }
 
-      return false; // Failed
-    }
-  }, [cleanupImageCache]);
+          // Get all cache keys first to check how many we have
+          const allKeys = await AsyncStorage.getAllKeys();
+          const cacheKeys = allKeys.filter(key =>
+            key.startsWith('image_cache_'),
+          );
+
+          // If we have very few cache entries but storage is full, clear ALL cache
+          // This suggests other data is filling storage, not image cache
+          if (cacheKeys.length <= 5) {
+            if (__DEV__) {
+              console.warn(
+                `⚠️ Storage full but only ${cacheKeys.length} cache entries - clearing ALL image cache`,
+              );
+            }
+            if (cacheKeys.length > 0) {
+              await AsyncStorage.multiRemove(cacheKeys);
+              if (__DEV__) {
+                console.log(
+                  `🧹 Cleared all ${cacheKeys.length} image cache entries`,
+                );
+              }
+            }
+
+            // Try saving after clearing all cache
+            try {
+              await AsyncStorage.setItem(
+                cacheKey,
+                JSON.stringify({
+                  dataUri,
+                  timestamp: Date.now(),
+                }),
+              );
+              if (__DEV__) {
+                console.log('✅ Cache saved after clearing all image cache');
+              }
+              return true;
+            } catch (clearAllError) {
+              // Storage is consistently full - disable AsyncStorage caching and use memory cache only
+              storageFullRef.current = true;
+              if (__DEV__) {
+                console.warn(
+                  '⚠️ Storage STILL full after clearing all image cache - switching to memory-only cache',
+                );
+                console.warn(
+                  '💡 Consider clearing other AsyncStorage data (tokens, user data, etc.)',
+                );
+              }
+
+              // Store in memory cache as fallback
+              memoryCacheRef.current.set(cacheKey, {
+                dataUri,
+                timestamp: Date.now(),
+              });
+              // Limit memory cache size
+              if (memoryCacheRef.current.size > MAX_MEMORY_CACHE_SIZE) {
+                const firstKey = memoryCacheRef.current.keys().next().value;
+                memoryCacheRef.current.delete(firstKey);
+              }
+              if (__DEV__) {
+                console.log(
+                  '💾 Stored in memory cache (AsyncStorage full):',
+                  cacheKey,
+                );
+              }
+              return true; // Consider it "saved" in memory cache
+            }
+          }
+
+          // Try normal cleanup first
+          let cleanupResult = await cleanupImageCache(false);
+
+          // If still full after normal cleanup, try aggressive cleanup
+          if (cleanupResult.remaining > 0) {
+            try {
+              await AsyncStorage.setItem(
+                cacheKey,
+                JSON.stringify({
+                  dataUri,
+                  timestamp: Date.now(),
+                }),
+              );
+              if (__DEV__) {
+                console.log('✅ Cache saved after normal cleanup');
+              }
+              return true; // Success after normal cleanup
+            } catch (retryError) {
+              if (__DEV__) {
+                console.warn(
+                  '⚠️ Still full after normal cleanup, trying aggressive cleanup...',
+                );
+              }
+              // Try aggressive cleanup (removes 50%)
+              cleanupResult = await cleanupImageCache(true);
+
+              // Try saving again after aggressive cleanup
+              try {
+                await AsyncStorage.setItem(
+                  cacheKey,
+                  JSON.stringify({
+                    dataUri,
+                    timestamp: Date.now(),
+                  }),
+                );
+                if (__DEV__) {
+                  console.log('✅ Cache saved after aggressive cleanup');
+                }
+                return true; // Success after aggressive cleanup
+              } catch (finalError) {
+                // Last resort: clear ALL remaining cache
+                const remainingCacheKeys = allKeys.filter(key =>
+                  key.startsWith('image_cache_'),
+                );
+                if (remainingCacheKeys.length > 0) {
+                  if (__DEV__) {
+                    console.warn(
+                      `⚠️ Last resort: clearing ALL ${remainingCacheKeys.length} remaining cache entries`,
+                    );
+                  }
+                  await AsyncStorage.multiRemove(remainingCacheKeys);
+                  try {
+                    await AsyncStorage.setItem(
+                      cacheKey,
+                      JSON.stringify({
+                        dataUri,
+                        timestamp: Date.now(),
+                      }),
+                    );
+                    if (__DEV__) {
+                      console.log(
+                        '✅ Cache saved after clearing all remaining cache',
+                      );
+                    }
+                    return true;
+                  } catch (lastError) {
+                    // Storage is consistently full - use memory cache
+                    storageFullRef.current = true;
+                    if (__DEV__) {
+                      console.warn(
+                        '⚠️ Storage still full after clearing ALL cache - switching to memory-only cache',
+                      );
+                    }
+
+                    // Store in memory cache as fallback
+                    memoryCacheRef.current.set(cacheKey, {
+                      dataUri,
+                      timestamp: Date.now(),
+                    });
+                    // Limit memory cache size
+                    if (memoryCacheRef.current.size > MAX_MEMORY_CACHE_SIZE) {
+                      const firstKey = memoryCacheRef.current
+                        .keys()
+                        .next().value;
+                      memoryCacheRef.current.delete(firstKey);
+                    }
+                    if (__DEV__) {
+                      console.log(
+                        '💾 Stored in memory cache (all cleanup failed):',
+                        cacheKey,
+                      );
+                    }
+                    return true; // Consider it "saved" in memory cache
+                  }
+                }
+              }
+            }
+          }
+        } else if (__DEV__) {
+          console.warn('⚠️ Error saving image cache:', error);
+        }
+
+        // If storage is known to be full, use memory cache as fallback
+        if (storageFullRef.current) {
+          memoryCacheRef.current.set(cacheKey, {
+            dataUri,
+            timestamp: Date.now(),
+          });
+          // Limit memory cache size
+          if (memoryCacheRef.current.size > MAX_MEMORY_CACHE_SIZE) {
+            const firstKey = memoryCacheRef.current.keys().next().value;
+            memoryCacheRef.current.delete(firstKey);
+          }
+          if (__DEV__) {
+            console.log(
+              '💾 Stored in memory cache (AsyncStorage disabled):',
+              cacheKey,
+            );
+          }
+          return true;
+        }
+
+        return false; // Failed
+      }
+    },
+    [cleanupImageCache],
+  );
 
   // Handle error state with better error messages
-  const error = queryError ? (queryError.data?.error || queryError.data?.message || queryError.message || 'Failed to load enquiry') : null;
+  const error = queryError
+    ? queryError.data?.error ||
+      queryError.data?.message ||
+      queryError.message ||
+      'Failed to load enquiry'
+    : null;
   const errorStatus = queryError?.status || queryError?.originalStatus;
 
   // Log error details for debugging
@@ -1188,27 +1384,51 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
   // Safety check - don't render if enquiry is not available
   if (error || !enquiry || !enquiry.id) {
     // Check if it's a 500 error (Internal Server Error)
-    const isServerError = errorStatus === 500 || error?.toLowerCase().includes('internal server error');
-    const isNotFound = errorStatus === 404 || error?.toLowerCase().includes('not found');
+    const isServerError =
+      errorStatus === 500 ||
+      error?.toLowerCase().includes('internal server error');
+    const isNotFound =
+      errorStatus === 404 || error?.toLowerCase().includes('not found');
 
     return (
       <View style={styles.container}>
         <View style={styles.errorContainer}>
           <Icon name="error-outline" size={48} color={colors.error} />
-          <Text style={[styles.errorText, { color: colors.textPrimary, fontSize: fonts.lg, marginTop: 16 }]}>
+          <Text
+            style={[
+              styles.errorText,
+              { color: colors.textPrimary, fontSize: fonts.lg, marginTop: 16 },
+            ]}
+          >
             {isServerError
               ? 'Server Error'
               : isNotFound
-                ? 'Enquiry Not Found'
-                : error || 'Failed to load enquiry'}
+              ? 'Enquiry Not Found'
+              : error || 'Failed to load enquiry'}
           </Text>
           {isServerError && (
-            <Text style={[styles.errorSubtext, { color: colors.textSecondary, fontSize: fonts.sm, marginTop: 8, textAlign: 'center', paddingHorizontal: 20 }]}>
+            <Text
+              style={[
+                styles.errorSubtext,
+                {
+                  color: colors.textSecondary,
+                  fontSize: fonts.sm,
+                  marginTop: 8,
+                  textAlign: 'center',
+                  paddingHorizontal: 20,
+                },
+              ]}
+            >
               The enquiry might still be saving. Please try again in a moment.
             </Text>
           )}
           {enquiryId && (
-            <Text style={[styles.errorSubtext, { color: colors.textLight, fontSize: fonts.xs, marginTop: 8 }]}>
+            <Text
+              style={[
+                styles.errorSubtext,
+                { color: colors.textLight, fontSize: fonts.xs, marginTop: 8 },
+              ]}
+            >
               Enquiry ID: {enquiryId}
             </Text>
           )}
@@ -1217,7 +1437,10 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
           <Button
             title="Retry"
             onPress={() => {
-              console.log('[SingleEnquiry] 🔄 Retrying fetch for enquiry:', enquiryId);
+              console.log(
+                '[SingleEnquiry] 🔄 Retrying fetch for enquiry:',
+                enquiryId,
+              );
               refetch();
             }}
             variant="primary"
@@ -1235,8 +1458,6 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
   }
 
   const handleApprove = () => {
-
-
     // Get available design versions
     const originalData = enquiry?._originalData || enquiry;
     const coralVersions = originalData?.Coral || enquiry?.Coral || [];
@@ -1247,23 +1468,26 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
     // Determine which design type and version to approve
     // Priority: Latest coral version, or latest cad version if no coral
     let designType = 'coral';
-    let versionIndex = coralVersions.length > 0 ? coralVersions.length - 1 : (cadVersions.length > 0 ? cadVersions.length - 1 : null);
+    let versionIndex =
+      coralVersions.length > 0
+        ? coralVersions.length - 1
+        : cadVersions.length > 0
+        ? cadVersions.length - 1
+        : null;
 
     if (coralVersions.length === 0 && cadVersions.length > 0) {
       designType = 'cad';
     }
 
     if (versionIndex === null) {
-
       Alert.alert('Error', 'No design versions available to approve');
       return;
     }
 
-    const version = designType === 'coral'
-      ? (coralVersions[versionIndex]?.Version || `Version ${versionIndex + 1}`)
-      : (cadVersions[versionIndex]?.Version || `Version ${versionIndex + 1}`);
-
-
+    const version =
+      designType === 'coral'
+        ? coralVersions[versionIndex]?.Version || `Version ${versionIndex + 1}`
+        : cadVersions[versionIndex]?.Version || `Version ${versionIndex + 1}`;
 
     Alert.alert(
       'Approve Design Version',
@@ -1272,19 +1496,13 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
         {
           text: 'Cancel',
           style: 'cancel',
-          onPress: () => {
-
-          }
+          onPress: () => {},
         },
         {
           text: 'Approve',
           onPress: async () => {
-
-
             try {
               const enquiryId = enquiry.id || enquiry._id;
-
-
 
               const result = await approveDesignVersion({
                 enquiryId,
@@ -1292,21 +1510,23 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
                 version,
               }).unwrap();
 
-
-
-              Alert.alert('Success', `${designType.toUpperCase()} ${version} approved successfully`);
+              Alert.alert(
+                'Success',
+                `${designType.toUpperCase()} ${version} approved successfully`,
+              );
               // Refetch enquiry data to get updated approval status
               refetch();
             } catch (error) {
-
               Alert.alert(
                 'Error',
-                error?.data?.error || error?.message || 'Failed to approve design version. Please try again.'
+                error?.data?.error ||
+                  error?.message ||
+                  'Failed to approve design version. Please try again.',
               );
             }
           },
         },
-      ]
+      ],
     );
   };
 
@@ -1318,7 +1538,12 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
 
     // Determine which design type and version to reject
     let designType = 'coral';
-    let versionIndex = coralVersions.length > 0 ? coralVersions.length - 1 : (cadVersions.length > 0 ? cadVersions.length - 1 : null);
+    let versionIndex =
+      coralVersions.length > 0
+        ? coralVersions.length - 1
+        : cadVersions.length > 0
+        ? cadVersions.length - 1
+        : null;
 
     if (coralVersions.length === 0 && cadVersions.length > 0) {
       designType = 'cad';
@@ -1348,16 +1573,19 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
 
     try {
       const originalData = enquiry?._originalData || enquiry;
-      const versions = selectedDesignType === 'coral'
-        ? (originalData?.Coral || enquiry?.Coral || [])
-        : (originalData?.Cad || enquiry?.Cad || []);
+      const versions =
+        selectedDesignType === 'coral'
+          ? originalData?.Coral || enquiry?.Coral || []
+          : originalData?.Cad || enquiry?.Cad || [];
 
       if (selectedVersionIndex >= versions.length) {
         Alert.alert('Error', 'Selected version not found');
         return;
       }
 
-      const version = versions[selectedVersionIndex]?.Version || `Version ${selectedVersionIndex + 1}`;
+      const version =
+        versions[selectedVersionIndex]?.Version ||
+        `Version ${selectedVersionIndex + 1}`;
       const enquiryId = enquiry.id || enquiry._id;
 
       await rejectDesignVersion({
@@ -1367,7 +1595,10 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
         reason: approvalMessage.trim(),
       }).unwrap();
 
-      Alert.alert('Success', `${selectedDesignType.toUpperCase()} ${version} rejected successfully`);
+      Alert.alert(
+        'Success',
+        `${selectedDesignType.toUpperCase()} ${version} rejected successfully`,
+      );
 
       // Reset state
       setShowApprovalModal(false);
@@ -1380,7 +1611,9 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
     } catch (error) {
       Alert.alert(
         'Error',
-        error?.data?.error || error?.message || 'Failed to reject design version. Please try again.'
+        error?.data?.error ||
+          error?.message ||
+          'Failed to reject design version. Please try again.',
       );
     }
   };
@@ -1402,7 +1635,10 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
   const handleUploadReferenceImages = () => {
     const currentEnquiryId = enquiry.id || enquiry._id;
     if (!currentEnquiryId) {
-      Alert.alert('Error', 'Unable to find this enquiry. Please refresh and try again.');
+      Alert.alert(
+        'Error',
+        'Unable to find this enquiry. Please refresh and try again.',
+      );
       return;
     }
 
@@ -1412,27 +1648,37 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
       includeBase64: false,
     };
 
-    launchImageLibrary(pickerOptions, async (response) => {
+    launchImageLibrary(pickerOptions, async response => {
       if (response.didCancel) {
         return;
       }
 
       if (response.errorCode) {
-        Alert.alert('Media Picker Error', response.errorMessage || 'Failed to open gallery. Please try again.');
+        Alert.alert(
+          'Media Picker Error',
+          response.errorMessage || 'Failed to open gallery. Please try again.',
+        );
         return;
       }
 
-      const assets = response.assets?.filter((asset) => asset?.uri) || [];
+      const assets = response.assets?.filter(asset => asset?.uri) || [];
       if (assets.length === 0) {
-        Alert.alert('No Media Selected', 'Please choose at least one reference image or video to upload.');
+        Alert.alert(
+          'No Media Selected',
+          'Please choose at least one reference image or video to upload.',
+        );
         return;
       }
 
       const imagesPayload = assets.map((asset, index) => {
         // Determine file extension based on type or file name
-        const isVideo = asset.type?.startsWith('video/') || /\.(mp4|mov|avi|mkv|webm|wmv|flv|3gp)$/i.test(asset.fileName || '');
+        const isVideo =
+          asset.type?.startsWith('video/') ||
+          /\.(mp4|mov|avi|mkv|webm|wmv|flv|3gp)$/i.test(asset.fileName || '');
         const defaultExtension = isVideo ? 'mp4' : 'jpg';
-        const defaultName = asset.fileName || `reference_${Date.now()}_${index}.${defaultExtension}`;
+        const defaultName =
+          asset.fileName ||
+          `reference_${Date.now()}_${index}.${defaultExtension}`;
 
         return {
           uri: asset.uri,
@@ -1447,7 +1693,10 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
           images: imagesPayload,
         }).unwrap();
 
-        Alert.alert('Success', 'Reference images/videos uploaded successfully.');
+        Alert.alert(
+          'Success',
+          'Reference images/videos uploaded successfully.',
+        );
         refetch();
       } catch (error) {
         const message =
@@ -1461,26 +1710,27 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
     });
   };
 
-  const hasDetailValue = (cell) => {
+  const hasDetailValue = cell => {
     if (!cell) return false;
     const value = cell.value;
-    const result = value !== null && value !== undefined && String(value).trim() !== '';
+    const result =
+      value !== null && value !== undefined && String(value).trim() !== '';
 
     // Debug: Log hasDetailValue check for Assigned To
     if (cell.label === 'Assigned To') {
       console.log('[SingleEnquiry] ✅ hasDetailValue check for Assigned To:', {
-        'cell': cell,
-        'value': value,
+        cell: cell,
+        value: value,
         'value type': typeof value,
         'String(value).trim()': String(value).trim(),
-        'result': result,
+        result: result,
       });
     }
 
     return result;
   };
 
-  const renderDetailCell = (cell) => {
+  const renderDetailCell = cell => {
     if (!cell) {
       return <View style={styles.detailCellPlaceholder} />;
     }
@@ -1490,12 +1740,14 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
     // Debug: Log renderDetailCell for Assigned To
     if (cell.label === 'Assigned To') {
       console.log('[SingleEnquiry] 🎨 renderDetailCell for Assigned To:', {
-        'cell': cell,
-        'valueExists': valueExists,
+        cell: cell,
+        valueExists: valueExists,
         'cell.showIfEmpty': cell.showIfEmpty,
-        'showAllDetails': showAllDetails,
+        showAllDetails: showAllDetails,
         'will render': valueExists || cell.showIfEmpty || showAllDetails,
-        'value to display': valueExists ? cell.value : (cell.placeholder ?? 'N/A'),
+        'value to display': valueExists
+          ? cell.value
+          : cell.placeholder ?? 'N/A',
       });
     }
 
@@ -1507,12 +1759,17 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
       <View style={styles.detailCell}>
         <View style={styles.detailCellLabelRow}>
           {cell.icon && (
-            <Icon name={cell.icon} size={14} color={colors.primary} style={styles.detailCellIcon} />
+            <Icon
+              name={cell.icon}
+              size={14}
+              color={colors.primary}
+              style={styles.detailCellIcon}
+            />
           )}
           <Text style={styles.detailCellLabel}>{cell.label}</Text>
         </View>
         <Text style={styles.detailCellValue}>
-          {valueExists ? cell.value : (cell.placeholder ?? 'N/A')}
+          {valueExists ? cell.value : cell.placeholder ?? 'N/A'}
         </Text>
       </View>
     );
@@ -1540,33 +1797,36 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
   };
 
   const renderEnquiryDetails = () => {
-
     // Extract metal details - check ALL possible locations (originalData, enquiry normalized, enquiry raw)
     const metal = originalData?.Metal || enquiry?.Metal || enquiry?.metal || {};
     const metalColor = metal.Color || metal.color || null;
     const metalQuality = metal.Quality || metal.quality || null;
 
     // Extract weights - check ALL possible locations with comprehensive fallback
-    const metalWeight = originalData?.MetalWeight ||
+    const metalWeight =
+      originalData?.MetalWeight ||
       enquiry?.MetalWeight ||
       enquiry?.metalWeight ||
       originalData?.metalWeight ||
       {};
-    const diamondWeight = originalData?.DiamondWeight ||
+    const diamondWeight =
+      originalData?.DiamondWeight ||
       enquiry?.DiamondWeight ||
       enquiry?.diamondWeight ||
       originalData?.diamondWeight ||
       {};
 
     // Extract other fields - comprehensive fallback chain
-    const styleNumber = originalData?.StyleNumber ||
+    const styleNumber =
+      originalData?.StyleNumber ||
       enquiry?.StyleNumber ||
       enquiry?.styleNumber ||
       originalData?.styleNumber ||
       null;
     // Extract Gati Order Number - check ALL possible locations and variations
     console.log('originalData-------gatiOrderNumber-->', originalData);
-    const gatiOrderNumber = originalData?.GatiOrderNumber ||
+    const gatiOrderNumber =
+      originalData?.GatiOrderNumber ||
       originalData?.gatiOrderNumber ||
       originalData?.Gati_Order_Number ||
       originalData?.gati_order_number ||
@@ -1578,42 +1838,50 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
       enquiry?.gati_order_number ||
       null;
 
-    const stamping = originalData?.Stamping ||
+    const stamping =
+      originalData?.Stamping ||
       enquiry?.Stamping ||
       enquiry?.stamping ||
       originalData?.stamping ||
       null;
-    const category = originalData?.Category ||
+    const category =
+      originalData?.Category ||
       enquiry?.Category ||
       enquiry?.category ||
       originalData?.category ||
       null;
-    const stoneType = originalData?.StoneType ||
+    const stoneType =
+      originalData?.StoneType ||
       enquiry?.StoneType ||
       enquiry?.stoneType ||
       originalData?.stoneType ||
       null;
-    const quantity = originalData?.Quantity ||
+    const quantity =
+      originalData?.Quantity ||
       enquiry?.Quantity ||
       enquiry?.quantity ||
       originalData?.quantity ||
       null;
-    const budget = originalData?.Budget ||
+    const budget =
+      originalData?.Budget ||
       enquiry?.Budget ||
       enquiry?.budget ||
       originalData?.budget ||
       null;
-    const specialRemarks = originalData?.SpecialRemarks ||
+    const specialRemarks =
+      originalData?.SpecialRemarks ||
       enquiry?.SpecialRemarks ||
       enquiry?.specialRemarks ||
       originalData?.specialRemarks ||
       null;
-    const approvedDate = originalData?.ApprovedDate ||
+    const approvedDate =
+      originalData?.ApprovedDate ||
       enquiry?.ApprovedDate ||
       enquiry?.approvedDate ||
       originalData?.approvedDate ||
       null;
-    const shippingDate = originalData?.ShippingDate ||
+    const shippingDate =
+      originalData?.ShippingDate ||
       enquiry?.ShippingDate ||
       enquiry?.deadline ||
       originalData?.deadline ||
@@ -1623,7 +1891,8 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
     let assignedTo = assignedToName;
 
     // Check if we need to look up the user manually
-    const needsLookup = !assignedTo ||
+    const needsLookup =
+      !assignedTo ||
       assignedTo === '-' ||
       assignedTo === assignedToId ||
       (assignedTo && assignedTo.startsWith('User ') && assignedToId);
@@ -1635,27 +1904,40 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
         const userId = String(u.id || u._id || '').trim();
         const userIdNoSpaces = userId.replace(/\s/g, '');
         const assignedToIdNoSpaces = assignedToIdStr.replace(/\s/g, '');
-        return userId === assignedToIdStr ||
+        return (
+          userId === assignedToIdStr ||
           userIdNoSpaces === assignedToIdNoSpaces ||
-          String(userId).toLowerCase() === assignedToIdStr.toLowerCase();
+          String(userId).toLowerCase() === assignedToIdStr.toLowerCase()
+        );
       });
 
       if (foundUser) {
-        assignedTo = foundUser.name || foundUser.Name || foundUser.email || foundUser.Email || assignedTo;
+        assignedTo =
+          foundUser.name ||
+          foundUser.Name ||
+          foundUser.email ||
+          foundUser.Email ||
+          assignedTo;
         console.log('[SingleEnquiry] ✅ Found user in usersList:', {
-          'userId': foundUser.id || foundUser._id,
-          'name': assignedTo
+          userId: foundUser.id || foundUser._id,
+          name: assignedTo,
         });
       }
     }
 
     // Final fallback - if still no name found but we have an ID
-    if ((!assignedTo || assignedTo === '-' || assignedTo === assignedToId) && assignedToId) {
+    if (
+      (!assignedTo || assignedTo === '-' || assignedTo === assignedToId) &&
+      assignedToId
+    ) {
       // If we have an assignedToId but no name, show a truncated ID instead of just '-'
       const idStr = String(assignedToId).trim();
       if (idStr.length > 8) {
         assignedTo = `User ${idStr.substring(0, 8)}...`;
-        console.log('[SingleEnquiry] ⚠️ Using truncated ID as fallback:', assignedTo);
+        console.log(
+          '[SingleEnquiry] ⚠️ Using truncated ID as fallback:',
+          assignedTo,
+        );
       } else {
         assignedTo = `User ${idStr}`;
         console.log('[SingleEnquiry] ⚠️ Using ID as fallback:', assignedTo);
@@ -1666,7 +1948,7 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
 
     // Debug: Log final assignedTo value being used for display
     console.log('[SingleEnquiry] 📋 Final AssignedTo for display:', {
-      'assignedToId': assignedToId,
+      assignedToId: assignedToId,
       'assignedToName (from hook)': assignedToName,
       'assignedTo (final)': assignedTo,
       'will display': assignedTo !== '-',
@@ -1689,7 +1971,9 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
     // Format diamond weight - only return value if exists, otherwise null (so field won't display)
     let diamondWeightText = null;
     if (diamondWeight.Exact || diamondWeight.exact) {
-      diamondWeightText = `Exact: ${diamondWeight.Exact || diamondWeight.exact} ct`;
+      diamondWeightText = `Exact: ${
+        diamondWeight.Exact || diamondWeight.exact
+      } ct`;
     } else if (diamondWeight.From || diamondWeight.from) {
       const from = diamondWeight.From || diamondWeight.from || '';
       const to = diamondWeight.To || diamondWeight.to || '';
@@ -1709,8 +1993,12 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
       console.log('[SingleEnquiry] Version structure check:', {
         coralVersionsCount: coralVersions.length,
         cadVersionsCount: cadVersions.length,
-        latestCoralVersion: coralVersions.length > 0 ? coralVersions[coralVersions.length - 1] : null,
-        latestCadVersion: cadVersions.length > 0 ? cadVersions[cadVersions.length - 1] : null,
+        latestCoralVersion:
+          coralVersions.length > 0
+            ? coralVersions[coralVersions.length - 1]
+            : null,
+        latestCadVersion:
+          cadVersions.length > 0 ? cadVersions[cadVersions.length - 1] : null,
         enquiryCoralCode: enquiry?.CoralCode,
         originalDataCoralCode: originalData?.CoralCode,
         enquiryCadCode: enquiry?.CadCode,
@@ -1719,11 +2007,12 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
     }
 
     // Helper function to extract code from a version object
-    const getCodeFromVersion = (version) => {
+    const getCodeFromVersion = version => {
       if (!version) return null;
 
       // Check all possible field names for code
-      const code = version.Code ||
+      const code =
+        version.Code ||
         version.code ||
         version.DesignCode ||
         version.designCode ||
@@ -1735,16 +2024,24 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
 
       // Debug logging in development
       if (__DEV__ && version && !code) {
-        console.log('[SingleEnquiry] Version object keys:', Object.keys(version));
-        console.log('[SingleEnquiry] Version object:', JSON.stringify(version, null, 2).substring(0, 500));
+        console.log(
+          '[SingleEnquiry] Version object keys:',
+          Object.keys(version),
+        );
+        console.log(
+          '[SingleEnquiry] Version object:',
+          JSON.stringify(version, null, 2).substring(0, 500),
+        );
       }
 
       return code;
     };
 
     // Get code from latest version (most recent)
-    const latestCoralVersion = coralVersions.length > 0 ? coralVersions[coralVersions.length - 1] : null;
-    const latestCadVersion = cadVersions.length > 0 ? cadVersions[cadVersions.length - 1] : null;
+    const latestCoralVersion =
+      coralVersions.length > 0 ? coralVersions[coralVersions.length - 1] : null;
+    const latestCadVersion =
+      cadVersions.length > 0 ? cadVersions[cadVersions.length - 1] : null;
 
     // Also check all versions to find any code (fallback if latest doesn't have one)
     let anyCoralCode = null;
@@ -1782,7 +2079,8 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
     }
 
     // Priority: Enquiry-level > Latest version > Any version
-    const coralCode = enquiry?.CoralCode ||
+    const coralCode =
+      enquiry?.CoralCode ||
       originalData?.CoralCode ||
       enquiry?.coralCode ||
       originalData?.coralCode ||
@@ -1792,7 +2090,8 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
       anyCoralCode ||
       'N/A';
 
-    const cadCode = enquiry?.CadCode ||
+    const cadCode =
+      enquiry?.CadCode ||
       originalData?.CadCode ||
       enquiry?.cadCode ||
       originalData?.cadCode ||
@@ -1807,20 +2106,44 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
         {/* Basic Information Card */}
         <Card style={styles.detailsCard}>
           <View style={styles.detailsHeader}>
-            <Text style={{ fontSize: 18, fontWeight: 'bold', color: colors.textPrimary, marginBottom: 8 }}>
-              {originalData?.Name || enquiry?.Name || enquiry?.title || 'Untitled Enquiry'}
+            <Text
+              style={{
+                fontSize: 18,
+                fontWeight: 'bold',
+                color: colors.textPrimary,
+                marginBottom: 8,
+              }}
+            >
+              {originalData?.Name ||
+                enquiry?.Name ||
+                enquiry?.title ||
+                'Untitled Enquiry'}
             </Text>
             <View style={styles.statusContainer}>
-              <View style={[styles.statusBadge, { backgroundColor: getStatusColor(status) }]}>
+              <View
+                style={[
+                  styles.statusBadge,
+                  { backgroundColor: getStatusColor(status) },
+                ]}
+              >
                 <Text
-                  style={{ color: colors.textWhite, fontSize: fonts.sm, textAlign: 'center' }}
+                  style={{
+                    color: colors.textWhite,
+                    fontSize: fonts.sm,
+                    textAlign: 'center',
+                  }}
                   numberOfLines={2}
                   adjustsFontSizeToFit={false}
                 >
                   {status.toUpperCase()}
                 </Text>
               </View>
-              <View style={[styles.priorityBadge, { backgroundColor: getPriorityColor(priority) }]}>
+              <View
+                style={[
+                  styles.priorityBadge,
+                  { backgroundColor: getPriorityColor(priority) },
+                ]}
+              >
                 <Text
                   style={{ color: colors.textWhite, fontSize: fonts.sm }}
                   numberOfLines={1}
@@ -1840,122 +2163,292 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
                 'assignedTo value': assignedTo,
                 'assignedTo type': typeof assignedTo,
                 'assignedTo === "-"': assignedTo === '-',
-                'assignedToId': assignedToId,
-                'assignedToName': assignedToName,
-                'showIfEmpty': true,
+                assignedToId: assignedToId,
+                assignedToName: assignedToName,
+                showIfEmpty: true,
               });
               return renderDetailRow(
                 { icon: 'person', label: 'Client', value: clientName },
-                { icon: 'supervisor-account', label: 'Assigned To', value: assignedTo, showIfEmpty: true }
+                {
+                  icon: 'supervisor-account',
+                  label: 'Assigned To',
+                  value: assignedTo,
+                  showIfEmpty: true,
+                },
               );
             })()}
           </View>
         </Card>
 
+        {/* Upload Coral/CAD buttons - Only for coral and cad roles */}
+        {(user?.role === 'coral' || user?.role === 'cad') && (
+          <View style={styles.UploadCoralCadd}>
+            {user?.role === 'coral' && (
+              <TouchableOpacity
+                style={[
+                  styles.adminActionButton,
+                  styles.adminActionButtonPrimary,
+                ]}
+                activeOpacity={0.85}
+                onPress={handleUploadCoral}
+              >
+                <Icon name="cloud-upload" size={18} color={colors.textWhite} />
+                <Text style={styles.adminActionText}>Upload Coral Design</Text>
+              </TouchableOpacity>
+            )}
+
+            {user?.role === 'cad' && (
+              <TouchableOpacity
+                style={[
+                  styles.adminActionButton,
+                  styles.adminActionButtonPrimary,
+                ]}
+                activeOpacity={0.85}
+                onPress={handleUploadCAD}
+              >
+                <Icon name="cloud-upload" size={18} color={colors.textWhite} />
+                <Text style={styles.adminActionText}>Upload CAD Design</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
         {/* Description Card - remarks + stamping */}
         <Card style={styles.detailsCard}>
-          <Text style={[styles.sectionTitle, { fontSize: 16, fontWeight: 'bold', color: colors.textPrimary, marginBottom: 12 }]}>
+          <Text
+            style={[
+              styles.sectionTitle,
+              {
+                fontSize: 16,
+                fontWeight: 'bold',
+                color: colors.textPrimary,
+                marginBottom: 12,
+              },
+            ]}
+          >
             Description
           </Text>
-          <Text style={[styles.descriptionText, { color: colors.textSecondary, fontSize: 13, lineHeight: 20 }]}>
-            {originalData?.Remarks || enquiry?.Remarks || enquiry?.description || 'No description available'}
+          <Text
+            style={[
+              styles.descriptionText,
+              { color: colors.textSecondary, fontSize: 13, lineHeight: 20 },
+            ]}
+          >
+            {originalData?.Remarks ||
+              enquiry?.Remarks ||
+              enquiry?.description ||
+              'No description available'}
           </Text>
           {renderDetailRow(
-            { icon: 'label', label: 'Stamping', value: stamping, showIfEmpty: true },
+            {
+              icon: 'label',
+              label: 'Stamping',
+              value: stamping,
+              showIfEmpty: true,
+            },
             null,
-            { showIfEmpty: !!stamping }
+            { showIfEmpty: !!stamping },
           )}
         </Card>
 
         {/* Special Remarks Card - Hidden for clients */}
-        {specialRemarks && user?.role?.toLowerCase() !== 'client' && user?.roleId !== 4 && user?.roleNumber !== 4 && (
-          <Card style={styles.detailsCard}>
-            <Text style={[styles.sectionTitle, { fontSize: 16, fontWeight: 'bold', color: colors.textPrimary, marginBottom: 12 }]}>
-              Special Remarks
-            </Text>
-            <Text style={[styles.descriptionText, { color: colors.textSecondary, fontSize: 13, lineHeight: 20 }]}>
-              {specialRemarks}
-            </Text>
-          </Card>
-        )}
+        {specialRemarks &&
+          user?.role?.toLowerCase() !== 'client' &&
+          user?.roleId !== 4 &&
+          user?.roleNumber !== 4 && (
+            <Card style={styles.detailsCard}>
+              <Text
+                style={[
+                  styles.sectionTitle,
+                  {
+                    fontSize: 16,
+                    fontWeight: 'bold',
+                    color: colors.textPrimary,
+                    marginBottom: 12,
+                  },
+                ]}
+              >
+                Special Remarks
+              </Text>
+              <Text
+                style={[
+                  styles.descriptionText,
+                  { color: colors.textSecondary, fontSize: 13, lineHeight: 20 },
+                ]}
+              >
+                {specialRemarks}
+              </Text>
+            </Card>
+          )}
 
         {/* Metal Details Card */}
         <Card style={styles.detailsCard}>
-          <Text style={[styles.sectionTitle, { fontSize: 16, fontWeight: 'bold', color: colors.textPrimary, marginBottom: 12 }]}>
+          <Text
+            style={[
+              styles.sectionTitle,
+              {
+                fontSize: 16,
+                fontWeight: 'bold',
+                color: colors.textPrimary,
+                marginBottom: 12,
+              },
+            ]}
+          >
             Metal Details
           </Text>
           <View style={styles.detailsGrid}>
             {renderDetailRow(
               { icon: 'palette', label: 'Metal Color', value: metalColor },
-              { icon: 'verified', label: 'Metal Quality', value: metalQuality }
+              { icon: 'verified', label: 'Metal Quality', value: metalQuality },
             )}
           </View>
         </Card>
 
         {/* Product Details Card */}
         <Card style={styles.detailsCard}>
-          <Text style={[styles.sectionTitle, { fontSize: 16, fontWeight: 'bold', color: colors.textPrimary, marginBottom: 12 }]}>
+          <Text
+            style={[
+              styles.sectionTitle,
+              {
+                fontSize: 16,
+                fontWeight: 'bold',
+                color: colors.textPrimary,
+                marginBottom: 12,
+              },
+            ]}
+          >
             Product Details
           </Text>
           <View style={styles.detailsGrid}>
             {renderDetailRow(
               { icon: 'category', label: 'Category', value: category },
-              { icon: 'inventory', label: 'Quantity', value: quantity ? `${quantity}` : null }
+              {
+                icon: 'inventory',
+                label: 'Quantity',
+                value: quantity ? `${quantity}` : null,
+              },
             )}
             {/* Budget - Only visible to Client and Admin */}
-            {(user?.role === 'client' || user?.role === 'admin') && budget && (
+            {(user?.role === 'client' || user?.role === 'admin') &&
+              budget &&
               renderDetailRow(
-                { icon: 'account-balance-wallet', label: 'Budget', value: budget ? `${budget}` : null },
-                null
-              )
-            )}
+                {
+                  icon: 'account-balance-wallet',
+                  label: 'Budget',
+                  value: budget ? `${budget}` : null,
+                },
+                null,
+              )}
             {renderDetailRow(
               { icon: 'grain', label: 'Stone Type', value: stoneType },
-              { icon: 'label', label: 'Style Number', value: styleNumber }
+              { icon: 'label', label: 'Style Number', value: styleNumber },
             )}
             {renderDetailRow(
               { icon: 'scale', label: 'Metal Weight', value: metalWeightText },
-              { icon: 'grain', label: 'Diamond Weight', value: diamondWeightText }
+              {
+                icon: 'grain',
+                label: 'Diamond Weight',
+                value: diamondWeightText,
+              },
             )}
             {renderDetailRow(
-              { icon: 'label', label: 'Stamping', value: stamping, showIfEmpty: true },
-              { icon: 'receipt', label: 'Gati Order Number', value: gatiOrderNumber, showIfEmpty: true },
-              { showIfEmpty: !!stamping || !!gatiOrderNumber }
+              {
+                icon: 'label',
+                label: 'Stamping',
+                value: stamping,
+                showIfEmpty: true,
+              },
+              {
+                icon: 'receipt',
+                label: 'Gati Order Number',
+                value: gatiOrderNumber,
+                showIfEmpty: true,
+              },
+              { showIfEmpty: !!stamping || !!gatiOrderNumber },
             )}
           </View>
         </Card>
 
         {/* Dates Card */}
         <Card style={styles.detailsCard}>
-          <Text style={[styles.sectionTitle, { fontSize: 16, fontWeight: 'bold', color: colors.textPrimary, marginBottom: 12 }]}>
+          <Text
+            style={[
+              styles.sectionTitle,
+              {
+                fontSize: 16,
+                fontWeight: 'bold',
+                color: colors.textPrimary,
+                marginBottom: 12,
+              },
+            ]}
+          >
             Dates
           </Text>
           <View style={styles.detailsGrid}>
             {renderDetailRow(
-              { icon: 'schedule', label: 'Created', value: formatDate(createdAt) },
-              { icon: 'update', label: 'Last Updated', value: formatDate(updatedAt) }
+              {
+                icon: 'schedule',
+                label: 'Created',
+                value: formatDate(createdAt),
+              },
+              {
+                icon: 'update',
+                label: 'Last Updated',
+                value: formatDate(updatedAt),
+              },
             )}
             {renderDetailRow(
-              { icon: 'calendar-today', label: 'Shipping Date', value: shippingDate ? formatDate(shippingDate) : null },
-              { icon: 'check-circle', label: 'Approved Date', value: (approvedDate && (user?.role?.toLowerCase() !== 'client' && user?.roleId !== 4 && user?.roleNumber !== 4)) ? formatDate(approvedDate) : null }
+              {
+                icon: 'calendar-today',
+                label: 'Shipping Date',
+                value: shippingDate ? formatDate(shippingDate) : null,
+              },
+              {
+                icon: 'check-circle',
+                label: 'Approved Date',
+                value:
+                  approvedDate &&
+                  user?.role?.toLowerCase() !== 'client' &&
+                  user?.roleId !== 4 &&
+                  user?.roleNumber !== 4
+                    ? formatDate(approvedDate)
+                    : null,
+              },
             )}
           </View>
         </Card>
 
         {/* Assignment & Codes Card (for admin/viewing) */}
-        {((assignedTo && assignedTo !== '-') || (coralCode && coralCode !== 'N/A') || (cadCode && cadCode !== 'N/A')) && (
+        {((assignedTo && assignedTo !== '-') ||
+          (coralCode && coralCode !== 'N/A') ||
+          (cadCode && cadCode !== 'N/A')) && (
           <Card style={styles.detailsCard}>
-            <Text style={[styles.sectionTitle, { fontSize: 16, fontWeight: 'bold', color: colors.textPrimary, marginBottom: 12 }]}>
+            <Text
+              style={[
+                styles.sectionTitle,
+                {
+                  fontSize: 16,
+                  fontWeight: 'bold',
+                  color: colors.textPrimary,
+                  marginBottom: 12,
+                },
+              ]}
+            >
               Assignment & Codes
             </Text>
             <View style={styles.detailsGrid}>
               {renderDetailRow(
-                { icon: 'person', label: 'Assigned To', value: assignedTo || '-', showIfEmpty: true },
-                { icon: 'description', label: 'Coral Code', value: coralCode }
+                {
+                  icon: 'person',
+                  label: 'Assigned To',
+                  value: assignedTo || '-',
+                  showIfEmpty: true,
+                },
+                { icon: 'description', label: 'Coral Code', value: coralCode },
               )}
               {renderDetailRow(
                 { icon: 'description', label: 'CAD Code', value: cadCode },
-                null
+                null,
               )}
             </View>
           </Card>
@@ -1968,7 +2461,11 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
   // This is a regular function, not a hook, so it can be called conditionally
   const isVideoFile = (imageKey, imageUri, image) => {
     // First check for explicit video flag (set when merging ReferenceVideos)
-    if (image && typeof image === 'object' && (image._isVideo === true || image.isVideo === true)) {
+    if (
+      image &&
+      typeof image === 'object' &&
+      (image._isVideo === true || image.isVideo === true)
+    ) {
       return true;
     }
 
@@ -1990,13 +2487,28 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
 
     // Check mime type from image object
     if (image && typeof image === 'object') {
-      const contentType = image.ContentType || image.contentType || image.Type || image.type || image.MimeType || image.mimeType;
-      if (contentType && typeof contentType === 'string' && contentType.startsWith('video/')) {
+      const contentType =
+        image.ContentType ||
+        image.contentType ||
+        image.Type ||
+        image.type ||
+        image.MimeType ||
+        image.mimeType;
+      if (
+        contentType &&
+        typeof contentType === 'string' &&
+        contentType.startsWith('video/')
+      ) {
         return true;
       }
 
       // Check if it's from ReferenceVideos field (backend might mark it)
-      if (image.FileType === 'video' || image.fileType === 'video' || image.MediaType === 'video' || image.mediaType === 'video') {
+      if (
+        image.FileType === 'video' ||
+        image.fileType === 'video' ||
+        image.MediaType === 'video' ||
+        image.mediaType === 'video'
+      ) {
         return true;
       }
     }
@@ -2005,523 +2517,632 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
   };
 
   // Component to render video with fetch authentication
-  const VideoWithFallback = React.memo(({ image, imageKey, imageId, imageUri, index, onPress }) => {
-    const [videoUrl, setVideoUrl] = useState(null);
-    const [videoLoading, setVideoLoading] = useState(false);
-    const [videoError, setVideoError] = useState(false);
-    const videoRef = useRef(null);
-    const mountedRef = useRef(true);
+  const VideoWithFallback = React.memo(
+    ({ image, imageKey, imageId, imageUri, index, onPress }) => {
+      const [videoUrl, setVideoUrl] = useState(null);
+      const [videoLoading, setVideoLoading] = useState(false);
+      const [videoError, setVideoError] = useState(false);
+      const videoRef = useRef(null);
+      const mountedRef = useRef(true);
 
-    useEffect(() => {
-      mountedRef.current = true;
-      return () => {
-        mountedRef.current = false;
-      };
-    }, []);
+      useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+          mountedRef.current = false;
+        };
+      }, []);
 
-    // Fetch video URL with authentication
-    const fetchVideoUrl = useCallback(async () => {
-      if (!mountedRef.current) return;
-
-      let videoUrlToUse = null;
-
-      // If we have a direct URI, use it
-      if (imageUri && (imageUri.startsWith('http') || imageUri.startsWith('https'))) {
-        videoUrlToUse = imageUri;
-      } else if (imageKey) {
-        // Fetch presigned URL from API
-        try {
-          setVideoLoading(true);
-          setVideoError(false);
-
-          const token = await AsyncStorage.getItem('token');
-          if (!token) {
-            setVideoError(true);
-            setVideoLoading(false);
-            return;
-          }
-
-          const encodedKey = encodeURIComponent(imageKey);
-          const response = await fetch(`${API_BASE_URL}/api/enquiries/files/${encodedKey}`, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-            },
-          });
-
-          if (response.ok) {
-            const contentType = response.headers.get('content-type') || '';
-
-            // Check if response is JSON (presigned URL)
-            if (contentType.includes('application/json')) {
-              const jsonData = await response.json();
-              videoUrlToUse = jsonData.url || jsonData.videoUrl || jsonData.src || jsonData.location;
-            } else {
-              // Direct video response - create blob URL
-              const blob = await response.blob();
-              videoUrlToUse = URL.createObjectURL(blob);
-            }
-          } else {
-            setVideoError(true);
-            setVideoLoading(false);
-            return;
-          }
-        } catch (error) {
-          setVideoError(true);
-          setVideoLoading(false);
-          return;
-        }
-      } else if (imageId) {
-        try {
-          setVideoLoading(true);
-          setVideoError(false);
-
-          const token = await AsyncStorage.getItem('token');
-          if (!token) {
-            setVideoError(true);
-            setVideoLoading(false);
-            return;
-          }
-
-          const response = await fetch(`${API_BASE_URL}/api/enquiries/files/${imageId}`, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-            },
-          });
-
-          if (response.ok) {
-            const contentType = response.headers.get('content-type') || '';
-            if (contentType.includes('application/json')) {
-              const jsonData = await response.json();
-              videoUrlToUse = jsonData.url || jsonData.videoUrl || jsonData.src || jsonData.location;
-            }
-          } else {
-            setVideoError(true);
-            setVideoLoading(false);
-            return;
-          }
-        } catch (error) {
-          setVideoError(true);
-          setVideoLoading(false);
-          return;
-        }
-      }
-
-      if (videoUrlToUse && mountedRef.current) {
-        setVideoUrl(videoUrlToUse);
-        setVideoLoading(false);
-        setVideoError(false);
-      } else if (mountedRef.current) {
-        setVideoError(true);
-        setVideoLoading(false);
-      }
-    }, [imageKey, imageId, imageUri]);
-
-    useEffect(() => {
-      fetchVideoUrl();
-    }, [fetchVideoUrl]);
-
-    if (videoError) {
-      return (
-        <View style={styles.videoContainer}>
-          <View style={styles.videoPlaceholder}>
-            <Icon name="videocam-off" size={24} color={colors.textSecondary} />
-            <Text style={styles.videoErrorText}>Video unavailable</Text>
-          </View>
-        </View>
-      );
-    }
-
-    if (videoLoading || !videoUrl) {
-      return (
-        <View style={styles.videoContainer}>
-          <View style={styles.videoPlaceholder}>
-            <AnimatedLogoLoader size="small" />
-            <Text style={styles.videoLoadingText}>Loading video...</Text>
-          </View>
-        </View>
-      );
-    }
-
-    return (
-      <TouchableOpacity
-        style={styles.videoContainer}
-        activeOpacity={0.9}
-        onPress={() => {
-          if (onPress && videoUrl) {
-            onPress(videoUrl);
-          }
-        }}
-      >
-        <Video
-          ref={videoRef}
-          source={{ uri: videoUrl }}
-          style={styles.referenceVideo}
-          controls={false}
-          resizeMode="cover"
-          paused={true}
-          onError={(error) => {
-            setVideoError(true);
-          }}
-        />
-        <View style={styles.videoPlayOverlay}>
-          <Icon name="play-circle-filled" size={48} color={colors.textWhite} />
-        </View>
-      </TouchableOpacity>
-    );
-  }, (prevProps, nextProps) => {
-    return (
-      prevProps.imageKey === nextProps.imageKey &&
-      prevProps.imageId === nextProps.imageId &&
-      prevProps.imageUri === nextProps.imageUri &&
-      prevProps.index === nextProps.index
-    );
-  });
-
-  // Component to render image with fetch authentication and caching
-  const ImageWithFallback = React.memo(({ image, imageKey, imageId, imageUri, index, onPress, initialDataUri }) => {
-    const [imageDataUri, setImageDataUri] = useState(initialDataUri || null);
-    const [imageLoading, setImageLoading] = useState(false);
-    const [imageError, setImageError] = useState(false);
-
-    const lastImageKeyRef = useRef(null);
-    const isFetchingRef = useRef(false);
-    const mountedRef = useRef(true);
-
-    // Reset mounted flag on mount
-    useEffect(() => {
-      mountedRef.current = true;
-      return () => {
-        mountedRef.current = false;
-      };
-    }, []);
-
-    useEffect(() => {
-      if (initialDataUri && initialDataUri !== imageDataUri) {
-        setImageDataUri(initialDataUri);
-        setImageLoading(false);
-        setImageError(false);
-      }
-    }, [initialDataUri, imageDataUri, index]);
-
-    // Fetch image with authentication and caching
-    const fetchImageWithAuth = useCallback(async (imageUrl, cacheKey) => {
-      if (!imageUrl) {
-        return;
-      }
-
-      // Don't fetch if we already have the data URI
-      if (imageDataUri) {
-        return;
-      }
-
-      // Don't fetch if already fetching (prevent duplicate requests)
-      if (isFetchingRef.current) {
-        return;
-      }
-
-      isFetchingRef.current = true;
-
-      try {
-        setImageLoading(true);
-        setImageError(false);
-
-        const token = await AsyncStorage.getItem('token');
-        if (!token) {
-          setImageError(true);
-          setImageLoading(false);
-          return;
-        }
-
-
-        const response = await fetch(imageUrl, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-        });
-
-        if (response.ok) {
-          const contentType = response.headers.get('content-type') || '';
-
-          // Check if response is JSON (API returns a URL object)
-          if (contentType.includes('application/json')) {
-            const jsonData = await response.json();
-
-            // Extract the actual image URL from JSON
-            const actualImageUrl = jsonData.url || jsonData.imageUrl || jsonData.src || jsonData.location;
-
-            if (!actualImageUrl) {
-              setImageError(true);
-              setImageLoading(false);
-              return;
-            }
-
-
-            // Fetch the actual image from the URL (likely S3)
-            const imageResponse = await fetch(actualImageUrl, {
-              method: 'GET',
-              headers: actualImageUrl.includes('amazonaws.com') ? {} : {
-                'Authorization': `Bearer ${token}`,
-              },
-            });
-
-            if (!imageResponse.ok) {
-              setImageError(true);
-              setImageLoading(false);
-              return;
-            }
-
-            const arrayBuffer = await imageResponse.arrayBuffer();
-
-            // Convert arrayBuffer to base64
-            const bytes = new Uint8Array(arrayBuffer);
-            let binary = '';
-            const chunkSize = 8192;
-
-            for (let i = 0; i < bytes.length; i += chunkSize) {
-              const chunk = bytes.subarray(i, i + chunkSize);
-              binary += String.fromCharCode.apply(null, chunk);
-            }
-
-            let base64;
-            try {
-              base64 = btoa(binary);
-            } catch (e) {
-              if (typeof Buffer !== 'undefined') {
-                base64 = Buffer.from(binary, 'binary').toString('base64');
-              } else {
-                throw new Error('Unable to convert to base64');
-              }
-            }
-
-            const imageContentType = imageResponse.headers.get('content-type') || 'image/jpeg';
-            const dataUri = `data:${imageContentType};base64,${base64}`;
-
-            // Save to cache (fire-and-forget, don't block on storage errors)
-            if (cacheKey) {
-              memoryCacheRef.current.set(cacheKey, {
-                dataUri,
-                timestamp: Date.now(),
-              });
-              if (memoryCacheRef.current.size > MAX_MEMORY_CACHE_SIZE) {
-                const firstKey = memoryCacheRef.current.keys().next().value;
-                memoryCacheRef.current.delete(firstKey);
-              }
-              saveImageToCache(cacheKey, dataUri).catch(() => {
-                // Silently fail - cache is optional
-              });
-            }
-
-            setImageDataUri(dataUri);
-            setImageLoading(false);
-            setImageError(false);
-          } else {
-            // Direct image response
-
-            const arrayBuffer = await response.arrayBuffer();
-            const bytes = new Uint8Array(arrayBuffer);
-            let binary = '';
-            const chunkSize = 8192;
-
-            for (let i = 0; i < bytes.length; i += chunkSize) {
-              const chunk = bytes.subarray(i, i + chunkSize);
-              binary += String.fromCharCode.apply(null, chunk);
-            }
-
-            let base64;
-            try {
-              base64 = btoa(binary);
-            } catch (e) {
-              if (typeof Buffer !== 'undefined') {
-                base64 = Buffer.from(binary, 'binary').toString('base64');
-              } else {
-                throw new Error('Unable to convert to base64');
-              }
-            }
-
-            const imageContentType = contentType || 'image/jpeg';
-            const dataUri = `data:${imageContentType};base64,${base64}`;
-
-            // Save to cache (fire-and-forget, don't block on storage errors)
-            if (cacheKey) {
-              memoryCacheRef.current.set(cacheKey, {
-                dataUri,
-                timestamp: Date.now(),
-              });
-              if (memoryCacheRef.current.size > MAX_MEMORY_CACHE_SIZE) {
-                const firstKey = memoryCacheRef.current.keys().next().value;
-                memoryCacheRef.current.delete(firstKey);
-              }
-              saveImageToCache(cacheKey, dataUri).catch(() => {
-                // Silently fail - cache is optional
-              });
-            }
-
-            setImageDataUri(dataUri);
-            setImageLoading(false);
-            setImageError(false);
-          }
-        } else {
-          setImageError(true);
-          setImageLoading(false);
-        }
-      } catch (error) {
-        if (__DEV__) {
-          console.error(`[ImageWithFallback] Fetch error:`, error.message);
-        }
-        setImageError(true);
-        setImageLoading(false);
-      } finally {
-        isFetchingRef.current = false;
-      }
-    }, [imageDataUri, getCachedImage, saveImageToCache]);
-
-    useEffect(() => {
-      // Generate unique key for this image
-      const currentImageKey = imageKey || imageId || imageUri || `image_${index}`;
-
-      // If a preloaded URI is provided, use it immediately and skip further work
-      if (initialDataUri) {
-        lastImageKeyRef.current = currentImageKey;
-        setImageDataUri(initialDataUri);
-        setImageLoading(false);
-        setImageError(false);
-        return;
-      }
-
-      // Generate image URL and cache key first
-      let imageUrl = null;
-      const cacheKey = getImageCacheKey(imageKey, imageId, imageUri);
-
-      if (imageUri && (imageUri.startsWith('http') || imageUri.startsWith('https'))) {
-        imageUrl = imageUri;
-      } else if (imageKey) {
-        const encodedKey = encodeURIComponent(imageKey);
-        imageUrl = `${API_BASE_URL}/api/enquiries/files/${encodedKey}`;
-      } else if (imageId) {
-        imageUrl = `${API_BASE_URL}/api/enquiries/files/${imageId}`;
-      }
-
-      if (!imageUrl) {
-        setImageError(true);
-        return;
-      }
-
-      // Check if this is the same image we already loaded
-      if (lastImageKeyRef.current === currentImageKey && imageDataUri) {
-        return;
-      }
-
-      // Check memory cache FIRST (synchronously, before any async operations)
-      if (cacheKey && memoryCacheRef.current.has(cacheKey)) {
-        const cached = memoryCacheRef.current.get(cacheKey);
-        const cacheAge = Date.now() - (cached.timestamp || 0);
-        const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days
-        if (cacheAge < maxAge) {
-          lastImageKeyRef.current = currentImageKey;
-          setImageDataUri(cached.dataUri);
-          setImageLoading(false);
-          setImageError(false);
-          return; // Exit early - found in memory cache
-        } else {
-          memoryCacheRef.current.delete(cacheKey);
-        }
-      }
-
-      // Check cache (AsyncStorage) and fetch if needed
-      const loadImage = async () => {
+      // Fetch video URL with authentication
+      const fetchVideoUrl = useCallback(async () => {
         if (!mountedRef.current) return;
 
-        // Try AsyncStorage cache (if not in memory-only mode)
-        if (cacheKey && !storageFullRef.current) {
+        let videoUrlToUse = null;
+
+        // If we have a direct URI, use it
+        if (
+          imageUri &&
+          (imageUri.startsWith('http') || imageUri.startsWith('https'))
+        ) {
+          videoUrlToUse = imageUri;
+        } else if (imageKey) {
+          // Fetch presigned URL from API
           try {
-            const cached = await getCachedImage(cacheKey);
-            if (cached && mountedRef.current) {
-              // Store in memory cache for faster access next time
-              memoryCacheRef.current.set(cacheKey, {
-                dataUri: cached,
-                timestamp: Date.now(),
-              });
-              // Cache hit - set directly without loading state
-              lastImageKeyRef.current = currentImageKey;
-              setImageDataUri(cached);
-              setImageLoading(false);
-              setImageError(false);
+            setVideoLoading(true);
+            setVideoError(false);
+
+            const token = await AsyncStorage.getItem('token');
+            if (!token) {
+              setVideoError(true);
+              setVideoLoading(false);
+              return;
+            }
+
+            const encodedKey = encodeURIComponent(imageKey);
+            const response = await fetch(
+              `${API_BASE_URL}/api/enquiries/files/${encodedKey}`,
+              {
+                method: 'GET',
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                },
+              },
+            );
+
+            if (response.ok) {
+              const contentType = response.headers.get('content-type') || '';
+
+              // Check if response is JSON (presigned URL)
+              if (contentType.includes('application/json')) {
+                const jsonData = await response.json();
+                videoUrlToUse =
+                  jsonData.url ||
+                  jsonData.videoUrl ||
+                  jsonData.src ||
+                  jsonData.location;
+              } else {
+                // Direct video response - create blob URL
+                const blob = await response.blob();
+                videoUrlToUse = URL.createObjectURL(blob);
+              }
+            } else {
+              setVideoError(true);
+              setVideoLoading(false);
               return;
             }
           } catch (error) {
-            // Cache read failed, continue with fetch
-            if (__DEV__) {
-              console.error(`[ImageWithFallback] Cache read error:`, error.message);
+            setVideoError(true);
+            setVideoLoading(false);
+            return;
+          }
+        } else if (imageId) {
+          try {
+            setVideoLoading(true);
+            setVideoError(false);
+
+            const token = await AsyncStorage.getItem('token');
+            if (!token) {
+              setVideoError(true);
+              setVideoLoading(false);
+              return;
             }
+
+            const response = await fetch(
+              `${API_BASE_URL}/api/enquiries/files/${imageId}`,
+              {
+                method: 'GET',
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                },
+              },
+            );
+
+            if (response.ok) {
+              const contentType = response.headers.get('content-type') || '';
+              if (contentType.includes('application/json')) {
+                const jsonData = await response.json();
+                videoUrlToUse =
+                  jsonData.url ||
+                  jsonData.videoUrl ||
+                  jsonData.src ||
+                  jsonData.location;
+              }
+            } else {
+              setVideoError(true);
+              setVideoLoading(false);
+              return;
+            }
+          } catch (error) {
+            setVideoError(true);
+            setVideoLoading(false);
+            return;
           }
         }
 
-        // Cache miss - reset state and fetch
-        if (!mountedRef.current) {
+        if (videoUrlToUse && mountedRef.current) {
+          setVideoUrl(videoUrlToUse);
+          setVideoLoading(false);
+          setVideoError(false);
+        } else if (mountedRef.current) {
+          setVideoError(true);
+          setVideoLoading(false);
+        }
+      }, [imageKey, imageId, imageUri]);
+
+      useEffect(() => {
+        fetchVideoUrl();
+      }, [fetchVideoUrl]);
+
+      if (videoError) {
+        return (
+          <View style={styles.videoContainer}>
+            <View style={styles.videoPlaceholder}>
+              <Icon
+                name="videocam-off"
+                size={24}
+                color={colors.textSecondary}
+              />
+              <Text style={styles.videoErrorText}>Video unavailable</Text>
+            </View>
+          </View>
+        );
+      }
+
+      if (videoLoading || !videoUrl) {
+        return (
+          <View style={styles.videoContainer}>
+            <View style={styles.videoPlaceholder}>
+              <AnimatedLogoLoader size="small" />
+              <Text style={styles.videoLoadingText}>Loading video...</Text>
+            </View>
+          </View>
+        );
+      }
+
+      return (
+        <TouchableOpacity
+          style={styles.videoContainer}
+          activeOpacity={0.9}
+          onPress={() => {
+            if (onPress && videoUrl) {
+              onPress(videoUrl);
+            }
+          }}
+        >
+          <Video
+            ref={videoRef}
+            source={{ uri: videoUrl }}
+            style={styles.referenceVideo}
+            controls={false}
+            resizeMode="cover"
+            paused={true}
+            onError={error => {
+              setVideoError(true);
+            }}
+          />
+          <View style={styles.videoPlayOverlay}>
+            <Icon
+              name="play-circle-filled"
+              size={48}
+              color={colors.textWhite}
+            />
+          </View>
+        </TouchableOpacity>
+      );
+    },
+    (prevProps, nextProps) => {
+      return (
+        prevProps.imageKey === nextProps.imageKey &&
+        prevProps.imageId === nextProps.imageId &&
+        prevProps.imageUri === nextProps.imageUri &&
+        prevProps.index === nextProps.index
+      );
+    },
+  );
+
+  // Component to render image with fetch authentication and caching
+  const ImageWithFallback = React.memo(
+    ({
+      image,
+      imageKey,
+      imageId,
+      imageUri,
+      index,
+      onPress,
+      initialDataUri,
+    }) => {
+      const [imageDataUri, setImageDataUri] = useState(initialDataUri || null);
+      const [imageLoading, setImageLoading] = useState(false);
+      const [imageError, setImageError] = useState(false);
+
+      const lastImageKeyRef = useRef(null);
+      const isFetchingRef = useRef(false);
+      const mountedRef = useRef(true);
+
+      // Reset mounted flag on mount
+      useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+          mountedRef.current = false;
+        };
+      }, []);
+
+      useEffect(() => {
+        if (initialDataUri && initialDataUri !== imageDataUri) {
+          setImageDataUri(initialDataUri);
+          setImageLoading(false);
+          setImageError(false);
+        }
+      }, [initialDataUri, imageDataUri, index]);
+
+      // Fetch image with authentication and caching
+      const fetchImageWithAuth = useCallback(
+        async (imageUrl, cacheKey) => {
+          if (!imageUrl) {
+            return;
+          }
+
+          // Don't fetch if we already have the data URI
+          if (imageDataUri) {
+            return;
+          }
+
+          // Don't fetch if already fetching (prevent duplicate requests)
+          if (isFetchingRef.current) {
+            return;
+          }
+
+          isFetchingRef.current = true;
+
+          try {
+            setImageLoading(true);
+            setImageError(false);
+
+            const token = await AsyncStorage.getItem('token');
+            if (!token) {
+              setImageError(true);
+              setImageLoading(false);
+              return;
+            }
+
+            const response = await fetch(imageUrl, {
+              method: 'GET',
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            });
+
+            if (response.ok) {
+              const contentType = response.headers.get('content-type') || '';
+
+              // Check if response is JSON (API returns a URL object)
+              if (contentType.includes('application/json')) {
+                const jsonData = await response.json();
+
+                // Extract the actual image URL from JSON
+                const actualImageUrl =
+                  jsonData.url ||
+                  jsonData.imageUrl ||
+                  jsonData.src ||
+                  jsonData.location;
+
+                if (!actualImageUrl) {
+                  setImageError(true);
+                  setImageLoading(false);
+                  return;
+                }
+
+                // Fetch the actual image from the URL (likely S3)
+                const imageResponse = await fetch(actualImageUrl, {
+                  method: 'GET',
+                  headers: actualImageUrl.includes('amazonaws.com')
+                    ? {}
+                    : {
+                        Authorization: `Bearer ${token}`,
+                      },
+                });
+
+                if (!imageResponse.ok) {
+                  setImageError(true);
+                  setImageLoading(false);
+                  return;
+                }
+
+                const arrayBuffer = await imageResponse.arrayBuffer();
+
+                // Convert arrayBuffer to base64
+                const bytes = new Uint8Array(arrayBuffer);
+                let binary = '';
+                const chunkSize = 8192;
+
+                for (let i = 0; i < bytes.length; i += chunkSize) {
+                  const chunk = bytes.subarray(i, i + chunkSize);
+                  binary += String.fromCharCode.apply(null, chunk);
+                }
+
+                let base64;
+                try {
+                  base64 = btoa(binary);
+                } catch (e) {
+                  if (typeof Buffer !== 'undefined') {
+                    base64 = Buffer.from(binary, 'binary').toString('base64');
+                  } else {
+                    throw new Error('Unable to convert to base64');
+                  }
+                }
+
+                const imageContentType =
+                  imageResponse.headers.get('content-type') || 'image/jpeg';
+                const dataUri = `data:${imageContentType};base64,${base64}`;
+
+                // Save to cache (fire-and-forget, don't block on storage errors)
+                if (cacheKey) {
+                  memoryCacheRef.current.set(cacheKey, {
+                    dataUri,
+                    timestamp: Date.now(),
+                  });
+                  if (memoryCacheRef.current.size > MAX_MEMORY_CACHE_SIZE) {
+                    const firstKey = memoryCacheRef.current.keys().next().value;
+                    memoryCacheRef.current.delete(firstKey);
+                  }
+                  saveImageToCache(cacheKey, dataUri).catch(() => {
+                    // Silently fail - cache is optional
+                  });
+                }
+
+                setImageDataUri(dataUri);
+                setImageLoading(false);
+                setImageError(false);
+              } else {
+                // Direct image response
+
+                const arrayBuffer = await response.arrayBuffer();
+                const bytes = new Uint8Array(arrayBuffer);
+                let binary = '';
+                const chunkSize = 8192;
+
+                for (let i = 0; i < bytes.length; i += chunkSize) {
+                  const chunk = bytes.subarray(i, i + chunkSize);
+                  binary += String.fromCharCode.apply(null, chunk);
+                }
+
+                let base64;
+                try {
+                  base64 = btoa(binary);
+                } catch (e) {
+                  if (typeof Buffer !== 'undefined') {
+                    base64 = Buffer.from(binary, 'binary').toString('base64');
+                  } else {
+                    throw new Error('Unable to convert to base64');
+                  }
+                }
+
+                const imageContentType = contentType || 'image/jpeg';
+                const dataUri = `data:${imageContentType};base64,${base64}`;
+
+                // Save to cache (fire-and-forget, don't block on storage errors)
+                if (cacheKey) {
+                  memoryCacheRef.current.set(cacheKey, {
+                    dataUri,
+                    timestamp: Date.now(),
+                  });
+                  if (memoryCacheRef.current.size > MAX_MEMORY_CACHE_SIZE) {
+                    const firstKey = memoryCacheRef.current.keys().next().value;
+                    memoryCacheRef.current.delete(firstKey);
+                  }
+                  saveImageToCache(cacheKey, dataUri).catch(() => {
+                    // Silently fail - cache is optional
+                  });
+                }
+
+                setImageDataUri(dataUri);
+                setImageLoading(false);
+                setImageError(false);
+              }
+            } else {
+              setImageError(true);
+              setImageLoading(false);
+            }
+          } catch (error) {
+            if (__DEV__) {
+              console.error(`[ImageWithFallback] Fetch error:`, error.message);
+            }
+            setImageError(true);
+            setImageLoading(false);
+          } finally {
+            isFetchingRef.current = false;
+          }
+        },
+        [imageDataUri, getCachedImage, saveImageToCache],
+      );
+
+      useEffect(() => {
+        // Generate unique key for this image
+        const currentImageKey =
+          imageKey || imageId || imageUri || `image_${index}`;
+
+        // If a preloaded URI is provided, use it immediately and skip further work
+        if (initialDataUri) {
+          lastImageKeyRef.current = currentImageKey;
+          setImageDataUri(initialDataUri);
+          setImageLoading(false);
+          setImageError(false);
           return;
         }
 
-        lastImageKeyRef.current = currentImageKey;
-        // Don't reset imageDataUri immediately - keep previous image visible until new one loads
-        // This prevents flicker when navigating between images
-        setImageError(false);
-        isFetchingRef.current = false;
-        setImageLoading(true);
+        // Generate image URL and cache key first
+        let imageUrl = null;
+        const cacheKey = getImageCacheKey(imageKey, imageId, imageUri);
 
-        fetchImageWithAuth(imageUrl, cacheKey);
-      };
+        if (
+          imageUri &&
+          (imageUri.startsWith('http') || imageUri.startsWith('https'))
+        ) {
+          imageUrl = imageUri;
+        } else if (imageKey) {
+          const encodedKey = encodeURIComponent(imageKey);
+          imageUrl = `${API_BASE_URL}/api/enquiries/files/${encodedKey}`;
+        } else if (imageId) {
+          imageUrl = `${API_BASE_URL}/api/enquiries/files/${imageId}`;
+        }
 
-      loadImage();
-    }, [imageKey, imageId, imageUri, index, onPress, initialDataUri, getImageCacheKey, getCachedImage, fetchImageWithAuth]);
+        if (!imageUrl) {
+          setImageError(true);
+          return;
+        }
 
-    // Use modal styles if onPress is null (modal context)
-    const containerStyle = onPress === null ? styles.modalImageWrapper : styles.imageContainer;
-    const placeholderStyle = onPress === null ? styles.modalImagePlaceholder : styles.imagePlaceholder;
+        // Check if this is the same image we already loaded
+        if (lastImageKeyRef.current === currentImageKey && imageDataUri) {
+          return;
+        }
 
-    if (imageError) {
-      return (
-        <View style={containerStyle}>
-          <View style={placeholderStyle}>
-            <Icon name="image" size={onPress === null ? 48 : 24} color={onPress === null ? colors.textWhite : colors.textSecondary} />
+        // Check memory cache FIRST (synchronously, before any async operations)
+        if (cacheKey && memoryCacheRef.current.has(cacheKey)) {
+          const cached = memoryCacheRef.current.get(cacheKey);
+          const cacheAge = Date.now() - (cached.timestamp || 0);
+          const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days
+          if (cacheAge < maxAge) {
+            lastImageKeyRef.current = currentImageKey;
+            setImageDataUri(cached.dataUri);
+            setImageLoading(false);
+            setImageError(false);
+            return; // Exit early - found in memory cache
+          } else {
+            memoryCacheRef.current.delete(cacheKey);
+          }
+        }
+
+        // Check cache (AsyncStorage) and fetch if needed
+        const loadImage = async () => {
+          if (!mountedRef.current) return;
+
+          // Try AsyncStorage cache (if not in memory-only mode)
+          if (cacheKey && !storageFullRef.current) {
+            try {
+              const cached = await getCachedImage(cacheKey);
+              if (cached && mountedRef.current) {
+                // Store in memory cache for faster access next time
+                memoryCacheRef.current.set(cacheKey, {
+                  dataUri: cached,
+                  timestamp: Date.now(),
+                });
+                // Cache hit - set directly without loading state
+                lastImageKeyRef.current = currentImageKey;
+                setImageDataUri(cached);
+                setImageLoading(false);
+                setImageError(false);
+                return;
+              }
+            } catch (error) {
+              // Cache read failed, continue with fetch
+              if (__DEV__) {
+                console.error(
+                  `[ImageWithFallback] Cache read error:`,
+                  error.message,
+                );
+              }
+            }
+          }
+
+          // Cache miss - reset state and fetch
+          if (!mountedRef.current) {
+            return;
+          }
+
+          lastImageKeyRef.current = currentImageKey;
+          // Don't reset imageDataUri immediately - keep previous image visible until new one loads
+          // This prevents flicker when navigating between images
+          setImageError(false);
+          isFetchingRef.current = false;
+          setImageLoading(true);
+
+          fetchImageWithAuth(imageUrl, cacheKey);
+        };
+
+        loadImage();
+      }, [
+        imageKey,
+        imageId,
+        imageUri,
+        index,
+        onPress,
+        initialDataUri,
+        getImageCacheKey,
+        getCachedImage,
+        fetchImageWithAuth,
+      ]);
+
+      // Use modal styles if onPress is null (modal context)
+      const containerStyle =
+        onPress === null ? styles.modalImageWrapper : styles.imageContainer;
+      const placeholderStyle =
+        onPress === null
+          ? styles.modalImagePlaceholder
+          : styles.imagePlaceholder;
+
+      if (imageError) {
+        return (
+          <View style={containerStyle}>
+            <View style={placeholderStyle}>
+              <Icon
+                name="image"
+                size={onPress === null ? 48 : 24}
+                color={
+                  onPress === null ? colors.textWhite : colors.textSecondary
+                }
+              />
+            </View>
           </View>
-        </View>
-      );
-    }
+        );
+      }
 
-    // Show loading state only if we don't have imageDataUri yet
-    if (!imageDataUri) {
-      return (
-        <View style={containerStyle}>
-          <View style={placeholderStyle}>
-            {imageLoading && (
-              <View style={{ marginBottom: 12 }}>
-                <AnimatedLogoLoader size="small" />
-              </View>
-            )}
-            <Icon name="image" size={onPress === null ? 48 : 24} color={onPress === null ? colors.textWhite : colors.textSecondary} />
-            {imageLoading && onPress === null && (
-              <Text style={{ color: colors.textWhite, marginTop: 8, fontSize: fonts.sm }}>
-                Loading image...
-              </Text>
-            )}
+      // Show loading state only if we don't have imageDataUri yet
+      if (!imageDataUri) {
+        return (
+          <View style={containerStyle}>
+            <View style={placeholderStyle}>
+              {imageLoading && (
+                <View style={{ marginBottom: 12 }}>
+                  <AnimatedLogoLoader size="small" />
+                </View>
+              )}
+              <Icon
+                name="image"
+                size={onPress === null ? 48 : 24}
+                color={
+                  onPress === null ? colors.textWhite : colors.textSecondary
+                }
+              />
+              {imageLoading && onPress === null && (
+                <Text
+                  style={{
+                    color: colors.textWhite,
+                    marginTop: 8,
+                    fontSize: fonts.sm,
+                  }}
+                >
+                  Loading image...
+                </Text>
+              )}
+            </View>
           </View>
-        </View>
-      );
-    }
+        );
+      }
 
-    // If onPress is null, render without TouchableOpacity (for modal - zoom handled by parent ScrollView)
-    if (onPress === null) {
+      // If onPress is null, render without TouchableOpacity (for modal - zoom handled by parent ScrollView)
+      if (onPress === null) {
+        return (
+          <View style={styles.modalImageWrapper}>
+            <OptimizedImage
+              source={{ uri: imageDataUri }}
+              style={styles.fullscreenImage}
+              resizeMode="contain"
+              showLoader={false}
+              cacheEnabled={false}
+              onError={() => {
+                setImageError(true);
+              }}
+              onLoad={() => {
+                // Image loaded successfully
+              }}
+            />
+          </View>
+        );
+      }
+
       return (
-        <View style={styles.modalImageWrapper}>
-          <OptimizedImage
+        <TouchableOpacity
+          style={styles.imageContainer}
+          activeOpacity={0.9}
+          onPress={() => {
+            if (onPress) {
+              onPress(imageDataUri);
+            } else {
+              handleImagePress(imageDataUri, index, [imageDataUri]);
+            }
+          }}
+        >
+          <EnquiryImage
             source={{ uri: imageDataUri }}
-            style={styles.fullscreenImage}
-            resizeMode="contain"
-            showLoader={false}
-            cacheEnabled={false}
             onError={() => {
               setImageError(true);
             }}
@@ -2529,43 +3150,20 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
               // Image loaded successfully
             }}
           />
-        </View>
+        </TouchableOpacity>
       );
-    }
-
-    return (
-      <TouchableOpacity
-        style={styles.imageContainer}
-        activeOpacity={0.9}
-        onPress={() => {
-          if (onPress) {
-            onPress(imageDataUri);
-          } else {
-            handleImagePress(imageDataUri, index, [imageDataUri]);
-          }
-        }}
-      >
-        <EnquiryImage
-          source={{ uri: imageDataUri }}
-          onError={() => {
-            setImageError(true);
-          }}
-          onLoad={() => {
-            // Image loaded successfully
-          }}
-        />
-      </TouchableOpacity>
-    );
-  }, (prevProps, nextProps) => {
-    // Custom comparison to prevent unnecessary re-renders
-    return (
-      prevProps.imageKey === nextProps.imageKey &&
-      prevProps.imageId === nextProps.imageId &&
-      prevProps.imageUri === nextProps.imageUri &&
-      prevProps.index === nextProps.index &&
-      prevProps.onPress === nextProps.onPress
-    );
-  });
+    },
+    (prevProps, nextProps) => {
+      // Custom comparison to prevent unnecessary re-renders
+      return (
+        prevProps.imageKey === nextProps.imageKey &&
+        prevProps.imageId === nextProps.imageId &&
+        prevProps.imageUri === nextProps.imageUri &&
+        prevProps.index === nextProps.index &&
+        prevProps.onPress === nextProps.onPress
+      );
+    },
+  );
 
   const renderImages = () => {
     // Safety check for images array - prioritize enquiry.images since it's the normalized data
@@ -2573,27 +3171,63 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
     let images = [];
 
     // Check enquiry.images first (normalized data from API)
-    if (enquiry?.images && Array.isArray(enquiry.images) && enquiry.images.length > 0) {
+    if (
+      enquiry?.images &&
+      Array.isArray(enquiry.images) &&
+      enquiry.images.length > 0
+    ) {
       images = enquiry.images;
-    } else if (enquiry?.ReferenceImages && Array.isArray(enquiry.ReferenceImages) && enquiry.ReferenceImages.length > 0) {
+    } else if (
+      enquiry?.ReferenceImages &&
+      Array.isArray(enquiry.ReferenceImages) &&
+      enquiry.ReferenceImages.length > 0
+    ) {
       images = enquiry.ReferenceImages;
-    } else if (enquiry?.Images && Array.isArray(enquiry.Images) && enquiry.Images.length > 0) {
+    } else if (
+      enquiry?.Images &&
+      Array.isArray(enquiry.Images) &&
+      enquiry.Images.length > 0
+    ) {
       images = enquiry.Images;
-    } else if (originalData?.ReferenceImages && Array.isArray(originalData.ReferenceImages) && originalData.ReferenceImages.length > 0) {
+    } else if (
+      originalData?.ReferenceImages &&
+      Array.isArray(originalData.ReferenceImages) &&
+      originalData.ReferenceImages.length > 0
+    ) {
       images = originalData.ReferenceImages;
-    } else if (originalData?.Images && Array.isArray(originalData.Images) && originalData.Images.length > 0) {
+    } else if (
+      originalData?.Images &&
+      Array.isArray(originalData.Images) &&
+      originalData.Images.length > 0
+    ) {
       images = originalData.Images;
     }
 
     // Also check for ReferenceVideos field (videos might be stored separately)
     let videos = [];
-    if (enquiry?.ReferenceVideos && Array.isArray(enquiry.ReferenceVideos) && enquiry.ReferenceVideos.length > 0) {
+    if (
+      enquiry?.ReferenceVideos &&
+      Array.isArray(enquiry.ReferenceVideos) &&
+      enquiry.ReferenceVideos.length > 0
+    ) {
       videos = enquiry.ReferenceVideos;
-    } else if (enquiry?.Videos && Array.isArray(enquiry.Videos) && enquiry.Videos.length > 0) {
+    } else if (
+      enquiry?.Videos &&
+      Array.isArray(enquiry.Videos) &&
+      enquiry.Videos.length > 0
+    ) {
       videos = enquiry.Videos;
-    } else if (originalData?.ReferenceVideos && Array.isArray(originalData.ReferenceVideos) && originalData.ReferenceVideos.length > 0) {
+    } else if (
+      originalData?.ReferenceVideos &&
+      Array.isArray(originalData.ReferenceVideos) &&
+      originalData.ReferenceVideos.length > 0
+    ) {
       videos = originalData.ReferenceVideos;
-    } else if (originalData?.Videos && Array.isArray(originalData.Videos) && originalData.Videos.length > 0) {
+    } else if (
+      originalData?.Videos &&
+      Array.isArray(originalData.Videos) &&
+      originalData.Videos.length > 0
+    ) {
       videos = originalData.Videos;
     }
 
@@ -2603,18 +3237,34 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
 
     // Extract videos from all Coral versions
     coralVersions.forEach((version, index) => {
-      if (version?.Videos && Array.isArray(version.Videos) && version.Videos.length > 0) {
+      if (
+        version?.Videos &&
+        Array.isArray(version.Videos) &&
+        version.Videos.length > 0
+      ) {
         videos = [...videos, ...version.Videos];
-      } else if (version?.videos && Array.isArray(version.videos) && version.videos.length > 0) {
+      } else if (
+        version?.videos &&
+        Array.isArray(version.videos) &&
+        version.videos.length > 0
+      ) {
         videos = [...videos, ...version.videos];
       }
     });
 
     // Extract videos from all CAD versions
     cadVersions.forEach((version, index) => {
-      if (version?.Videos && Array.isArray(version.Videos) && version.Videos.length > 0) {
+      if (
+        version?.Videos &&
+        Array.isArray(version.Videos) &&
+        version.Videos.length > 0
+      ) {
         videos = [...videos, ...version.Videos];
-      } else if (version?.videos && Array.isArray(version.videos) && version.videos.length > 0) {
+      } else if (
+        version?.videos &&
+        Array.isArray(version.videos) &&
+        version.videos.length > 0
+      ) {
         videos = [...videos, ...version.videos];
       }
     });
@@ -2632,12 +3282,22 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
     if (!Array.isArray(images) || images.length === 0) {
       return (
         <Card style={styles.imagesCard}>
-          <Text style={[styles.sectionTitle, { fontSize: 16, fontWeight: 'bold', color: colors.textPrimary }]}>
+          <Text
+            style={[
+              styles.sectionTitle,
+              { fontSize: 16, fontWeight: 'bold', color: colors.textPrimary },
+            ]}
+          >
             Reference Images/Videos
           </Text>
           <View style={styles.noImagesContainer}>
             <Icon name="photo-library" size={40} color={colors.primary} />
-            <Text style={[styles.noImagesText, { color: colors.textSecondary, fontSize: fonts.base }]}>
+            <Text
+              style={[
+                styles.noImagesText,
+                { color: colors.textSecondary, fontSize: fonts.base },
+              ]}
+            >
               No reference images or videos available
             </Text>
           </View>
@@ -2645,15 +3305,31 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
       );
     }
 
-    const buildImageMeta = (image) => {
+    const buildImageMeta = image => {
       let imageKey = null;
       let imageId = null;
       let imageUri = null;
 
       if (typeof image === 'object' && image !== null) {
-        imageKey = image.Key || image.key || image.KeyName || image.keyName || '';
-        imageId = image.Id || image.id || image._id || image.FileId || image.fileId || '';
-        imageUri = image.Url || image.url || image.URI || image.uri || image.Location || image.location || image.UrlPath || image.urlPath || '';
+        imageKey =
+          image.Key || image.key || image.KeyName || image.keyName || '';
+        imageId =
+          image.Id ||
+          image.id ||
+          image._id ||
+          image.FileId ||
+          image.fileId ||
+          '';
+        imageUri =
+          image.Url ||
+          image.url ||
+          image.URI ||
+          image.uri ||
+          image.Location ||
+          image.location ||
+          image.UrlPath ||
+          image.urlPath ||
+          '';
       } else if (typeof image === 'string') {
         if (image.startsWith('http') || image.startsWith('https')) {
           imageUri = image;
@@ -2671,27 +3347,50 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
       // Detect if this is a video
       const isVideo = isVideoFile(imageKey, imageUri, image);
 
-      return { image, imageKey, imageId, imageUri, cacheKey, cachedUri, isVideo };
+      return {
+        image,
+        imageKey,
+        imageId,
+        imageUri,
+        cacheKey,
+        cachedUri,
+        isVideo,
+      };
     };
 
     // Debug logging to see what we have (after buildImageMeta is defined)
     if (__DEV__ && (images.length > 0 || videos.length > 0)) {
-      const coralVideoCount = coralVersions.reduce((count, v) => count + (v?.Videos?.length || v?.videos?.length || 0), 0);
-      const cadVideoCount = cadVersions.reduce((count, v) => count + (v?.Videos?.length || v?.videos?.length || 0), 0);
+      const coralVideoCount = coralVersions.reduce(
+        (count, v) => count + (v?.Videos?.length || v?.videos?.length || 0),
+        0,
+      );
+      const cadVideoCount = cadVersions.reduce(
+        (count, v) => count + (v?.Videos?.length || v?.videos?.length || 0),
+        0,
+      );
       const sampleMeta = images[0] ? buildImageMeta(images[0]) : null;
       console.log('🔍 [SingleEnquiryScreen] Media data:', {
         imagesCount: images.length - videos.length,
         videosCount: videos.length,
         totalMedia: images.length,
-        hasReferenceImages: !!(enquiry?.ReferenceImages || originalData?.ReferenceImages),
-        hasReferenceVideos: !!(enquiry?.ReferenceVideos || originalData?.ReferenceVideos),
+        hasReferenceImages: !!(
+          enquiry?.ReferenceImages || originalData?.ReferenceImages
+        ),
+        hasReferenceVideos: !!(
+          enquiry?.ReferenceVideos || originalData?.ReferenceVideos
+        ),
         coralVideoCount: coralVideoCount,
         cadVideoCount: cadVideoCount,
-        sampleImage: sampleMeta ? {
-          type: typeof sampleMeta.image,
-          keys: typeof sampleMeta.image === 'object' ? Object.keys(sampleMeta.image) : [],
-          isVideo: sampleMeta.isVideo,
-        } : null,
+        sampleImage: sampleMeta
+          ? {
+              type: typeof sampleMeta.image,
+              keys:
+                typeof sampleMeta.image === 'object'
+                  ? Object.keys(sampleMeta.image)
+                  : [],
+              isVideo: sampleMeta.isVideo,
+            }
+          : null,
       });
     }
 
@@ -2701,7 +3400,12 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
 
       return (
         <Card style={styles.imagesCard}>
-          <Text style={[styles.sectionTitle, { fontSize: 16, fontWeight: 'bold', color: colors.textPrimary }]}>
+          <Text
+            style={[
+              styles.sectionTitle,
+              { fontSize: 16, fontWeight: 'bold', color: colors.textPrimary },
+            ]}
+          >
             Reference Images/Videos
           </Text>
           {meta.isVideo ? (
@@ -2711,7 +3415,7 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
               imageId={meta.imageId}
               imageUri={meta.imageUri}
               index={0}
-              onPress={(uri) => handleImagePress(uri, 0, [meta])}
+              onPress={uri => handleImagePress(uri, 0, [meta])}
             />
           ) : (
             <ImageWithFallback
@@ -2721,7 +3425,7 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
               imageUri={meta.imageUri}
               index={0}
               initialDataUri={meta.cachedUri}
-              onPress={(uri) => handleImagePress(uri, 0, [meta])}
+              onPress={uri => handleImagePress(uri, 0, [meta])}
             />
           )}
         </Card>
@@ -2733,8 +3437,14 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
 
     return (
       <Card style={styles.imagesCard}>
-        <Text style={[styles.sectionTitle, { fontSize: 16, fontWeight: 'bold', color: colors.textPrimary }]}>
-          Reference Images/Videos {images.length > 1 ? `(${images.length})` : ''}
+        <Text
+          style={[
+            styles.sectionTitle,
+            { fontSize: 16, fontWeight: 'bold', color: colors.textPrimary },
+          ]}
+        >
+          Reference Images/Videos{' '}
+          {images.length > 1 ? `(${images.length})` : ''}
         </Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           {images.map((image, index) => {
@@ -2748,7 +3458,7 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
                     imageId={meta.imageId}
                     imageUri={meta.imageUri}
                     index={index}
-                    onPress={(uri) => {
+                    onPress={uri => {
                       // Pass all media data to modal for slider
                       handleImagePress(uri, index, imageDataForModal);
                     }}
@@ -2761,7 +3471,7 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
                     imageUri={meta.imageUri}
                     index={index}
                     initialDataUri={meta.cachedUri}
-                    onPress={(uri) => {
+                    onPress={uri => {
                       // Pass all media data to modal for slider
                       handleImagePress(uri, index, imageDataForModal);
                     }}
@@ -2777,8 +3487,16 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
 
   const renderVersions = () => {
     // Get Coral and CAD codes from original data
-    const coralCode = originalData?.CoralCode || enquiry?.CoralCode || enquiry?.coralCode || enquiry?.coralVersion;
-    const cadCode = originalData?.CadCode || enquiry?.CadCode || enquiry?.cadCode || enquiry?.cadVersion;
+    const coralCode =
+      originalData?.CoralCode ||
+      enquiry?.CoralCode ||
+      enquiry?.coralCode ||
+      enquiry?.coralVersion;
+    const cadCode =
+      originalData?.CadCode ||
+      enquiry?.CadCode ||
+      enquiry?.cadCode ||
+      enquiry?.cadVersion;
 
     // Get all versions
     const coralVersions = originalData?.Coral || enquiry?.Coral || [];
@@ -2790,15 +3508,30 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
     console.log('🔍 [SingleEnquiryScreen] coralVersions:', coralVersions);
     return (
       <Card style={styles.versionsCard}>
-        <Text style={[styles.sectionTitle, { fontSize: 16, fontWeight: 'bold', color: colors.textPrimary }]}>
+        <Text
+          style={[
+            styles.sectionTitle,
+            { fontSize: 16, fontWeight: 'bold', color: colors.textPrimary },
+          ]}
+        >
           Design Versions
         </Text>
 
         <View style={styles.versionItem}>
           <View style={styles.versionHeader}>
             <Icon name="design-services" size={20} color={colors.primary} />
-            <Text style={[styles.versionTitle, { color: colors.textPrimary, fontSize: 13, fontWeight: '500' }]}>
-              Coral Design {coralVersions.length > 0 ? `(${coralVersions.length} ${coralVersions.length === 1 ? 'version' : 'versions'})` : ''}
+            <Text
+              style={[
+                styles.versionTitle,
+                { color: colors.textPrimary, fontSize: 13, fontWeight: '500' },
+              ]}
+            >
+              Coral Design{' '}
+              {coralVersions.length > 0
+                ? `(${coralVersions.length} ${
+                    coralVersions.length === 1 ? 'version' : 'versions'
+                  })`
+                : ''}
             </Text>
           </View>
           {hasCoral ? (
@@ -2806,12 +3539,22 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
               {coralVersions.map((version, index) => (
                 <TouchableOpacity
                   key={index}
-                  style={[styles.versionFile, { marginBottom: index < coralVersions.length - 1 ? 8 : 0 }]}
+                  style={[
+                    styles.versionFile,
+                    { marginBottom: index < coralVersions.length - 1 ? 8 : 0 },
+                  ]}
                   onPress={() => handleVersionSelect(index, 'coral')}
                 >
                   <Icon name="description" size={16} color={colors.primary} />
-                  <Text style={[styles.fileName, { color: colors.success, fontSize: 13 }]}>
-                    Coral - {version.Version || `Version ${index + 1}`} - {version.CoralCode} {version.IsApprovedVersion == true ? '- Approved' : ''}
+                  <Text
+                    style={[
+                      styles.fileName,
+                      { color: colors.success, fontSize: 13 },
+                    ]}
+                  >
+                    Coral - {version.Version || `Version ${index + 1}`} -{' '}
+                    {version.CoralCode}{' '}
+                    {version.IsApprovedVersion == true ? '- Approved' : ''}
                   </Text>
                   <Icon name="visibility" size={16} color={colors.primary} />
                 </TouchableOpacity>
@@ -2826,9 +3569,23 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
 
         <View style={styles.versionItem}>
           <View style={styles.versionHeader}>
-            <Icon name="precision-manufacturing" size={20} color={colors.primary} />
-            <Text style={[styles.versionTitle, { color: colors.textPrimary, fontSize: 13, fontWeight: '500' }]}>
-              CAD Design {cadVersions.length > 0 ? `(${cadVersions.length} ${cadVersions.length === 1 ? 'version' : 'versions'})` : ''}
+            <Icon
+              name="precision-manufacturing"
+              size={20}
+              color={colors.primary}
+            />
+            <Text
+              style={[
+                styles.versionTitle,
+                { color: colors.textPrimary, fontSize: 13, fontWeight: '500' },
+              ]}
+            >
+              CAD Design{' '}
+              {cadVersions.length > 0
+                ? `(${cadVersions.length} ${
+                    cadVersions.length === 1 ? 'version' : 'versions'
+                  })`
+                : ''}
             </Text>
           </View>
           {hasCAD ? (
@@ -2836,12 +3593,22 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
               {cadVersions.map((version, index) => (
                 <TouchableOpacity
                   key={index}
-                  style={[styles.versionFile, { marginBottom: index < cadVersions.length - 1 ? 8 : 0 }]}
+                  style={[
+                    styles.versionFile,
+                    { marginBottom: index < cadVersions.length - 1 ? 8 : 0 },
+                  ]}
                   onPress={() => handleVersionSelect(index, 'cad')}
                 >
                   <Icon name="description" size={16} color={colors.primary} />
-                  <Text style={[styles.fileName, { color: colors.success, fontSize: 13 }]}>
-                    CAD - {version.Version || `Version ${index + 1}`} - {version.CadCode} {version.IsApprovedVersion == true ? '- Approved' : ''}
+                  <Text
+                    style={[
+                      styles.fileName,
+                      { color: colors.success, fontSize: 13 },
+                    ]}
+                  >
+                    CAD - {version.Version || `Version ${index + 1}`} -{' '}
+                    {version.CadCode}{' '}
+                    {version.IsApprovedVersion == true ? '- Approved' : ''}
                   </Text>
                   <Icon name="visibility" size={16} color={colors.primary} />
                 </TouchableOpacity>
@@ -2893,11 +3660,12 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
     }
   };
 
-
   const handleDeleteEnquiry = () => {
     Alert.alert(
       'Delete Enquiry',
-      `Are you sure you want to delete "${enquiry?.title || 'this enquiry'}"? This action cannot be undone.`,
+      `Are you sure you want to delete "${
+        enquiry?.title || 'this enquiry'
+      }"? This action cannot be undone.`,
       [
         {
           text: 'Cancel',
@@ -2911,30 +3679,36 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
               // Navigate back immediately for better UX (optimistic update handles cache removal)
               navigation.navigate('MainTabs', {
                 screen: 'Enquiries',
-                params: { refreshTimestamp: Date.now() }
+                params: { refreshTimestamp: Date.now() },
               });
 
               // Delete enquiry (optimistic update removes it from cache immediately)
               await deleteEnquiry(enquiryId || enquiry?.id).unwrap();
 
               // Success - no need for alert since user already navigated
-
             } catch (error) {
               // Show error alert
               Alert.alert(
                 'Error',
-                error.data?.error || error.message || 'Failed to delete enquiry. Please try again.'
+                error.data?.error ||
+                  error.message ||
+                  'Failed to delete enquiry. Please try again.',
               );
             }
           },
         },
-      ]
+      ],
     );
   };
 
   const renderClientActions = () => (
     <Card style={styles.actionsCard}>
-      <Text style={[styles.sectionTitle, { fontSize: 16, fontWeight: 'bold', color: colors.textPrimary }]}>
+      <Text
+        style={[
+          styles.sectionTitle,
+          { fontSize: 16, fontWeight: 'bold', color: colors.textPrimary },
+        ]}
+      >
         Actions
       </Text>
 
@@ -2956,36 +3730,44 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
       </View>
 
       {/* Hide enquiry history for clients (role 4) */}
-      {(user?.roleId !== 4 && user?.roleNumber !== 4 && user?.role !== 'client') && (
-        <Button
-          title="Enquiry History"
-          onPress={() => setShowHistoryModal(true)}
-          style={[styles.actionButton, styles.historyButton]}
-        />
-      )}
+      {user?.roleId !== 4 &&
+        user?.roleNumber !== 4 &&
+        user?.role !== 'client' && (
+          <Button
+            title="Enquiry History"
+            onPress={() => setShowHistoryModal(true)}
+            style={[styles.actionButton, styles.historyButton]}
+          />
+        )}
 
       {/* Approve and Reject buttons removed for clients - clients don't have permission for these actions */}
     </Card>
   );
 
-  const renderDesignerActions = (role) => (
+  const renderDesignerActions = role => (
     <Card style={styles.actionsCard}>
-      <Text style={[styles.sectionTitle, { fontSize: 16, fontWeight: 'bold', color: colors.textPrimary }]}>
+      <Text
+        style={[
+          styles.sectionTitle,
+          { fontSize: 16, fontWeight: 'bold', color: colors.textPrimary },
+        ]}
+      >
         Designer Actions
       </Text>
-
-      <View style={styles.adminActionsRow}>
-        <TouchableOpacity
-          onPress={role === 'coral' ? handleUploadCoral : handleUploadCAD}
-          style={[styles.adminActionButton, styles.adminActionButtonPrimary]}
-          activeOpacity={0.85}
-        >
-          <Icon name="cloud-upload" size={18} color={colors.textWhite} />
-          <Text style={styles.adminActionText}>
-            Upload {role === 'coral' ? 'Coral' : 'CAD'} Design
-          </Text>
-        </TouchableOpacity>
-      </View>
+      {!['coral', 'cad'].includes(user?.role) && (
+        <View style={styles.adminActionsRow}>
+          <TouchableOpacity
+            onPress={role === 'coral' ? handleUploadCoral : handleUploadCAD}
+            style={[styles.adminActionButton, styles.adminActionButtonPrimary]}
+            activeOpacity={0.85}
+          >
+            <Icon name="cloud-upload" size={18} color={colors.textWhite} />
+            <Text style={styles.adminActionText}>
+              Upload {role === 'coral' ? 'Coral' : 'CAD'} Design
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Enquiry History button removed for coral and CAD designers - only visible for admin */}
     </Card>
@@ -3016,8 +3798,13 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
   };
 
   const renderAdminActions = () => {
-    const hasCAD = originalData?.CadCode || enquiry?.CadCode || enquiry?.cadCode ||
-      (originalData?.Cad && Array.isArray(originalData.Cad) && originalData.Cad.length > 0) ||
+    const hasCAD =
+      originalData?.CadCode ||
+      enquiry?.CadCode ||
+      enquiry?.cadCode ||
+      (originalData?.Cad &&
+        Array.isArray(originalData.Cad) &&
+        originalData.Cad.length > 0) ||
       (enquiry?.Cad && Array.isArray(enquiry.Cad) && enquiry.Cad.length > 0);
 
     return (
@@ -3038,7 +3825,10 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.adminActionButton, styles.adminActionButtonSecondary]}
+            style={[
+              styles.adminActionButton,
+              styles.adminActionButtonSecondary,
+            ]}
             activeOpacity={0.85}
             onPress={() => setShowHistoryModal(true)}
           >
@@ -3050,7 +3840,10 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
         {/* Upload Buttons for Admin */}
         <View style={styles.adminActionsRow}>
           <TouchableOpacity
-            style={[styles.adminActionButton, styles.adminActionButtonSecondary]}
+            style={[
+              styles.adminActionButton,
+              styles.adminActionButtonSecondary,
+            ]}
             activeOpacity={0.85}
             onPress={handleUploadCoral}
           >
@@ -3059,7 +3852,10 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.adminActionButton, styles.adminActionButtonSecondary]}
+            style={[
+              styles.adminActionButton,
+              styles.adminActionButtonSecondary,
+            ]}
             activeOpacity={0.85}
             onPress={handleUploadCAD}
           >
@@ -3070,7 +3866,10 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
 
         <View style={styles.adminActionsRow}>
           <TouchableOpacity
-            style={[styles.adminActionButton, styles.adminActionButtonSecondary]}
+            style={[
+              styles.adminActionButton,
+              styles.adminActionButtonSecondary,
+            ]}
             activeOpacity={0.85}
             onPress={handleUploadReferenceImages}
             disabled={isUploadingReference}
@@ -3099,23 +3898,38 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
   const renderApprovalModal = () => {
     // Get version info for display
     const originalData = enquiry?._originalData || enquiry;
-    const versions = selectedDesignType === 'coral'
-      ? (originalData?.Coral || enquiry?.Coral || [])
-      : (originalData?.Cad || enquiry?.Cad || []);
-    const version = selectedVersionIndex !== null && selectedVersionIndex < versions.length
-      ? (versions[selectedVersionIndex]?.Version || `Version ${selectedVersionIndex + 1}`)
-      : 'this version';
+    const versions =
+      selectedDesignType === 'coral'
+        ? originalData?.Coral || enquiry?.Coral || []
+        : originalData?.Cad || enquiry?.Cad || [];
+    const version =
+      selectedVersionIndex !== null && selectedVersionIndex < versions.length
+        ? versions[selectedVersionIndex]?.Version ||
+          `Version ${selectedVersionIndex + 1}`
+        : 'this version';
 
     return (
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
-          <Text style={{ fontSize: 16, fontWeight: 'bold', color: colors.textPrimary }}>
+          <Text
+            style={{
+              fontSize: 16,
+              fontWeight: 'bold',
+              color: colors.textPrimary,
+            }}
+          >
             Reject Design Version
           </Text>
-          <Text style={{ color: colors.textSecondary, fontSize: 13, marginTop: 8 }}>
-            {selectedDesignType ? `${selectedDesignType.toUpperCase()} ${version}` : 'Design version'}
+          <Text
+            style={{ color: colors.textSecondary, fontSize: 13, marginTop: 8 }}
+          >
+            {selectedDesignType
+              ? `${selectedDesignType.toUpperCase()} ${version}`
+              : 'Design version'}
           </Text>
-          <Text style={{ color: colors.textSecondary, fontSize: 13, marginTop: 8 }}>
+          <Text
+            style={{ color: colors.textSecondary, fontSize: 13, marginTop: 8 }}
+          >
             Please provide a reason for rejection:
           </Text>
 
@@ -3157,7 +3971,8 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
         {renderVersions()}
 
         {user.role === 'client' && renderClientActions()}
-        {(user.role === 'coral' || user.role === 'cad') && renderDesignerActions(user.role)}
+        {(user.role === 'coral' || user.role === 'cad') &&
+          renderDesignerActions(user.role)}
         {user.role === 'admin' && renderAdminActions()}
       </ScrollView>
 
@@ -3207,7 +4022,9 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
                   data={modalImages}
                   renderItem={({ item, index }) => {
                     // For videos, we need to fetch the URL if not available
-                    const videoUrl = item.isVideo ? (item.imageUri || item.cachedUri || selectedImageUri) : null;
+                    const videoUrl = item.isVideo
+                      ? item.imageUri || item.cachedUri || selectedImageUri
+                      : null;
 
                     return (
                       <View style={styles.modalImageContainer}>
@@ -3223,7 +4040,9 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
                           ) : (
                             <View style={styles.videoPlaceholder}>
                               <AnimatedLogoLoader size="small" />
-                              <Text style={styles.videoLoadingText}>Loading video...</Text>
+                              <Text style={styles.videoLoadingText}>
+                                Loading video...
+                              </Text>
                             </View>
                           )
                         ) : (
@@ -3277,20 +4096,38 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
                 {modalImages.length > 1 && (
                   <>
                     <TouchableOpacity
-                      style={[styles.modalNavButton, styles.modalNavButtonLeft, modalCurrentIndex === 0 && styles.modalNavButtonDisabled]}
+                      style={[
+                        styles.modalNavButton,
+                        styles.modalNavButtonLeft,
+                        modalCurrentIndex === 0 &&
+                          styles.modalNavButtonDisabled,
+                      ]}
                       onPress={handleModalPrev}
                       disabled={modalCurrentIndex === 0}
                       activeOpacity={0.8}
                     >
-                      <Icon name="chevron-left" size={28} color={colors.textWhite} />
+                      <Icon
+                        name="chevron-left"
+                        size={28}
+                        color={colors.textWhite}
+                      />
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.modalNavButton, styles.modalNavButtonRight, modalCurrentIndex === modalImages.length - 1 && styles.modalNavButtonDisabled]}
+                      style={[
+                        styles.modalNavButton,
+                        styles.modalNavButtonRight,
+                        modalCurrentIndex === modalImages.length - 1 &&
+                          styles.modalNavButtonDisabled,
+                      ]}
                       onPress={handleModalNext}
                       disabled={modalCurrentIndex === modalImages.length - 1}
                       activeOpacity={0.8}
                     >
-                      <Icon name="chevron-right" size={28} color={colors.textWhite} />
+                      <Icon
+                        name="chevron-right"
+                        size={28}
+                        color={colors.textWhite}
+                      />
                     </TouchableOpacity>
                   </>
                 )}
@@ -3302,7 +4139,8 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
                       key={index}
                       style={[
                         styles.modalPaginationDot,
-                        index === modalCurrentIndex && styles.modalPaginationDotActive,
+                        index === modalCurrentIndex &&
+                          styles.modalPaginationDotActive,
                       ]}
                     />
                   ))}
@@ -3356,7 +4194,11 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
       />
 
       {canShowChatFab && (
-        <TouchableOpacity style={styles.chatFab} onPress={handleOpenChat} activeOpacity={0.85}>
+        <TouchableOpacity
+          style={styles.chatFab}
+          onPress={handleOpenChat}
+          activeOpacity={0.85}
+        >
           <Icon name="chat" size={20} color={colors.textWhite} />
           <Text style={styles.chatFabText}>Open Chat</Text>
         </TouchableOpacity>
@@ -3864,6 +4706,13 @@ const styles = StyleSheet.create({
   },
   adminActionOutlineText: {
     color: colors.primary,
+  },
+  UploadCoralCadd: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    // marginTop: 8,
+    gap: 12,
+    marginBottom: 16,
   },
 });
 
