@@ -5,6 +5,7 @@ import { colors } from '../constants/colors';
 import { fonts } from '../constants/fonts';
 import Icon from '../components/common/Icon';
 import CustomTabBar from '../components/common/CustomTabBar';
+import SwitchAppFAB from '../components/common/SwitchAppFAB';
 
 // Import screens
 import DashboardScreen from '../screens/Dashboard/DashboardScreen';

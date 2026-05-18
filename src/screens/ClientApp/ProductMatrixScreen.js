@@ -3,6 +3,7 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View, Keyboard } from '
 import { colors } from '../../constants/colors';
 import ProductMatrixCard from '../../components/client/ProductMatrixCard';
 import catalogApi from '../../services/catalogApi';
+import { getSubcategoryProductsPath } from '../../utils/subcategoryProductsPath';
 import { computeUnitPriceFromSource, getPricingContext } from '../../services/clientPricingEngine';
 
 const ProductMatrixScreen = ({ route, navigation }) => {
@@ -21,6 +22,8 @@ const ProductMatrixScreen = ({ route, navigation }) => {
   const productImageUrl = route?.params?.productImageUrl || '';
   const subcategoryThumbnailImage = route?.params?.subcategoryThumbnailImage || '';
   const productDescription = route?.params?.productDescription || '';
+  const onlyBestSeller = Boolean(route?.params?.onlyBestSeller);
+  const onlyReadyToShip = Boolean(route?.params?.onlyReadyToShip);
   const breadcrumbParts = ['HOME', categoryName, subcategoryProfileName]
     .map((part) => (typeof part === 'string' ? part.trim() : ''))
     .filter(Boolean)
@@ -105,7 +108,9 @@ const ProductMatrixScreen = ({ route, navigation }) => {
     try {
       setLoading(true);
       setError('');
-      const response = await catalogApi.get(`/subcategories/${subcategoryId}/products`);
+      const response = await catalogApi.get(
+        getSubcategoryProductsPath(subcategoryId, { onlyBestSeller, onlyReadyToShip }),
+      );
       const fetchedProducts = Array.isArray(response?.products) ? response.products : [];
       const visibleProducts = fetchedProducts.filter(matchesSelectedFilters);
       if (__DEV__) {
@@ -153,7 +158,7 @@ const ProductMatrixScreen = ({ route, navigation }) => {
     } finally {
       setLoading(false);
     }
-  }, [matchesSelectedFilters, selectedFilters, subcategoryId]);
+  }, [matchesSelectedFilters, onlyBestSeller, onlyReadyToShip, subcategoryId]);
 
   useEffect(() => {
     fetchProducts();
@@ -226,6 +231,7 @@ const ProductMatrixScreen = ({ route, navigation }) => {
             styleNo: product?.styleNo || '',
             name: product?.name || product?.title || product?.styleNo || `${product?.pointer || 0} Pointer`,
             imageUrl:
+              product?.displayImage ||
               product?.imageUrl ||
               product?.thumbnailUrl ||
               (Array.isArray(product?.images) ? product.images[0] : '') ||

@@ -29,6 +29,10 @@ const TopNavbar = ({ navigation }) => {
   }
   
 
+  const handleSearchPress = () => {
+    navigation.navigate('Search');
+  };
+
   const handleNotificationPress = () => {
     navigation.navigate('Notifications');
   };
@@ -72,6 +76,13 @@ const TopNavbar = ({ navigation }) => {
         </View>
 
         <View style={styles.rightSection}>
+          <TouchableOpacity
+            style={styles.iconButton}
+            onPress={handleSearchPress}
+            activeOpacity={0.7}>
+            <Icon name="search" size={24} color={colors.textWhite} />
+          </TouchableOpacity>
+
           <TouchableOpacity
             style={styles.iconButton}
             onPress={handleNotificationPress}

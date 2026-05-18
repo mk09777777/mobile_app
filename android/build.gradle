@@ -20,3 +20,13 @@ buildscript {
 }
 
 apply plugin: "com.facebook.react.rootproject"
+
+gradle.projectsEvaluated {
+    rootProject.subprojects { proj ->
+        def sourcesJar = proj.tasks.findByName("releaseSourcesJar")
+        def codegen = proj.tasks.findByName("generateCodegenArtifactsFromSchema")
+        if (sourcesJar != null && codegen != null) {
+            sourcesJar.dependsOn(codegen)
+        }
+    }
+}
