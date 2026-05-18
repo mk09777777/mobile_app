@@ -3,6 +3,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { fonts } from '../constants/fonts';
 import CatalogShellScreen from '../screens/ClientApp/CatalogShellScreen';
 import NotificationsScreen from '../screens/Notifications/NotificationsScreen';
+import SearchScreen from '../screens/ClientApp/SearchScreen';
 
 const Stack = createStackNavigator();
 
@@ -48,6 +49,11 @@ const App2Navigator = () => {
       <Stack.Screen
         name="Notifications"
         component={NotificationsScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="Search"
+        component={SearchScreen}
         options={{ headerShown: false }}
       />
       {/*

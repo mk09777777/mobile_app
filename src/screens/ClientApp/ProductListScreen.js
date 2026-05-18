@@ -1,5 +1,13 @@
-import React, { useState } from 'react';
-import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Image,
+  Keyboard,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { colors } from '../../constants/colors';
 import {
   ChipsFilterField,
@@ -7,6 +15,10 @@ import {
   MultiChipsFilterField,
 } from '../../components/client/filters/ProductFilterFields';
 import ProductDescriptionSection from '../../components/client/ProductDescriptionSection';
+import ProductMatrixCard from '../../components/client/ProductMatrixCard';
+import catalogApi from '../../services/catalogApi';
+import { getSubcategoryProductsPath } from '../../utils/subcategoryProductsPath';
+import { computeUnitPriceFromSource, getPricingContext } from '../../services/clientPricingEngine';
 
 const ProductListScreen = ({ route, navigation }) => {
   const categoryName = route?.params?.categoryName || '';
@@ -22,7 +34,19 @@ const ProductListScreen = ({ route, navigation }) => {
   const subcategoryThumbnailImage = route?.params?.subcategoryThumbnailImage || '';
   const specialNotePlaceholderText =
     route?.params?.specialNotePlaceholderText || 'Length variation';
+  const productId = String(route?.params?.productId || '');
+  const onlyBestSeller = Boolean(route?.params?.onlyBestSeller);
+  const onlyReadyToShip = Boolean(route?.params?.onlyReadyToShip);
+  const isJacketFlow = Boolean(route?.params?.isJacketFlow || productId);
+
   const [selectedFilters, setSelectedFilters] = useState({});
+  const [jacketProduct, setJacketProduct] = useState(null);
+  const [jacketLoading, setJacketLoading] = useState(false);
+  const [jacketError, setJacketError] = useState('');
+  const [quantities, setQuantities] = useState({ W: 0, Y: 0, R: 0 });
+  const [specialNote, setSpecialNote] = useState('');
+  const [pricingContext, setPricingContext] = useState(null);
+  const [isKeyboardVisible, setKeyboardVisible] = useState(false);
 
   const productImageUrl =
     subcategoryImages.find((url) => typeof url === 'string' && url.trim()) || subcategoryThumbnailImage;
@@ -46,6 +70,72 @@ const ProductListScreen = ({ route, navigation }) => {
   const sortedSchema = [...baseFilterFields, ...subcategoryFilterSchema].sort(
     (a, b) => Number(a?.displayOrder || 0) - Number(b?.displayOrder || 0),
   );
+
+  useEffect(() => {
+    if (!isJacketFlow) return undefined;
+    const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
+    const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+    return () => {
+      keyboardDidShowListener.remove();
+      keyboardDidHideListener.remove();
+    };
+  }, [isJacketFlow]);
+
+  useEffect(() => {
+    if (!isJacketFlow) return undefined;
+    let mounted = true;
+    getPricingContext()
+      .then((ctx) => {
+        if (mounted) setPricingContext(ctx);
+      })
+      .catch(() => {
+        if (mounted) setPricingContext(null);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [isJacketFlow]);
+
+  const fetchJacketProduct = useCallback(async () => {
+    if (!isJacketFlow || !subcategoryId || !productId) {
+      setJacketError('Missing product details');
+      setJacketProduct(null);
+      setJacketLoading(false);
+      return;
+    }
+
+    try {
+      setJacketLoading(true);
+      setJacketError('');
+      const response = await catalogApi.get(
+        getSubcategoryProductsPath(subcategoryId, { onlyBestSeller, onlyReadyToShip }),
+      );
+      const fetchedProducts = Array.isArray(response?.products) ? response.products : [];
+      const product = fetchedProducts.find((item) => String(item?._id || '') === productId) || null;
+      if (!product) {
+        setJacketError('Product not found');
+        setJacketProduct(null);
+        return;
+      }
+      setJacketProduct(product);
+    } catch (err) {
+      setJacketError(err?.message || 'Failed to load product');
+      setJacketProduct(null);
+    } finally {
+      setJacketLoading(false);
+    }
+  }, [isJacketFlow, onlyBestSeller, onlyReadyToShip, productId, subcategoryId]);
+
+  useEffect(() => {
+    if (isJacketFlow) {
+      fetchJacketProduct();
+    }
+  }, [fetchJacketProduct, isJacketFlow]);
+
+  useEffect(() => {
+    if (!isJacketFlow) return;
+    setQuantities({ W: 0, Y: 0, R: 0 });
+  }, [isJacketFlow, selectedFilters.metal, selectedFilters.stone]);
 
   const toggleFilterValue = (fieldKey, optionValue, isMulti) => {
     setSelectedFilters((prev) => {
@@ -117,60 +207,262 @@ const ProductListScreen = ({ route, navigation }) => {
     return typeof fieldValue === 'string' && fieldValue.trim().length > 0;
   };
 
-  const canProceed = !!subcategoryId && requiredFields.length > 0 && requiredFields.every(isFieldSelected);
+  const filtersComplete =
+    requiredFields.length === 0 || requiredFields.every(isFieldSelected);
+
+  const isJacketBaseFiltersSelected = useMemo(() => {
+    const metal = selectedFilters.metal;
+    const stone = selectedFilters.stone;
+    return (
+      typeof metal === 'string' &&
+      metal.trim().length > 0 &&
+      typeof stone === 'string' &&
+      stone.trim().length > 0
+    );
+  }, [selectedFilters]);
+
+  const resolveJacketUnitPrice = useCallback(
+    (product) => {
+      if (!isJacketBaseFiltersSelected || !pricingContext || !product) {
+        return 0;
+      }
+      return computeUnitPriceFromSource(product, selectedFilters, pricingContext);
+    },
+    [isJacketBaseFiltersSelected, pricingContext, selectedFilters],
+  );
+
+  const totalSelectedQty = useMemo(
+    () => Number(quantities.W || 0) + Number(quantities.Y || 0) + Number(quantities.R || 0),
+    [quantities],
+  );
+
+  const formatJacketProductPrice = useCallback(
+    (product) => {
+      if (!isJacketBaseFiltersSelected) {
+        return '—';
+      }
+      const computed = resolveJacketUnitPrice(product);
+      if (Number.isFinite(computed) && computed > 0) {
+        return `$${computed}`;
+      }
+      return '$0';
+    },
+    [isJacketBaseFiltersSelected, resolveJacketUnitPrice],
+  );
+
+  const jacketSelectedProductLines = useMemo(() => {
+    if (!jacketProduct || totalSelectedQty === 0) return [];
+    const lineProductId = String(jacketProduct?._id || '');
+    return [
+      {
+        productId: lineProductId,
+        styleNo: jacketProduct?.styleNo || '',
+        name:
+          route?.params?.productName ||
+          jacketProduct?.name ||
+          jacketProduct?.title ||
+          jacketProduct?.styleNo ||
+          `${jacketProduct?.pointer || 0} Pointer`,
+        imageUrl:
+          jacketProduct?.displayImage ||
+          jacketProduct?.imageUrl ||
+          jacketProduct?.thumbnailUrl ||
+          (Array.isArray(jacketProduct?.images) ? jacketProduct.images[0] : '') ||
+          productImageUrl,
+        description: jacketProduct?.description || productDescription || '',
+        pointer: jacketProduct?.pointer || 0,
+        quantities,
+        totalQty: totalSelectedQty,
+        unitPrice: resolveJacketUnitPrice(jacketProduct),
+        note: String(specialNote || ''),
+      },
+    ];
+  }, [
+    jacketProduct,
+    productDescription,
+    productImageUrl,
+    quantities,
+    route?.params?.productName,
+    resolveJacketUnitPrice,
+    specialNote,
+    totalSelectedQty,
+  ]);
+
+  const onJacketQuantityChange = useCallback((colorKey, delta) => {
+    setQuantities((prev) => ({
+      ...prev,
+      [colorKey]: Math.max(0, Number(prev[colorKey] || 0) + delta),
+    }));
+  }, []);
+
+  const canProceedStandard =
+    !!subcategoryId && requiredFields.length > 0 && requiredFields.every(isFieldSelected);
+
+  const jacketUnitPrice = useMemo(
+    () => resolveJacketUnitPrice(jacketProduct),
+    [jacketProduct, resolveJacketUnitPrice],
+  );
+
+  const canProceedJacket =
+    !!subcategoryId &&
+    !!jacketProduct &&
+    isJacketBaseFiltersSelected &&
+    filtersComplete &&
+    jacketUnitPrice > 0 &&
+    totalSelectedQty > 0 &&
+    !jacketLoading &&
+    !jacketError;
+
+  const openOrderReview = useCallback(() => {
+    navigation.navigate('OrderReview', {
+      categoryName,
+      subcategoryProfileName,
+      subcategoryId,
+      subcategoryName,
+      subcategorySubtext,
+      subcategoryDescription,
+      totalSelectedQty,
+      selectedProductLines: jacketSelectedProductLines,
+      selectedFilters,
+      specialNotePlaceholderText,
+      productImageUrl,
+      productDescription,
+      subcategoryThumbnailImage,
+    });
+  }, [
+    categoryName,
+    jacketSelectedProductLines,
+    navigation,
+    productDescription,
+    productImageUrl,
+    selectedFilters,
+    specialNotePlaceholderText,
+    subcategoryDescription,
+    subcategoryId,
+    subcategoryName,
+    subcategoryProfileName,
+    subcategorySubtext,
+    subcategoryThumbnailImage,
+    totalSelectedQty,
+  ]);
+
+  const contentPaddingBottom = isJacketFlow
+    ? styles.jacketFooterWrap.height + 24
+    : 24;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      <Text style={styles.breadcrumb} numberOfLines={1} ellipsizeMode="tail">
-        {breadcrumbText || `HOME | ${String(subcategoryName).toUpperCase()}`}
-      </Text>
+    <View style={styles.container}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.contentContainer, { paddingBottom: contentPaddingBottom }]}>
+        <Text style={styles.breadcrumb} numberOfLines={1} ellipsizeMode="tail">
+          {breadcrumbText || `HOME | ${String(subcategoryName).toUpperCase()}`}
+        </Text>
 
-      <View style={styles.productHero}>
-        {productImageUrl ? (
-          <Image source={{ uri: productImageUrl }} style={styles.heroImage} resizeMode="contain" />
-        ) : (
-          <View style={styles.heroPlaceholder} />
-        )}
-      </View>
-
-      <ProductDescriptionSection description={productDescription} />
-
-      {sortedSchema.map((field) => (
-        <View key={field?.key || field?.label}>
-          {renderFilterField(field)}
+        <View style={styles.productHero}>
+          {productImageUrl ? (
+            <Image source={{ uri: productImageUrl }} style={styles.heroImage} resizeMode="contain" />
+          ) : (
+            <View style={styles.heroPlaceholder} />
+          )}
         </View>
-      ))}
 
-      <TouchableOpacity
-        style={[styles.proceedButton, !canProceed && styles.proceedButtonDisabled]}
-        activeOpacity={canProceed ? 0.85 : 1}
-        disabled={!canProceed}
-        onPress={() =>
-          navigation.navigate(isRingCategory ? 'RingMatrixPage' : 'ProductMatrix', {
-            categoryName,
-            subcategoryProfileName,
-            subcategoryId,
-            subcategoryName,
-            subcategorySubtext,
-            subcategoryDescription,
-            selectedFilters,
-            specialNotePlaceholderText,
-            productImageUrl,
-            productDescription,
-            subcategoryThumbnailImage,
-          })
-        }>
-        <Text style={styles.proceedButtonText}>Proceed</Text>
-      </TouchableOpacity>
+        <ProductDescriptionSection description={productDescription} />
 
-      {!subcategoryId ? (
-        <TouchableOpacity style={styles.stateCard} activeOpacity={0.8}>
-          <Text style={styles.stateTitle}>Missing subcategory details</Text>
-          <Text style={styles.stateSub}>Please re-open from category screen</Text>
-        </TouchableOpacity>
+        {sortedSchema.map((field) => (
+          <View key={field?.key || field?.label}>
+            {renderFilterField(field)}
+          </View>
+        ))}
+
+        {isJacketFlow ? (
+          <>
+            {jacketLoading ? (
+              <View style={styles.stateCard}>
+                <Text style={styles.stateText}>Loading product...</Text>
+              </View>
+            ) : null}
+
+            {!jacketLoading && jacketError ? (
+              <TouchableOpacity style={styles.stateCard} activeOpacity={0.8} onPress={fetchJacketProduct}>
+                <Text style={styles.stateTitle}>Unable to load product</Text>
+                <Text style={styles.stateText}>Tap to retry</Text>
+              </TouchableOpacity>
+            ) : null}
+
+            {!jacketLoading && !jacketError && jacketProduct && !isJacketBaseFiltersSelected ? (
+              <View style={styles.matrixHintCard}>
+                <Text style={styles.matrixHintText}>
+                  Select metal and stone to view pricing and add quantities.
+                </Text>
+              </View>
+            ) : null}
+
+            {!jacketLoading && !jacketError && jacketProduct && isJacketBaseFiltersSelected ? (
+              <View style={styles.matrixCardWrap}>
+                <ProductMatrixCard
+                  pointer={String(jacketProduct?.pointer ?? 0)}
+                  price={formatJacketProductPrice(jacketProduct)}
+                  specialNotePlaceholderText={specialNotePlaceholderText}
+                  quantities={quantities}
+                  onChangeQuantities={onJacketQuantityChange}
+                  specialNoteValue={specialNote}
+                  onChangeSpecialNote={setSpecialNote}
+                />
+              </View>
+            ) : null}
+          </>
+        ) : null}
+
+        {!isJacketFlow ? (
+          <TouchableOpacity
+            style={[styles.proceedButton, !canProceedStandard && styles.proceedButtonDisabled]}
+            activeOpacity={canProceedStandard ? 0.85 : 1}
+            disabled={!canProceedStandard}
+            onPress={() =>
+              navigation.navigate(isRingCategory ? 'RingMatrixPage' : 'ProductMatrix', {
+                categoryName,
+                subcategoryProfileName,
+                subcategoryId,
+                subcategoryName,
+                subcategorySubtext,
+                subcategoryDescription,
+                selectedFilters,
+                specialNotePlaceholderText,
+                productImageUrl,
+                productDescription,
+                subcategoryThumbnailImage,
+                onlyBestSeller,
+                onlyReadyToShip,
+              })
+            }>
+            <Text style={styles.proceedButtonText}>Proceed</Text>
+          </TouchableOpacity>
+        ) : null}
+
+        {!subcategoryId ? (
+          <TouchableOpacity style={styles.stateCard} activeOpacity={0.8}>
+            <Text style={styles.stateTitle}>Missing subcategory details</Text>
+            <Text style={styles.stateSub}>Please re-open from category screen</Text>
+          </TouchableOpacity>
+        ) : null}
+      </ScrollView>
+
+      {isJacketFlow && !isKeyboardVisible ? (
+        <View style={styles.jacketFooterWrap}>
+          <View style={styles.totalBadge}>
+            <Text style={styles.totalBadgeText}>{totalSelectedQty} Designs Added</Text>
+          </View>
+          <TouchableOpacity
+            activeOpacity={canProceedJacket ? 0.85 : 1}
+            disabled={!canProceedJacket}
+            style={[styles.jacketProceedButton, !canProceedJacket && styles.jacketProceedButtonDisabled]}
+            onPress={openOrderReview}>
+            <Text style={styles.jacketProceedText}>Proceed</Text>
+          </TouchableOpacity>
+        </View>
       ) : null}
-
-    </ScrollView>
+    </View>
   );
 };
 
@@ -179,10 +471,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.backgroundSecondary,
   },
+  scroll: {
+    flex: 1,
+  },
   contentContainer: {
     paddingHorizontal: 20,
     paddingVertical: 10,
-    paddingBottom: 24,
   },
   breadcrumb: {
     color: colors.textPrimary,
@@ -206,58 +500,26 @@ const styles = StyleSheet.create({
     height: 260,
     backgroundColor: colors.cardBackground,
   },
-  listHeading: {
-    marginTop: 6,
-    marginBottom: 8,
-    color: colors.textPrimary,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    rowGap: 10,
-  },
-  productCard: {
-    width: '48.5%',
-    backgroundColor: '#EFEFF1',
-    borderRadius: 12,
-    overflow: 'hidden',
-    paddingBottom: 10,
-  },
-  imageWrap: {
-    width: '100%',
-    aspectRatio: 1,
-    backgroundColor: '#E3E5E8',
-  },
-  image: {
-    width: '100%',
-    height: '100%',
-  },
-  imagePlaceholder: {
-    flex: 1,
-    backgroundColor: '#E3E5E8',
-  },
-  styleNo: {
+  matrixHintCard: {
     marginTop: 8,
-    paddingHorizontal: 10,
-    color: colors.textPrimary,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  desc: {
-    marginTop: 4,
-    paddingHorizontal: 10,
-    color: colors.textSecondary,
-    fontSize: 11,
-    lineHeight: 15,
-  },
-  skeletonCard: {
-    width: '48.5%',
-    aspectRatio: 0.9,
+    marginBottom: 12,
     borderRadius: 12,
-    backgroundColor: '#E9ECEF',
+    backgroundColor: colors.cardBackground,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+  },
+  matrixHintText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+  matrixCardWrap: {
+    marginTop: 8,
+    marginBottom: 12,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    overflow: 'hidden',
   },
   stateCard: {
     minHeight: 90,
@@ -266,6 +528,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 14,
+    marginTop: 8,
   },
   stateTitle: {
     color: colors.textPrimary,
@@ -273,6 +536,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   stateSub: {
+    marginTop: 4,
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
+  stateText: {
     marginTop: 4,
     color: colors.textSecondary,
     fontSize: 12,
@@ -293,6 +561,47 @@ const styles = StyleSheet.create({
     color: colors.textWhite,
     fontSize: 14,
     fontWeight: '700',
+  },
+  jacketFooterWrap: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    bottom: 8,
+    height: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  totalBadge: {
+    flex: 1,
+    height: '100%',
+    borderRadius: 14,
+    backgroundColor: colors.cardBackground,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  totalBadgeText: {
+    color: '#1A1A1A',
+    fontSize: 14,
+    fontWeight: '400',
+  },
+  jacketProceedButton: {
+    width: 132,
+    height: '100%',
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1F5A62',
+  },
+  jacketProceedButtonDisabled: {
+    backgroundColor: '#8AA8AC',
+  },
+  jacketProceedText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '400',
   },
 });
 

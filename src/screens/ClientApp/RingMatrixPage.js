@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Keyboard } from 'react-native';
 import catalogApi from '../../services/catalogApi';
+import { getSubcategoryProductsPath } from '../../utils/subcategoryProductsPath';
 import RingProductMatrixCard from '../../components/client/RingProductMatrixCard';
 import { computeUnitPriceFromSource, getPricingContext } from '../../services/clientPricingEngine';
 
@@ -18,6 +19,8 @@ const RingMatrixPage = ({ route, navigation }) => {
     route?.params?.specialNotePlaceholder ||
     'Length variation';
   const selectedFilters = useMemo(() => route?.params?.selectedFilters || {}, [route?.params?.selectedFilters]);
+  const onlyBestSeller = Boolean(route?.params?.onlyBestSeller);
+  const onlyReadyToShip = Boolean(route?.params?.onlyReadyToShip);
   const [stoneShapes, setStoneShapes] = useState([]);
   const [selectedStoneShapes, setSelectedStoneShapes] = useState([]);
   const [allProducts, setAllProducts] = useState([]);
@@ -141,7 +144,7 @@ const RingMatrixPage = ({ route, navigation }) => {
       setError('');
       const [shapeResponse, productResponse] = await Promise.all([
         catalogApi.get('/stone-shapes'),
-        catalogApi.get(`/subcategories/${subcategoryId}/products`),
+        catalogApi.get(getSubcategoryProductsPath(subcategoryId, { onlyBestSeller, onlyReadyToShip })),
       ]);
       const shapes = Array.isArray(shapeResponse?.stoneShapes) ? shapeResponse.stoneShapes : [];
       const fetchedProducts = Array.isArray(productResponse?.products) ? productResponse.products : [];
@@ -165,7 +168,7 @@ const RingMatrixPage = ({ route, navigation }) => {
     } finally {
       setLoading(false);
     }
-  }, [matchesBaseFilters, subcategoryId]);
+  }, [matchesBaseFilters, onlyBestSeller, onlyReadyToShip, subcategoryId]);
 
   useEffect(() => {
     fetchData();
@@ -288,6 +291,7 @@ const RingMatrixPage = ({ route, navigation }) => {
             name: product?.styleNo || '',
             shapeName,
             imageUrl:
+              product?.displayImage ||
               product?.imageUrl ||
               product?.thumbnailUrl ||
               (Array.isArray(product?.images) ? product.images[0] : '') ||

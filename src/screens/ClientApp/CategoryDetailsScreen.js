@@ -107,23 +107,44 @@ const CategoryDetailsScreen = ({ route, navigation }) => {
                       title={subcategory.name}
                       subtext={getSubcategorySubtext(subcategory)}
                       infoText={subcategory.infoText}
-                      onPress={() =>
-                        navigation.navigate('ProductList', {
-                          categoryName,
-                          subcategoryProfileName: profile?.name || '',
-                          subcategoryId: subcategory._id,
-                          subcategoryName: subcategory.name,
-                          subcategorySubtext: subcategory.subtext || '',
-                          subcategoryFilterSchema: subcategory.filterSchema || [],
-                          subcategoryDescription:
-                            subcategory.description || subcategory.infoText || subcategory.subtext || '',
-                          subcategoryImages: Array.isArray(subcategory.images) ? subcategory.images : [],
-                          subcategoryThumbnailImage:
-                            subcategory.thumbnailImage || subcategory.imageUrl || '',
-                          specialNotePlaceholderText:
-                            subcategory.specialNotePlaceholderText || 'Length variation',
-                        })
-                      }
+                      onPress={() => {
+                        const isStuds = String(categoryName || '').trim().toLowerCase() === 'studs';
+                        const isJackets = String(subcategory.name || '').trim().toLowerCase() === 'jackets';
+                        if (isStuds && isJackets) {
+                          navigation.navigate('JacketsScreen', {
+                            categoryId,
+                            categoryName,
+                            subcategoryProfileName: profile?.name || '',
+                            subcategoryId: subcategory._id,
+                            subcategoryName: subcategory.name,
+                            subcategorySubtext: subcategory.subtext || '',
+                            subcategoryFilterSchema: subcategory.filterSchema || [],
+                            subcategoryDescription:
+                              subcategory.description || subcategory.infoText || subcategory.subtext || '',
+                            subcategoryImages: Array.isArray(subcategory.images) ? subcategory.images : [],
+                            subcategoryThumbnailImage:
+                              subcategory.thumbnailImage || subcategory.imageUrl || '',
+                            specialNotePlaceholderText:
+                              subcategory.specialNotePlaceholderText || 'Length variation',
+                          });
+                        } else {
+                          navigation.navigate('ProductList', {
+                            categoryName,
+                            subcategoryProfileName: profile?.name || '',
+                            subcategoryId: subcategory._id,
+                            subcategoryName: subcategory.name,
+                            subcategorySubtext: subcategory.subtext || '',
+                            subcategoryFilterSchema: subcategory.filterSchema || [],
+                            subcategoryDescription:
+                              subcategory.description || subcategory.infoText || subcategory.subtext || '',
+                            subcategoryImages: Array.isArray(subcategory.images) ? subcategory.images : [],
+                            subcategoryThumbnailImage:
+                              subcategory.thumbnailImage || subcategory.imageUrl || '',
+                            specialNotePlaceholderText:
+                              subcategory.specialNotePlaceholderText || 'Length variation',
+                          });
+                        }
+                      }}
                     />
                   ))}
                 </View>
