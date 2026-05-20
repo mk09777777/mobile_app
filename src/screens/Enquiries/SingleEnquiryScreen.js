@@ -2231,7 +2231,7 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
           <Text
             style={[
               styles.descriptionText,
-              { color: colors.textSecondary, fontSize: 13, lineHeight: 20 },
+              { color: colors.textSecondary, fontSize: 15, lineHeight: 20 },
             ]}
           >
             {originalData?.Remarks ||
@@ -2273,7 +2273,7 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
               <Text
                 style={[
                   styles.descriptionText,
-                  { color: colors.textSecondary, fontSize: 13, lineHeight: 20 },
+                  { color: colors.textSecondary, fontSize: 15, lineHeight: 20 },
                 ]}
               >
                 {specialRemarks}
