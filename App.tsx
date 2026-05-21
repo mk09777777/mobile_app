@@ -22,12 +22,12 @@ import ChatListSocketSync from './src/components/providers/ChatListSocketSync';
 const AppContent = () => {
   const isDarkMode = useColorScheme() === 'dark';
   const { isLoading: authLoading } = useAuth();
-  const [splashFinished, setSplashFinished] = useState(false);
+  const [splashFinished, setSplashFinished] = useState(true);
 
   // Show splash screen first
-  if (!splashFinished) {
-    return <SplashScreen onAnimationFinish={() => setSplashFinished(true)} />;
-  }
+  // if (!splashFinished) {
+  //   return <SplashScreen onAnimationFinish={() => setSplashFinished(true)} />;
+  // }
 
   // Wait for the auth token check to complete before rendering navigation.
   // This prevents a flash of the Login screen on launches where the token
