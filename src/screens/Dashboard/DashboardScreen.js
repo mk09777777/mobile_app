@@ -12,17 +12,32 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../context/AuthContext';
-import { useGetDashboardDataQuery, useGetEnquiriesQuery, useGetStatusStatisticsQuery, useGetNotificationsQuery } from '../../store/api';
+import {
+  useGetDashboardDataQuery,
+  useGetEnquiriesQuery,
+  useGetStatusStatisticsQuery,
+  useGetNotificationsQuery,
+} from '../../store/api';
 import { useClients } from '../../features/clients/clientsHooks';
 import { useStatuses } from '../../features/statuses/statusesHooks';
-import { StatusCard, Card, EnquiryStatusCard } from '../../components/cards/Cards';
+import {
+  StatusCard,
+  Card,
+  EnquiryStatusCard,
+} from '../../components/cards/Cards';
 import { Button, SearchInput, OptimizedImage } from '../../components/common';
 import { AnimatedLogoLoader } from '../../components/common';
 import TopNavbar from '../../components/common/TopNavbar';
 import Icon from '../../components/common/Icon';
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
-import { formatCurrency, getRoleDisplayName, spacing, responsivePadding, imageSizes } from '../../utils';
+import {
+  formatCurrency,
+  getRoleDisplayName,
+  spacing,
+  responsivePadding,
+  imageSizes,
+} from '../../utils';
 import useDeviceLayout from '../../hooks/useDeviceLayout';
 import { FILE_BASE_URL } from '../../config/apiConfig';
 import { navigateFromNotification } from '../../utils/notificationNavigation';
@@ -33,7 +48,7 @@ const ClientCardWithImage = ({ client, imageUrl, onPress }) => {
   const [actualImageUrl, setActualImageUrl] = useState(null);
   const [imageHeaders, setImageHeaders] = useState({});
   const [isLoadingImage, setIsLoadingImage] = useState(false);
-  
+
   // Load auth token for image headers
   useEffect(() => {
     const loadAuthToken = async () => {
@@ -41,15 +56,14 @@ const ClientCardWithImage = ({ client, imageUrl, onPress }) => {
         const token = await AsyncStorage.getItem('token');
         if (token) {
           setImageHeaders({
-            'Authorization': `Bearer ${token}`,
+            Authorization: `Bearer ${token}`,
           });
         }
-      } catch (error) {
-      }
+      } catch (error) {}
     };
     loadAuthToken();
   }, []);
-  
+
   // Extract actual image URL from Google redirect URLs
   useEffect(() => {
     if (!imageUrl) {
@@ -58,62 +72,67 @@ const ClientCardWithImage = ({ client, imageUrl, onPress }) => {
       setImageError(false);
       return;
     }
-    
+
     // Reset error state when URL changes
     setImageError(false);
     setIsLoadingImage(true);
-    
+
     const processImageUrl = async () => {
       try {
         let urlToUse = imageUrl;
-        
+
         // Check if it's a Google redirect URL
         if (imageUrl.includes('google.com/url') && imageUrl.includes('url=')) {
           const urlMatch = imageUrl.match(/url=([^&]+)/);
           if (urlMatch) {
             urlToUse = decodeURIComponent(urlMatch[1]);
-            
           }
         }
-        
+
         // Check if the URL is actually an image (has image extension)
-        const isImageUrl = /\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?|$)/i.test(urlToUse) || 
-                          urlToUse.includes('amazonaws.com') || 
-                          urlToUse.includes('s3.') ||
-                          urlToUse.includes('cloudinary.com') ||
-                          urlToUse.includes('imgur.com');
-        
+        const isImageUrl =
+          /\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?|$)/i.test(urlToUse) ||
+          urlToUse.includes('amazonaws.com') ||
+          urlToUse.includes('s3.') ||
+          urlToUse.includes('cloudinary.com') ||
+          urlToUse.includes('imgur.com');
+
         // Check if URL is an HTML page (not an image)
-        const isHtmlPage = /\.(html|htm)(\?|$)/i.test(urlToUse) || 
-                          urlToUse.includes('.html') ||
-                          urlToUse.includes('.htm');
-        
+        const isHtmlPage =
+          /\.(html|htm)(\?|$)/i.test(urlToUse) ||
+          urlToUse.includes('.html') ||
+          urlToUse.includes('.htm');
+
         // If it's an HTML page, don't try to load it as an image
         if (isHtmlPage && !isImageUrl) {
-          
           setActualImageUrl(null);
           setIsLoadingImage(false);
           return;
         }
-        
+
         // Check if URL is an API endpoint (needs auth)
-        const isApiEndpoint = urlToUse.includes(FILE_BASE_URL) || urlToUse.includes('/api/');
-        
+        const isApiEndpoint =
+          urlToUse.includes(FILE_BASE_URL) || urlToUse.includes('/api/');
+
         if (isApiEndpoint) {
           // Try to fetch and check if it returns JSON with image URL
           try {
             const token = await AsyncStorage.getItem('token');
             const response = await fetch(urlToUse, {
-              headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
             });
-            
+
             if (response.ok) {
               const contentType = response.headers.get('content-type') || '';
-              
+
               // Check if response is JSON (API returns a URL object)
               if (contentType.includes('application/json')) {
                 const jsonData = await response.json();
-                const imageUrlFromJson = jsonData.url || jsonData.imageUrl || jsonData.src || jsonData.location;
+                const imageUrlFromJson =
+                  jsonData.url ||
+                  jsonData.imageUrl ||
+                  jsonData.src ||
+                  jsonData.location;
                 if (imageUrlFromJson) {
                   setActualImageUrl(imageUrlFromJson);
                   setIsLoadingImage(false);
@@ -126,23 +145,21 @@ const ClientCardWithImage = ({ client, imageUrl, onPress }) => {
                 return;
               } else if (contentType.includes('text/html')) {
                 // API returned HTML, not an image
-                
+
                 setActualImageUrl(null);
                 setIsLoadingImage(false);
                 return;
               }
             }
-          } catch (fetchError) {
-            
-          }
+          } catch (fetchError) {}
         }
-        
+
         // Use URL directly only if it looks like an image URL
         if (isImageUrl || isApiEndpoint) {
           setActualImageUrl(urlToUse);
         } else {
           // Not a recognized image URL, show placeholder
-          
+
           setActualImageUrl(null);
         }
         setIsLoadingImage(false);
@@ -151,18 +168,15 @@ const ClientCardWithImage = ({ client, imageUrl, onPress }) => {
         setIsLoadingImage(false);
       }
     };
-    
+
     processImageUrl();
   }, [imageUrl]);
-  
+
   return (
-    <TouchableOpacity
-      style={styles.clientCard}
-      onPress={onPress}
-    >
+    <TouchableOpacity style={styles.clientCard} onPress={onPress}>
       {actualImageUrl && !imageError ? (
         <OptimizedImage
-          source={{ 
+          source={{
             uri: actualImageUrl,
             headers: imageHeaders,
           }}
@@ -170,7 +184,7 @@ const ClientCardWithImage = ({ client, imageUrl, onPress }) => {
           resizeMode="contain"
           showLoader={false}
           cacheEnabled={true}
-          onError={(error) => {
+          onError={error => {
             if (__DEV__) {
               console.error('❌ Client image failed to load:', {
                 url: actualImageUrl,
@@ -180,7 +194,6 @@ const ClientCardWithImage = ({ client, imageUrl, onPress }) => {
             setImageError(true);
           }}
           onLoad={() => {
-            
             setIsLoadingImage(false);
           }}
         />
@@ -204,18 +217,18 @@ const DashboardScreen = ({ navigation }) => {
   // TEMPORARY TEST - Remove after testing Error Boundary
   // Uncomment the line below to test Error Boundary:
   // throw new Error('Testing Error Boundary - This is intentional!');
-  
+
   const { user } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
 
   // Redux hooks for data fetching
   // Pass role, userId, and clientId (for role 4 users) to get user-specific counts
-  const { 
-    data: dashboardData, 
-    isLoading: dashboardLoading, 
-    refetch: refetchDashboard 
+  const {
+    data: dashboardData,
+    isLoading: dashboardLoading,
+    refetch: refetchDashboard,
   } = useGetDashboardDataQuery(
-    { 
+    {
       role: user?.role || 'client',
       userId: user?.id || user?._id || user?.userId,
       clientId: user?.clientId, // Pass ClientId from token for role 4 users
@@ -223,58 +236,64 @@ const DashboardScreen = ({ navigation }) => {
     },
     {
       skip: !user,
-    }
+    },
   );
 
-  const { 
-    clients: clientsData = [], 
-    isLoading: clientsLoading, 
-    refetch: refetchClients 
+  const {
+    clients: clientsData = [],
+    isLoading: clientsLoading,
+    refetch: refetchClients,
   } = useClients({
     skip: !user || user?.role !== 'admin',
   });
 
-  const { 
-    data: enquiriesResponse, 
-    isLoading: enquiriesLoading 
-  } = useGetEnquiriesQuery(user?.role || 'admin', {
-    skip: !user || user?.role !== 'admin',
-  });
+  const { data: enquiriesResponse, isLoading: enquiriesLoading } =
+    useGetEnquiriesQuery(user?.role || 'admin', {
+      skip: !user || user?.role !== 'admin',
+    });
 
   // Fetch status statistics for all status cards
-  const { 
-    data: statusStatisticsData, 
+  const {
+    data: statusStatisticsData,
     isLoading: statusStatisticsLoading,
-    refetch: refetchStatusStatistics
+    refetch: refetchStatusStatistics,
   } = useGetStatusStatisticsQuery(undefined, {
     skip: !user || user?.role !== 'admin',
   });
 
   // Fetch recent notifications (top 5)
-  const { 
-    data: notificationsData = [], 
+  const {
+    data: notificationsData = [],
     isLoading: notificationsLoading,
-    refetch: refetchNotifications
-  } = useGetNotificationsQuery({ limit: 5 }, {
-    skip: !user,
-    refetchOnFocus: true,
-  });
+    refetch: refetchNotifications,
+  } = useGetNotificationsQuery(
+    { limit: 5 },
+    {
+      skip: !user,
+      refetchOnFocus: true,
+    },
+  );
 
   // Extract enquiries array from response (new API returns { data, pagination })
   const enquiriesData = enquiriesResponse?.data || [];
-  
+
   // Extract status statistics array from aggregate endpoint
   const statusStatsRaw = statusStatisticsData?.statusStats || [];
-  
+
   // Get statuses from API to map counts
   const { statuses } = useStatuses();
-  
+
   // Map aggregate counts to status list from API
   // Create a map of status name (lowercase) to count from aggregate endpoint
   const statusCountMap = useMemo(() => {
     const map = new Map();
     statusStatsRaw.forEach(item => {
-      const statusName = (item.name || item.status || item.Status || '').toLowerCase();
+      const statusName = (
+        item.name ||
+        item.status ||
+        item.Status ||
+        ''
+      ).toLowerCase();
       const count = item.count || item.Count || item.value || 0;
       if (statusName) {
         map.set(statusName, count);
@@ -282,14 +301,14 @@ const DashboardScreen = ({ navigation }) => {
     });
     return map;
   }, [statusStatsRaw]);
-  
+
   // Map counts to status list from API
   const statusStats = useMemo(() => {
     if (!statuses || statuses.length === 0) {
       // If statuses not loaded yet, return raw stats
       return statusStatsRaw;
     }
-    
+
     // Create a map for quick lookup of status names (case-insensitive)
     const statusNameMap = new Map();
     statuses.forEach(status => {
@@ -298,17 +317,19 @@ const DashboardScreen = ({ navigation }) => {
         statusNameMap.set(name, status);
       }
     });
-    
+
     // Map each status from API to its count from aggregate endpoint
-    return statuses.map(status => {
-      const statusName = (status.name || status.Name || '').toLowerCase();
-      const count = statusCountMap.get(statusName) || 0;
-      
-      return {
-        name: status.name || status.Name,
-        count: count,
-      };
-    }).filter(item => item.name); // Filter out any items without a name
+    return statuses
+      .map(status => {
+        const statusName = (status.name || status.Name || '').toLowerCase();
+        const count = statusCountMap.get(statusName) || 0;
+
+        return {
+          name: status.name || status.Name,
+          count: count,
+        };
+      })
+      .filter(item => item.name); // Filter out any items without a name
   }, [statuses, statusCountMap, statusStatsRaw]);
 
   // Compute clients with enquiry counts using aggregate data
@@ -319,11 +340,10 @@ const DashboardScreen = ({ navigation }) => {
 
     // Use client aggregate data from dashboard if available (more accurate)
     const clientAggregateData = dashboardData?.clientAggregateData;
-    
+
     // Create a map of client ID to enquiry count from aggregate data
     const clientCountMap = new Map();
     if (Array.isArray(clientAggregateData)) {
-      
       clientAggregateData.forEach(item => {
         // Aggregate API returns client ID in 'name' field
         const clientId = item.name || item.id || item._id;
@@ -332,7 +352,6 @@ const DashboardScreen = ({ navigation }) => {
           // Store with multiple key formats for matching
           clientCountMap.set(String(clientId), count);
           clientCountMap.set(clientId, count);
-          
         }
       });
     }
@@ -342,65 +361,104 @@ const DashboardScreen = ({ navigation }) => {
       // Try to find count from aggregate data first (most accurate)
       const clientId = client.id || client._id;
       let enquiryCount = 0;
-      
+
       if (clientCountMap.size > 0 && clientId) {
         // Try multiple ID formats to match client ID from aggregate
-        enquiryCount = clientCountMap.get(String(clientId)) || 
-                      clientCountMap.get(clientId) ||
-                      clientCountMap.get(String(client._id)) ||
-                      clientCountMap.get(client._id) ||
-                      0;
-        
+        enquiryCount =
+          clientCountMap.get(String(clientId)) ||
+          clientCountMap.get(clientId) ||
+          clientCountMap.get(String(client._id)) ||
+          clientCountMap.get(client._id) ||
+          0;
+
         if (__DEV__ && enquiryCount === 0) {
-          console.log('⚠️ [DASHBOARD] No count found for client:', client.name, 'ID:', clientId, 'Available IDs in map:', Array.from(clientCountMap.keys()).slice(0, 5));
+          console.log(
+            '⚠️ [DASHBOARD] No count found for client:',
+            client.name,
+            'ID:',
+            clientId,
+            'Available IDs in map:',
+            Array.from(clientCountMap.keys()).slice(0, 5),
+          );
         }
       } else {
         // Fallback to counting from enquiries data if aggregate not available
-        if (enquiriesData && Array.isArray(enquiriesData) && enquiriesData.length > 0) {
-          enquiryCount = enquiriesData.filter(
-            enquiry => {
-              const enquiryClientId = enquiry.clientId || enquiry.ClientId;
-              return enquiryClientId === clientId || 
-                     enquiryClientId === client._id ||
-                     enquiry.clientName === client.name;
-            }
-          ).length;
+        if (
+          enquiriesData &&
+          Array.isArray(enquiriesData) &&
+          enquiriesData.length > 0
+        ) {
+          enquiryCount = enquiriesData.filter(enquiry => {
+            const enquiryClientId = enquiry.clientId || enquiry.ClientId;
+            return (
+              enquiryClientId === clientId ||
+              enquiryClientId === client._id ||
+              enquiry.clientName === client.name
+            );
+          }).length;
         }
       }
-      
+
       return {
         ...client,
         enquiryCount: enquiryCount,
       };
     });
-  }, [clientsData, dashboardData?.clientAggregateData, enquiriesData, user?.role]);
+  }, [
+    clientsData,
+    dashboardData?.clientAggregateData,
+    enquiriesData,
+    user?.role,
+  ]);
 
-  const loading = dashboardLoading || clientsLoading || enquiriesLoading || statusStatisticsLoading || notificationsLoading;
+  const loading =
+    dashboardLoading ||
+    clientsLoading ||
+    enquiriesLoading ||
+    statusStatisticsLoading ||
+    notificationsLoading;
   const { isTablet, width } = useDeviceLayout();
-  
+
   // Calculate dynamic max width for tablets (use 94% of screen width with reasonable padding)
   const tabletMaxWidth = isTablet ? Math.min(width * 0.94, width - 48) : null;
-  
-  const statsGridStyle = isTablet 
-    ? [styles.statsGrid, styles.statsGridTablet, tabletMaxWidth && { maxWidth: tabletMaxWidth }] 
+
+  const statsGridStyle = isTablet
+    ? [
+        styles.statsGrid,
+        styles.statsGridTablet,
+        tabletMaxWidth && { maxWidth: tabletMaxWidth },
+      ]
     : styles.statsGrid;
   const tabletStatusCardStyle = isTablet ? styles.statusCardTablet : null;
-  const quickActionsCardStyle = isTablet 
-    ? [styles.quickActionsCard, styles.quickActionsCardTablet, tabletMaxWidth && { maxWidth: tabletMaxWidth }] 
+  const quickActionsCardStyle = isTablet
+    ? [
+        styles.quickActionsCard,
+        styles.quickActionsCardTablet,
+        tabletMaxWidth && { maxWidth: tabletMaxWidth },
+      ]
     : styles.quickActionsCard;
-  const actionsGridStyle = isTablet ? [styles.actionsGrid, styles.actionsGridTablet] : styles.actionsGrid;
-  const actionButtonStyle = isTablet ? [styles.actionButton, styles.actionButtonTablet] : styles.actionButton;
+  const actionsGridStyle = isTablet
+    ? [styles.actionsGrid, styles.actionsGridTablet]
+    : styles.actionsGrid;
+  const actionButtonStyle = isTablet
+    ? [styles.actionButton, styles.actionButtonTablet]
+    : styles.actionButton;
   const actionIconSize = isTablet ? 18 : 22;
-  const actionTextStyle = isTablet ? [styles.actionText, styles.actionTextTablet] : styles.actionText;
+  const actionTextStyle = isTablet
+    ? [styles.actionText, styles.actionTextTablet]
+    : styles.actionText;
   const statusCardIconSize = isTablet ? 16 : 20;
 
-  const navigateWithDashboardFilter = useCallback((params = {}) => {
-    navigation.navigate('Enquiries', {
-      ...params,
-      filterSource: 'dashboard',
-      filterAppliedAt: Date.now(),
-    });
-  }, [navigation]);
+  const navigateWithDashboardFilter = useCallback(
+    (params = {}) => {
+      navigation.navigate('Enquiries', {
+        ...params,
+        filterSource: 'dashboard',
+        filterAppliedAt: Date.now(),
+      });
+    },
+    [navigation],
+  );
 
   // Safety check - don't render if user is not loaded (must be after all hooks)
   if (!user) {
@@ -427,8 +485,24 @@ const DashboardScreen = ({ navigation }) => {
 
   const renderAdminDashboard = () => (
     <View style={styles.dashboardContent}>
+      <View style={styles.NewEnquiryPricingButtonContainer}>
+        <TouchableOpacity
+          style={styles.NewEnquiryButton}
+          onPress={() => navigation.navigate('AddEnquiryStep1')}
+        >
+          <Icon name="add-circle" size={20} color={colors.textWhite} />
+          <Text style={styles.NewEnquiryText}>Create New Enquiry</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.NewEnquiryButton}
+          onPress={() => navigation.navigate('PricingCalci')}
+        >
+          <Icon name="attach-money" size={20} color={colors.textWhite} />
+          <Text style={styles.NewEnquiryText}>Pricing Calculator</Text>
+        </TouchableOpacity>
+      </View>
       {/* Enquiries By Status Section */}
-      <View style={styles.sectionContainer}>
+      {/* <View style={styles.sectionContainer}>
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Status </Text>
         </View>
@@ -438,7 +512,7 @@ const DashboardScreen = ({ navigation }) => {
           style={styles.statusScroll}
           contentContainerStyle={styles.statusScrollContent}
         >
-          {statusStats.length > 0 ? (
+           {statusStats.length > 0 ? (
             statusStats
               .filter((item) => {
                 const statusName = (item.name || item.status || item.Status || '').toLowerCase();
@@ -532,12 +606,12 @@ const DashboardScreen = ({ navigation }) => {
             onPress={() => navigateWithDashboardFilter({ filter: 'completed' })}
           />
             </>
-          )}
+          )} 
         </ScrollView>
-      </View>
+      </View> */}
 
       {/* Clients Section */}
-      {clients.length > 0 && (
+      {/* {clients.length > 0 && (
         <View style={styles.clientsSection}>
           <View style={styles.clientsHeaderContainer}>
             <Text style={styles.clientsHeader}>Clients</Text>
@@ -602,7 +676,7 @@ const DashboardScreen = ({ navigation }) => {
             })}
           </ScrollView>
         </View>
-      )}
+      )} */}
 
       {/* Overview Section - Only show on mobile, hidden on tablets */}
       {!isTablet && (
@@ -616,7 +690,13 @@ const DashboardScreen = ({ navigation }) => {
             <StatusCard
               title="Total Enquiries"
               value={dashboardData?.totalEnquiries || '0'}
-              icon={<Icon name="assignment" size={statusCardIconSize} color={colors.textWhite} />}
+              icon={
+                <Icon
+                  name="assignment"
+                  size={statusCardIconSize}
+                  color={colors.textWhite}
+                />
+              }
               color={colors.primary}
               onPress={() => navigation.navigate('Enquiries')}
               style={tabletStatusCardStyle}
@@ -624,7 +704,13 @@ const DashboardScreen = ({ navigation }) => {
             <StatusCard
               title="Total Clients"
               value={dashboardData?.totalClients || '0'}
-              icon={<Icon name="people" size={statusCardIconSize} color={colors.textWhite} />}
+              icon={
+                <Icon
+                  name="people"
+                  size={statusCardIconSize}
+                  color={colors.textWhite}
+                />
+              }
               color={colors.primary}
               onPress={() => navigation.navigate('ClientsList')}
               style={tabletStatusCardStyle}
@@ -639,8 +725,18 @@ const DashboardScreen = ({ navigation }) => {
     <View style={statsGridStyle}>
       <StatusCard
         title="My Enquiries"
-        value={dashboardData?.myEnquiries ?? dashboardData?.categorizedCounts?.['All'] ?? 0}
-        icon={<Icon name="assignment" size={statusCardIconSize} color={colors.textWhite} />}
+        value={
+          dashboardData?.myEnquiries ??
+          dashboardData?.categorizedCounts?.['All'] ??
+          0
+        }
+        icon={
+          <Icon
+            name="assignment"
+            size={statusCardIconSize}
+            color={colors.textWhite}
+          />
+        }
         color={colors.primary}
         valueColor={colors.primary}
         onPress={() => navigation.navigate('Enquiries')}
@@ -648,8 +744,18 @@ const DashboardScreen = ({ navigation }) => {
       />
       <StatusCard
         title="In-progress"
-        value={dashboardData?.pendingApprovals ?? dashboardData?.categorizedCounts?.['Pending'] ?? 0}
-        icon={<Icon name="schedule" size={statusCardIconSize} color={colors.textWhite} />}
+        value={
+          dashboardData?.pendingApprovals ??
+          dashboardData?.categorizedCounts?.['Pending'] ??
+          0
+        }
+        icon={
+          <Icon
+            name="schedule"
+            size={statusCardIconSize}
+            color={colors.textWhite}
+          />
+        }
         color={colors.primary}
         valueColor={colors.primary}
         onPress={() => navigateWithDashboardFilter({ filter: 'pending' })}
@@ -657,17 +763,39 @@ const DashboardScreen = ({ navigation }) => {
       />
       <StatusCard
         title="Approval Pending"
-        value={dashboardData?.approvalPending ?? dashboardData?.categorizedCounts?.['Approval Pending'] ?? 0}
-        icon={<Icon name="pending-actions" size={statusCardIconSize} color={colors.textWhite} />}
+        value={
+          dashboardData?.approvalPending ??
+          dashboardData?.categorizedCounts?.['Approval Pending'] ??
+          0
+        }
+        icon={
+          <Icon
+            name="pending-actions"
+            size={statusCardIconSize}
+            color={colors.textWhite}
+          />
+        }
         color={colors.primary}
         valueColor={colors.primary}
-        onPress={() => navigateWithDashboardFilter({ filter: 'approval_pending' })}
+        onPress={() =>
+          navigateWithDashboardFilter({ filter: 'approval_pending' })
+        }
         style={tabletStatusCardStyle}
       />
       <StatusCard
         title="Completed Orders"
-        value={dashboardData?.completedOrders ?? dashboardData?.categorizedCounts?.['Completed'] ?? 0}
-        icon={<Icon name="check-circle" size={statusCardIconSize} color={colors.textWhite} />}
+        value={
+          dashboardData?.completedOrders ??
+          dashboardData?.categorizedCounts?.['Completed'] ??
+          0
+        }
+        icon={
+          <Icon
+            name="check-circle"
+            size={statusCardIconSize}
+            color={colors.textWhite}
+          />
+        }
         color={colors.primary}
         valueColor={colors.primary}
         onPress={() => navigateWithDashboardFilter({ filter: 'completed' })}
@@ -676,35 +804,47 @@ const DashboardScreen = ({ navigation }) => {
     </View>
   );
 
-  const renderDesignerDashboard = (role) => {
+  const renderDesignerDashboard = role => {
     // For CAD role, show specific 4 cards
     if (role === 'cad') {
       // Get counts from dashboard data or specific status counts
-      const totalCount = dashboardData?.assignedEnquiries || dashboardData?.categorizedCounts?.['All'] || dashboardData?.specificStatusCounts?.['All'] || '0';
-      
+      const totalCount =
+        dashboardData?.assignedEnquiries ||
+        dashboardData?.categorizedCounts?.['All'] ||
+        dashboardData?.specificStatusCounts?.['All'] ||
+        '0';
+
       // Get CAD count - check multiple sources
       // The API returns pendingDesigns for CAD role, which contains the CAD status count
-      const cadFromStatusStats = statusStats.find((s) => {
-        const name = (s.name || s.status || s.Status || '').toLowerCase();
-        return name === 'cad';
-      })?.count || 0;
-      
+      const cadFromStatusStats =
+        statusStats.find(s => {
+          const name = (s.name || s.status || s.Status || '').toLowerCase();
+          return name === 'cad';
+        })?.count || 0;
+
       // Check all case variations: CAD, Cad, cad
       // Also check pendingDesigns which is set by API for CAD role
       const cadFromPendingDesigns = dashboardData?.pendingDesigns;
-      const cadFromSpecific = dashboardData?.specificStatusCounts?.['CAD'] || 
-                              dashboardData?.specificStatusCounts?.['Cad'] || 
-                              dashboardData?.specificStatusCounts?.['cad'] ||
-                              dashboardData?.statusCounts?.['cad'] ||
-                              dashboardData?.statusCounts?.['CAD'];
-      
-      const cadFromCategorized = dashboardData?.categorizedCounts?.['CAD'] || 
-                                 dashboardData?.categorizedCounts?.['Cad'] || 
-                                 dashboardData?.categorizedCounts?.['cad'];
-      
+      const cadFromSpecific =
+        dashboardData?.specificStatusCounts?.['CAD'] ||
+        dashboardData?.specificStatusCounts?.['Cad'] ||
+        dashboardData?.specificStatusCounts?.['cad'] ||
+        dashboardData?.statusCounts?.['cad'] ||
+        dashboardData?.statusCounts?.['CAD'];
+
+      const cadFromCategorized =
+        dashboardData?.categorizedCounts?.['CAD'] ||
+        dashboardData?.categorizedCounts?.['Cad'] ||
+        dashboardData?.categorizedCounts?.['cad'];
+
       // Priority: pendingDesigns (from API) > specificStatusCounts > categorizedCounts > statusStats
-      const cadCount = cadFromPendingDesigns || cadFromSpecific || cadFromCategorized || cadFromStatusStats || '0';
-      
+      const cadCount =
+        cadFromPendingDesigns ||
+        cadFromSpecific ||
+        cadFromCategorized ||
+        cadFromStatusStats ||
+        '0';
+
       if (__DEV__) {
         console.log('🔍 [CAD CARD DEBUG] CAD Count Calculation:', {
           cadFromPendingDesigns,
@@ -718,27 +858,47 @@ const DashboardScreen = ({ navigation }) => {
           statusStatsLength: statusStats?.length,
         });
       }
-      
+
       // Get Approved Cad count - check statusStats array as fallback
-      const approvedCadFromStatusStats = statusStats.find((s) => {
-        const name = (s.name || s.status || s.Status || '').toLowerCase();
-        return name === 'approved cad' || name === 'approvedcad';
-      })?.count || 0;
-      const approvedCadCount = dashboardData?.specificStatusCounts?.['Approved Cad'] || dashboardData?.specificStatusCounts?.['ApprovedCad'] || dashboardData?.categorizedCounts?.['Approved Cad'] || dashboardData?.categorizedCounts?.['ApprovedCad'] || approvedCadFromStatusStats || '0';
-      
+      const approvedCadFromStatusStats =
+        statusStats.find(s => {
+          const name = (s.name || s.status || s.Status || '').toLowerCase();
+          return name === 'approved cad' || name === 'approvedcad';
+        })?.count || 0;
+      const approvedCadCount =
+        dashboardData?.specificStatusCounts?.['Approved Cad'] ||
+        dashboardData?.specificStatusCounts?.['ApprovedCad'] ||
+        dashboardData?.categorizedCounts?.['Approved Cad'] ||
+        dashboardData?.categorizedCounts?.['ApprovedCad'] ||
+        approvedCadFromStatusStats ||
+        '0';
+
       // Get Design Approval Pending count - check statusStats array as fallback
-      const designApprovalPendingFromStatusStats = statusStats.find((s) => {
-        const name = (s.name || s.status || s.Status || '').toLowerCase();
-        return name === 'design approval pending';
-      })?.count || 0;
-      const designApprovalPendingCount = dashboardData?.approvalPendingDesigns || dashboardData?.specificStatusCounts?.['Design Approval Pending'] || dashboardData?.categorizedCounts?.['Approval Pending'] || dashboardData?.categorizedCounts?.['Design Approval Pending'] || designApprovalPendingFromStatusStats || '0';
-      
+      const designApprovalPendingFromStatusStats =
+        statusStats.find(s => {
+          const name = (s.name || s.status || s.Status || '').toLowerCase();
+          return name === 'design approval pending';
+        })?.count || 0;
+      const designApprovalPendingCount =
+        dashboardData?.approvalPendingDesigns ||
+        dashboardData?.specificStatusCounts?.['Design Approval Pending'] ||
+        dashboardData?.categorizedCounts?.['Approval Pending'] ||
+        dashboardData?.categorizedCounts?.['Design Approval Pending'] ||
+        designApprovalPendingFromStatusStats ||
+        '0';
+
       return (
         <View style={statsGridStyle}>
           <StatusCard
             title="Total"
             value={totalCount}
-            icon={<Icon name="work" size={statusCardIconSize} color={colors.textWhite} />}
+            icon={
+              <Icon
+                name="work"
+                size={statusCardIconSize}
+                color={colors.textWhite}
+              />
+            }
             color={colors.primary}
             onPress={() => navigation.navigate('Enquiries')}
             style={tabletStatusCardStyle}
@@ -746,7 +906,13 @@ const DashboardScreen = ({ navigation }) => {
           <StatusCard
             title="Cad"
             value={cadCount}
-            icon={<Icon name="pending" size={statusCardIconSize} color={colors.textWhite} />}
+            icon={
+              <Icon
+                name="pending"
+                size={statusCardIconSize}
+                color={colors.textWhite}
+              />
+            }
             color={colors.primaryDark}
             onPress={() => navigateWithDashboardFilter({ filter: 'cad' })}
             style={tabletStatusCardStyle}
@@ -754,59 +920,102 @@ const DashboardScreen = ({ navigation }) => {
           <StatusCard
             title="Approved Cad"
             value={approvedCadCount}
-            icon={<Icon name="check-circle" size={statusCardIconSize} color={colors.textWhite} />}
+            icon={
+              <Icon
+                name="check-circle"
+                size={statusCardIconSize}
+                color={colors.textWhite}
+              />
+            }
             color={colors.primaryLight}
-            onPress={() => navigateWithDashboardFilter({ filter: 'approved cad' })}
+            onPress={() =>
+              navigateWithDashboardFilter({ filter: 'approved cad' })
+            }
             style={tabletStatusCardStyle}
           />
           <StatusCard
             title="Design Approval Pending"
             value={designApprovalPendingCount}
-            icon={<Icon name="pending-actions" size={statusCardIconSize} color={colors.textWhite} />}
+            icon={
+              <Icon
+                name="pending-actions"
+                size={statusCardIconSize}
+                color={colors.textWhite}
+              />
+            }
             color={colors.primary}
-            onPress={() => navigateWithDashboardFilter({ filter: 'design approval pending' })}
+            onPress={() =>
+              navigateWithDashboardFilter({ filter: 'design approval pending' })
+            }
             style={tabletStatusCardStyle}
           />
         </View>
       );
     }
-    
+
     // For Coral role, keep existing cards
     // Get counts with statusStats fallback
-    const coralFromStatusStats = statusStats.find((s) => {
-      const name = (s.name || s.status || s.Status || '').toLowerCase();
-      return name === 'coral';
-    })?.count || 0;
-    const pendingDesignsFromStatusStats = statusStats.find((s) => {
-      const name = (s.name || s.status || s.Status || '').toLowerCase();
-      return name === 'coral';
-    })?.count || 0;
-    const approvalPendingFromStatusStats = statusStats.find((s) => {
-      const name = (s.name || s.status || s.Status || '').toLowerCase();
-      return name === 'design approval pending';
-    })?.count || 0;
-    
+    const coralFromStatusStats =
+      statusStats.find(s => {
+        const name = (s.name || s.status || s.Status || '').toLowerCase();
+        return name === 'coral';
+      })?.count || 0;
+    const pendingDesignsFromStatusStats =
+      statusStats.find(s => {
+        const name = (s.name || s.status || s.Status || '').toLowerCase();
+        return name === 'coral';
+      })?.count || 0;
+    const approvalPendingFromStatusStats =
+      statusStats.find(s => {
+        const name = (s.name || s.status || s.Status || '').toLowerCase();
+        return name === 'design approval pending';
+      })?.count || 0;
+
     // ========== PENDING DESIGNS COUNT LOGGING ==========
     const pendingDesignsValue1 = dashboardData?.pendingDesigns;
     const pendingDesignsValue2 = dashboardData?.categorizedCounts?.['Pending'];
     const pendingDesignsValue3 = pendingDesignsFromStatusStats;
     // For Coral role: "Pending Designs" = Coral count ONLY (not "Pending" category)
     // Priority: dashboardData.pendingDesigns (from API, role-specific) > statusStats > default 0
-    const finalPendingDesignsValue = pendingDesignsValue1 || pendingDesignsValue3 || 0;
-    
-    console.log('📊 [DASHBOARD] ========== CORAL PENDING DESIGNS COUNT ==========');
+    const finalPendingDesignsValue =
+      pendingDesignsValue1 || pendingDesignsValue3 || 0;
+
+    console.log(
+      '📊 [DASHBOARD] ========== CORAL PENDING DESIGNS COUNT ==========',
+    );
     console.log('📊 [DASHBOARD] User Role: coral');
-    console.log('📊 [DASHBOARD] dashboardData?.pendingDesigns (Coral count from API):', pendingDesignsValue1);
-    console.log('📊 [DASHBOARD] pendingDesignsFromStatusStats (Coral fallback):', pendingDesignsFromStatusStats);
-    console.log('📊 [DASHBOARD] Final Coral count displayed:', finalPendingDesignsValue);
-    console.log('📊 [DASHBOARD] ===================================================');
-    
+    console.log(
+      '📊 [DASHBOARD] dashboardData?.pendingDesigns (Coral count from API):',
+      pendingDesignsValue1,
+    );
+    console.log(
+      '📊 [DASHBOARD] pendingDesignsFromStatusStats (Coral fallback):',
+      pendingDesignsFromStatusStats,
+    );
+    console.log(
+      '📊 [DASHBOARD] Final Coral count displayed:',
+      finalPendingDesignsValue,
+    );
+    console.log(
+      '📊 [DASHBOARD] ===================================================',
+    );
+
     return (
       <View style={statsGridStyle}>
         <StatusCard
           title="Assigned Enquiries"
-          value={dashboardData?.assignedEnquiries || dashboardData?.categorizedCounts?.['All'] || '0'}
-          icon={<Icon name="work" size={statusCardIconSize} color={colors.textWhite} />}
+          value={
+            dashboardData?.assignedEnquiries ||
+            dashboardData?.categorizedCounts?.['All'] ||
+            '0'
+          }
+          icon={
+            <Icon
+              name="work"
+              size={statusCardIconSize}
+              color={colors.textWhite}
+            />
+          }
           color={colors.primary}
           onPress={() => navigation.navigate('Enquiries')}
           style={tabletStatusCardStyle}
@@ -814,28 +1023,65 @@ const DashboardScreen = ({ navigation }) => {
         <StatusCard
           title="Pending Designs"
           value={finalPendingDesignsValue}
-          icon={<Icon name="pending" size={statusCardIconSize} color={colors.textWhite} />}
+          icon={
+            <Icon
+              name="pending"
+              size={statusCardIconSize}
+              color={colors.textWhite}
+            />
+          }
           color={colors.primaryDark}
           onPress={() => {
-            console.log('🎯 [DASHBOARD] "Pending Designs" tile pressed (Coral role)');
-            console.log('🎯 [DASHBOARD] Coral count displayed:', finalPendingDesignsValue);
-            console.log('🎯 [DASHBOARD] Filter being applied: "coral" → shows Coral status enquiries');
+            console.log(
+              '🎯 [DASHBOARD] "Pending Designs" tile pressed (Coral role)',
+            );
+            console.log(
+              '🎯 [DASHBOARD] Coral count displayed:',
+              finalPendingDesignsValue,
+            );
+            console.log(
+              '🎯 [DASHBOARD] Filter being applied: "coral" → shows Coral status enquiries',
+            );
             navigateWithDashboardFilter({ filter: 'coral' });
           }}
           style={tabletStatusCardStyle}
         />
         <StatusCard
           title="Approval Pending"
-          value={dashboardData?.approvalPendingDesigns || dashboardData?.categorizedCounts?.['Approval Pending'] || dashboardData?.categorizedCounts?.['Design Approval Pending'] || approvalPendingFromStatusStats || '0'}
-          icon={<Icon name="pending-actions" size={statusCardIconSize} color={colors.textWhite} />}
+          value={
+            dashboardData?.approvalPendingDesigns ||
+            dashboardData?.categorizedCounts?.['Approval Pending'] ||
+            dashboardData?.categorizedCounts?.['Design Approval Pending'] ||
+            approvalPendingFromStatusStats ||
+            '0'
+          }
+          icon={
+            <Icon
+              name="pending-actions"
+              size={statusCardIconSize}
+              color={colors.textWhite}
+            />
+          }
           color={colors.primaryLight}
-          onPress={() => navigateWithDashboardFilter({ filter: 'design approval pending' })}
+          onPress={() =>
+            navigateWithDashboardFilter({ filter: 'design approval pending' })
+          }
           style={tabletStatusCardStyle}
         />
         <StatusCard
           title="Completed Designs"
-          value={dashboardData?.completedDesigns || dashboardData?.categorizedCounts?.['Completed'] || '0'}
-          icon={<Icon name="palette" size={statusCardIconSize} color={colors.textWhite} />}
+          value={
+            dashboardData?.completedDesigns ||
+            dashboardData?.categorizedCounts?.['Completed'] ||
+            '0'
+          }
+          icon={
+            <Icon
+              name="palette"
+              size={statusCardIconSize}
+              color={colors.textWhite}
+            />
+          }
           color={colors.primary}
           onPress={() => navigateWithDashboardFilter({ filter: 'completed' })}
           style={tabletStatusCardStyle}
@@ -862,7 +1108,7 @@ const DashboardScreen = ({ navigation }) => {
           title: 'Users List',
           icon: 'account',
           onPress: () => navigation.navigate('UsersList'),
-        }
+        },
       );
     }
     if (user?.role === 'client') {
@@ -883,7 +1129,7 @@ const DashboardScreen = ({ navigation }) => {
           title: 'Upload Design',
           icon: 'file-upload',
           onPress: () => navigation.navigate('UploadDesign'),
-        }
+        },
       );
     }
     return actions;
@@ -891,7 +1137,7 @@ const DashboardScreen = ({ navigation }) => {
 
   const renderCombinedOverviewAndQuickActions = () => {
     const actions = getQuickActionsList();
-    
+
     return (
       <View style={styles.combinedSectionTablet}>
         <View style={styles.combinedSectionLeft}>
@@ -900,7 +1146,13 @@ const DashboardScreen = ({ navigation }) => {
             <StatusCard
               title="Total Enquiries"
               value={dashboardData?.totalEnquiries || '0'}
-              icon={<Icon name="assignment" size={statusCardIconSize} color={colors.textWhite} />}
+              icon={
+                <Icon
+                  name="assignment"
+                  size={statusCardIconSize}
+                  color={colors.textWhite}
+                />
+              }
               color={colors.primary}
               onPress={() => navigation.navigate('Enquiries')}
               style={styles.combinedStatusCard}
@@ -908,7 +1160,13 @@ const DashboardScreen = ({ navigation }) => {
             <StatusCard
               title="Total Clients"
               value={dashboardData?.totalClients || '0'}
-              icon={<Icon name="people" size={statusCardIconSize} color={colors.textWhite} />}
+              icon={
+                <Icon
+                  name="people"
+                  size={statusCardIconSize}
+                  color={colors.textWhite}
+                />
+              }
               color={colors.primary}
               onPress={() => navigation.navigate('ClientsList')}
               style={styles.combinedStatusCard}
@@ -926,7 +1184,11 @@ const DashboardScreen = ({ navigation }) => {
                 activeOpacity={0.7}
               >
                 <View style={styles.actionIcon}>
-                  <Icon name={action.icon} size={actionIconSize} color={colors.primary} />
+                  <Icon
+                    name={action.icon}
+                    size={actionIconSize}
+                    color={colors.primary}
+                  />
                 </View>
                 <Text style={actionTextStyle}>{action.title}</Text>
               </TouchableOpacity>
@@ -960,16 +1222,20 @@ const DashboardScreen = ({ navigation }) => {
           </View>
         )}
         */}
-          <View style={actionsGridStyle}>
+        <View style={actionsGridStyle}>
           {actions.map((action, index) => (
             <TouchableOpacity
               key={index}
-                style={actionButtonStyle}
+              style={actionButtonStyle}
               onPress={action.onPress}
               activeOpacity={0.7}
             >
               <View style={styles.actionIcon}>
-                <Icon name={action.icon} size={actionIconSize} color={colors.primary} />
+                <Icon
+                  name={action.icon}
+                  size={actionIconSize}
+                  color={colors.primary}
+                />
               </View>
               <Text style={actionTextStyle}>{action.title}</Text>
             </TouchableOpacity>
@@ -980,31 +1246,34 @@ const DashboardScreen = ({ navigation }) => {
   };
 
   // Helper function to format time ago
-  const formatTimeAgo = (timestamp) => {
+  const formatTimeAgo = timestamp => {
     if (!timestamp) return '';
-    
+
     try {
       const date = new Date(timestamp);
       if (isNaN(date.getTime())) return '';
-      
+
       const now = new Date();
       const diffTime = Math.abs(now - date);
       const diffSeconds = Math.floor(diffTime / 1000);
       const diffMinutes = Math.floor(diffTime / (1000 * 60));
       const diffHours = Math.floor(diffTime / (1000 * 60 * 60));
       const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-      
+
       if (diffSeconds < 60) return 'Just now';
-      if (diffMinutes < 60) return `${diffMinutes} ${diffMinutes === 1 ? 'minute' : 'minutes'} ago`;
-      if (diffHours < 24) return `${diffHours} ${diffHours === 1 ? 'hour' : 'hours'} ago`;
-      if (diffDays < 7) return `${diffDays} ${diffDays === 1 ? 'day' : 'days'} ago`;
-      
+      if (diffMinutes < 60)
+        return `${diffMinutes} ${diffMinutes === 1 ? 'minute' : 'minutes'} ago`;
+      if (diffHours < 24)
+        return `${diffHours} ${diffHours === 1 ? 'hour' : 'hours'} ago`;
+      if (diffDays < 7)
+        return `${diffDays} ${diffDays === 1 ? 'day' : 'days'} ago`;
+
       // For older notifications, show date
       const month = date.getMonth() + 1;
       const day = date.getDate();
       const year = date.getFullYear();
       const currentYear = now.getFullYear();
-      
+
       if (year === currentYear) {
         return `${month}/${day}`;
       } else {
@@ -1016,40 +1285,58 @@ const DashboardScreen = ({ navigation }) => {
   };
 
   // Get icon name based on notification type
-  const getNotificationIcon = (type) => {
+  const getNotificationIcon = type => {
     const typeLower = (type || '').toLowerCase();
-    if (typeLower.includes('enquiry') || typeLower.includes('new')) return 'assignment';
-    if (typeLower.includes('approv') || typeLower.includes('approved')) return 'check-circle';
-    if (typeLower.includes('reject') || typeLower.includes('rejected')) return 'cancel';
-    if (typeLower.includes('design') || typeLower.includes('cad') || typeLower.includes('coral')) return 'palette';
-    if (typeLower.includes('payment') || typeLower.includes('order')) return 'payment';
-    if (typeLower.includes('message') || typeLower.includes('chat')) return 'message';
-    if (typeLower.includes('status') || typeLower.includes('update')) return 'update';
+    if (typeLower.includes('enquiry') || typeLower.includes('new'))
+      return 'assignment';
+    if (typeLower.includes('approv') || typeLower.includes('approved'))
+      return 'check-circle';
+    if (typeLower.includes('reject') || typeLower.includes('rejected'))
+      return 'cancel';
+    if (
+      typeLower.includes('design') ||
+      typeLower.includes('cad') ||
+      typeLower.includes('coral')
+    )
+      return 'palette';
+    if (typeLower.includes('payment') || typeLower.includes('order'))
+      return 'payment';
+    if (typeLower.includes('message') || typeLower.includes('chat'))
+      return 'message';
+    if (typeLower.includes('status') || typeLower.includes('update'))
+      return 'update';
     return 'notifications';
   };
 
   // Get icon background color based on notification type
-  const getNotificationIconColor = (type) => {
+  const getNotificationIconColor = type => {
     const typeLower = (type || '').toLowerCase();
-    if (typeLower.includes('approv') || typeLower.includes('approved')) return 'rgba(76, 175, 80, 0.1)';
-    if (typeLower.includes('reject') || typeLower.includes('rejected')) return 'rgba(239, 68, 68, 0.1)';
-    if (typeLower.includes('payment') || typeLower.includes('order')) return 'rgba(139, 69, 19, 0.1)';
+    if (typeLower.includes('approv') || typeLower.includes('approved'))
+      return 'rgba(76, 175, 80, 0.1)';
+    if (typeLower.includes('reject') || typeLower.includes('rejected'))
+      return 'rgba(239, 68, 68, 0.1)';
+    if (typeLower.includes('payment') || typeLower.includes('order'))
+      return 'rgba(139, 69, 19, 0.1)';
     return 'rgba(33, 150, 243, 0.1)';
   };
 
   const renderRecentActivity = () => {
-    const notifications = Array.isArray(notificationsData) ? notificationsData.slice(0, 5) : [];
-    
+    const notifications = Array.isArray(notificationsData)
+      ? notificationsData.slice(0, 5)
+      : [];
+
     return (
       <Card style={styles.recentActivityCard}>
         <Text style={styles.recentActivityTitle}>Recent Activity</Text>
-        
+
         {notifications.length > 0 ? (
-          notifications.map((notification) => {
+          notifications.map(notification => {
             const iconName = getNotificationIcon(notification.type);
             const iconBgColor = getNotificationIconColor(notification.type);
-            const timeAgo = formatTimeAgo(notification.timestamp || notification.createdAt);
-            
+            const timeAgo = formatTimeAgo(
+              notification.timestamp || notification.createdAt,
+            );
+
             return (
               <TouchableOpacity
                 key={notification.id || notification._id}
@@ -1062,12 +1349,19 @@ const DashboardScreen = ({ navigation }) => {
                 }}
                 activeOpacity={0.7}
               >
-                <View style={[styles.activityIcon, { backgroundColor: iconBgColor }]}>
+                <View
+                  style={[
+                    styles.activityIcon,
+                    { backgroundColor: iconBgColor },
+                  ]}
+                >
                   <Icon name={iconName} size={16} color={colors.primary} />
                 </View>
                 <View style={styles.activityTextContainer}>
                   <Text style={styles.activityText} numberOfLines={2}>
-                    {notification.title || notification.message || 'Notification'}
+                    {notification.title ||
+                      notification.message ||
+                      'Notification'}
                   </Text>
                   {notification.message && notification.title && (
                     <Text style={styles.activitySubtext} numberOfLines={1}>
@@ -1082,7 +1376,11 @@ const DashboardScreen = ({ navigation }) => {
         ) : (
           <View style={styles.activityItem}>
             <View style={styles.activityIcon}>
-              <Icon name="notifications-none" size={16} color={colors.textLight} />
+              <Icon
+                name="notifications-none"
+                size={16}
+                color={colors.textLight}
+              />
             </View>
             <View style={styles.activityTextContainer}>
               <Text style={[styles.activityText, { color: colors.textLight }]}>
@@ -1115,7 +1413,11 @@ const DashboardScreen = ({ navigation }) => {
             <View style={styles.welcomeContent}>
               <View style={styles.welcomeText}>
                 <Text style={styles.welcomeGreeting}>
-                  Hii <Text style={styles.userNameHighlight}>{user?.name || 'User'}</Text>,
+                  Hii{' '}
+                  <Text style={styles.userNameHighlight}>
+                    {user?.name || 'User'}
+                  </Text>
+                  ,
                 </Text>
                 <Text style={styles.welcomeSubtitle}>
                   Welcome to Chandra Jewels
@@ -1133,7 +1435,8 @@ const DashboardScreen = ({ navigation }) => {
         {/* Role-based Dashboard Content */}
         {user?.role === 'admin' && renderAdminDashboard()}
         {user?.role === 'client' && renderClientDashboard()}
-        {(user?.role === 'coral' || user?.role === 'cad') && renderDesignerDashboard(user.role)}
+        {(user?.role === 'coral' || user?.role === 'cad') &&
+          renderDesignerDashboard(user.role)}
 
         {/* Combined Overview and Quick Actions - Only on tablets for admin role */}
         {isTablet && user?.role === 'admin' && (
@@ -1143,11 +1446,16 @@ const DashboardScreen = ({ navigation }) => {
         )}
 
         {/* Quick Actions - Only show on mobile, hidden on tablets for admin (shown in combined section) */}
-        {!isTablet && (user?.role !== 'coral' && user?.role !== 'cad' && user?.role !== 'client' && user?.roleNumber !== 4 && user?.roleId !== 4) && (
-          <View style={styles.quickActionsSection}>
-            {renderQuickActions()}
-          </View>
-        )}
+        {!isTablet &&
+          user?.role !== 'coral' &&
+          user?.role !== 'cad' &&
+          user?.role !== 'client' &&
+          user?.roleNumber !== 4 &&
+          user?.roleId !== 4 && (
+            <View style={styles.quickActionsSection}>
+              {renderQuickActions()}
+            </View>
+          )}
 
         {/* Recent Activity */}
         <View style={styles.recentActivitySection}>
@@ -1180,7 +1488,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: 20,
   },
-  
+
   // Welcome Section - Premium Design
   welcomeSection: {
     paddingHorizontal: 16,
@@ -1239,7 +1547,7 @@ const styles = StyleSheet.create({
   dashboardContent: {
     paddingTop: 4,
   },
-  
+
   // Section Container
   sectionContainer: {
     marginBottom: 16,
@@ -1268,7 +1576,7 @@ const styles = StyleSheet.create({
     color: colors.primary,
     letterSpacing: 0.2,
   },
-  
+
   // Overview Section
   overviewSection: {
     paddingHorizontal: 16,
@@ -1281,7 +1589,7 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     letterSpacing: 0.2,
   },
-  
+
   // Enquiry Status Grid - Now using horizontal scroll
   statusScroll: {
     flexGrow: 0,
@@ -1638,6 +1946,35 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
+  },
+
+  // new button styles
+  NewEnquiryPricingButtonContainer: {
+    display: 'flex',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+
+    flex: 1,
+    padding: 10,
+  },
+
+  NewEnquiryButton: {
+    backgroundColor: colors.primaryDark,
+    borderRadius: 8,
+    padding: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+    marginRight: 10,
+    flexDirection: 'row',
+  },
+
+  NewEnquiryText: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    color: colors.textWhite,
+    marginLeft: 10,
   },
 });
 

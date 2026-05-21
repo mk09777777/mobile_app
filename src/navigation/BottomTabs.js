@@ -10,12 +10,17 @@ import CustomTabBar from '../components/common/CustomTabBar';
 import DashboardScreen from '../screens/Dashboard/DashboardScreen';
 import EnquiryListScreen from '../screens/Enquiries/EnquiryListScreen';
 import ChatsScreen from '../screens/Chats/ChatsScreen';
+import {useAuth} from '../context/AuthContext';
 
 const Tab = createBottomTabNavigator();
 
 const BottomTabs = () => {
-  return (
-    <Tab.Navigator
+  const {user} = useAuth();
+
+  const renderTabs = ()=>{
+    if(user?.role==='admin'){
+      return(
+         <Tab.Navigator
       tabBar={(props) => <CustomTabBar {...props} />}
       screenOptions={{
         headerShown: false,
@@ -42,6 +47,97 @@ const BottomTabs = () => {
         }}
       />
     </Tab.Navigator>
+      )
+
+      
+    }
+
+  else if(user?.role==='coral'){
+    return(
+       <Tab.Navigator
+      tabBar={(props) => <CustomTabBar {...props} />}
+      screenOptions={{
+        headerShown: false,
+      }}>
+      <Tab.Screen
+        name="Enquiries"
+        component={EnquiryListScreen}
+        options={{
+          title: 'Enquiries',
+        }}
+      />
+      <Tab.Screen
+        name="Chats"
+        component={ChatsScreen}
+        options={{
+          title: 'Chats',
+        }}
+      />
+    </Tab.Navigator>
+    )
+  }
+
+  else if(user?.role==='cad'){
+    return(
+       <Tab.Navigator
+      tabBar={(props) => <CustomTabBar {...props} />}
+      screenOptions={{
+        headerShown: false,
+      }}>
+      <Tab.Screen
+        name="Enquiries"
+        component={EnquiryListScreen}
+        options={{
+          title: 'Enquiries',
+        }}
+      />
+      <Tab.Screen
+        name="Chats"
+        component={ChatsScreen}
+        options={{
+          title: 'Chats',
+        }}
+      />
+    </Tab.Navigator>
+    )
+  }
+
+  else{
+    return(
+         <Tab.Navigator
+      tabBar={(props) => <CustomTabBar {...props} />}
+      screenOptions={{
+        headerShown: false,
+      }}>
+      <Tab.Screen
+        name="Dashboard"
+        component={DashboardScreen}
+        options={{
+          title: 'Dashboard',
+        }}
+      />
+      <Tab.Screen
+        name="Enquiries"
+        component={EnquiryListScreen}
+        options={{
+          title: 'Enquiries',
+        }}
+      />
+      <Tab.Screen
+        name="Chats"
+        component={ChatsScreen}
+        options={{
+          title: 'Chats',
+        }}
+      />
+    </Tab.Navigator>
+    )
+  }
+  }
+  return (
+   <>
+   {renderTabs()}
+   </>
   );
 };
 
