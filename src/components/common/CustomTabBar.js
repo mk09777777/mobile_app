@@ -1,18 +1,100 @@
 import React from 'react';
-import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, Text, Image, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from './Icon';
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
 import { useCart } from '../../context/CartContext';
+import { navigationRef } from '../../navigation/navigationRef';
 
-const CustomTabBar = ({ state, descriptors, navigation }) => {
+const CUSTOM_ICON = require('../../assets/images/SketchOutlined.png');
+const REORDER_ICON = require('../../assets/images/list-restart.png');
+
+const CustomTabBar = ({ state, descriptors, navigation, currentApp }) => {
   const insets = useSafeAreaInsets();
   const { lineCount } = useCart();
 
+  const handleSwitchApp = () => {
+    if (navigationRef.isReady()) {
+      const target = currentApp === 'custom' ? 'CatalogApp' : 'CustomApp';
+      navigationRef.reset({ index: 0, routes: [{ name: target }] });
+    }
+  };
+
+  const renderTab = (route, routeIndex) => {
+    const { options } = descriptors[route.key];
+    const label =
+      options.tabBarLabel !== undefined
+        ? options.tabBarLabel
+        : options.title !== undefined
+        ? options.title
+        : route.name;
+
+    const isFocused = state.index === routeIndex;
+
+    const onPress = () => {
+      const event = navigation.emit({
+        type: 'tabPress',
+        target: route.key,
+        canPreventDefault: true,
+      });
+      if (!isFocused && !event.defaultPrevented) {
+        navigation.navigate(route.name);
+      }
+    };
+
+    const onLongPress = () => {
+      navigation.emit({ type: 'tabLongPress', target: route.key });
+    };
+
+    let iconName;
+    if (route.name === 'Dashboard') iconName = 'homeIcon';
+    else if (route.name === 'Cart') iconName = 'cartIcon';
+    else if (route.name === 'MyOrders') iconName = 'ordersIcon';
+    else if (route.name === 'Chats') iconName = 'chatIcon';
+
+    return (
+      <TouchableOpacity
+        key={route.key}
+        accessibilityRole="button"
+        accessibilityState={isFocused ? { selected: true } : {}}
+        accessibilityLabel={options.tabBarAccessibilityLabel}
+        testID={options.tabBarTestID}
+        onPress={onPress}
+        onLongPress={onLongPress}
+        style={styles.tabButton}
+        activeOpacity={0.7}>
+        <View style={[styles.iconContainer, isFocused && styles.iconContainerActive]}>
+          <Icon
+            name={iconName}
+            size={isFocused ? 30 : 24}
+            color={isFocused ? colors.primary : colors.textLight}
+          />
+          {route.name === 'Cart' && lineCount > 0 ? (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{lineCount > 99 ? '99+' : lineCount}</Text>
+            </View>
+          ) : null}
+        </View>
+        <Text
+          style={[
+            styles.tabLabel,
+            {
+              color: isFocused ? colors.primary : colors.textLight,
+              fontFamily: isFocused ? fonts.medium : fonts.regular,
+            },
+          ]}>
+          {label}
+        </Text>
+      </TouchableOpacity>
+    );
+  };
+
+  const before = state.routes;
+  const after = [];
+
   return (
     <View style={styles.container}>
-      {/* Tab bar */}
       <View
         style={[
           styles.tabBar,
@@ -22,87 +104,27 @@ const CustomTabBar = ({ state, descriptors, navigation }) => {
             minHeight: 60 + Math.max(0, insets.bottom - 4),
           },
         ]}>
-        {state.routes.map((route, index) => {
-          const { options } = descriptors[route.key];
-          const label = options.tabBarLabel !== undefined
-            ? options.tabBarLabel
-            : options.title !== undefined
-            ? options.title
-            : route.name;
+        {before.map((route, i) => renderTab(route, i))}
 
-          const isFocused = state.index === index;
+        {currentApp ? (
+          <TouchableOpacity
+            onPress={handleSwitchApp}
+            style={styles.switchTabButton}
+            activeOpacity={0.8}>
+            <View style={styles.switchCircle}>
+              <Image
+                source={currentApp === 'custom' ? REORDER_ICON : CUSTOM_ICON}
+                style={styles.switchIcon}
+                resizeMode="contain"
+              />
+            </View>
+            <Text style={styles.switchLabel}>
+              {currentApp === 'custom' ? 'Reorder' : 'Custom'}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
 
-          const onPress = () => {
-            const event = navigation.emit({
-              type: 'tabPress',
-              target: route.key,
-              canPreventDefault: true,
-            });
-
-            if (!isFocused && !event.defaultPrevented) {
-              navigation.navigate(route.name);
-            }
-          };
-
-          const onLongPress = () => {
-            navigation.emit({
-              type: 'tabLongPress',
-              target: route.key,
-            });
-          };
-
-          // Get icon name based on route
-          let iconName;
-          if (route.name === 'Dashboard') {
-            iconName = 'homeIcon';
-          } else if (route.name === 'Cart') {
-            iconName = 'cartIcon';
-          } else if (route.name === 'MyOrders') {
-            iconName = 'ordersIcon';
-          } else if (route.name === 'Chats') {
-            iconName = 'chatIcon';
-          }
-
-          // Instagram-style: All tabs are consistent
-          return (
-            <TouchableOpacity
-              key={route.key}
-              accessibilityRole="button"
-              accessibilityState={isFocused ? { selected: true } : {}}
-              accessibilityLabel={options.tabBarAccessibilityLabel}
-              testID={options.tabBarTestID}
-              onPress={onPress}
-              onLongPress={onLongPress}
-              style={styles.tabButton}
-              activeOpacity={0.7}>
-              <View style={[
-                styles.iconContainer,
-                isFocused && styles.iconContainerActive
-              ]}>
-                <Icon 
-                  name={iconName} 
-                  size={isFocused ? 30 : 24} 
-                  color={isFocused ? colors.primary : colors.textLight} 
-                />
-                {route.name === 'Cart' && lineCount > 0 ? (
-                  <View style={styles.badge}>
-                    <Text style={styles.badgeText}>{lineCount > 99 ? '99+' : lineCount}</Text>
-                  </View>
-                ) : null}
-              </View>
-              <Text 
-                style={[
-                  styles.tabLabel, 
-                  { 
-                    color: isFocused ? colors.primary : colors.textLight,
-                    fontFamily: isFocused ? fonts.medium : fonts.regular,
-                  }
-                ]}>
-                {label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
+        {after.map((route, i) => renderTab(route, splitAt + i))}
       </View>
     </View>
   );
@@ -142,7 +164,6 @@ const styles = StyleSheet.create({
     width: 30,
   },
   iconContainerActive: {
-    // Makes active icon appear thicker/more prominent
     transform: [{ scale: 1.05 }],
   },
   badge: {
@@ -167,6 +188,39 @@ const styles = StyleSheet.create({
     marginTop: 2,
     letterSpacing: 0.2,
     textTransform: 'capitalize',
+  },
+  switchTabButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 4,
+    height: '100%',
+  },
+  switchCircle: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 3,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.45,
+    shadowRadius: 6,
+    elevation: 7,
+  },
+  switchIcon: {
+    width: 22,
+    height: 22,
+    tintColor: colors.accent,
+  },
+  switchLabel: {
+    color: colors.primary,
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
 });
 

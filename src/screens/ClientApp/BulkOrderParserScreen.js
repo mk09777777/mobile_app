@@ -15,11 +15,10 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import RNFS from 'react-native-fs';
 import AudioRecorderPlayer from 'react-native-audio-recorder-player';
 import catalogApi from '../../services/catalogApi';
+import { CATALOG_API_BASE_URL } from '../../config/catalogApiConfig';
 import { colors } from '../../constants/colors';
 import { computeUnitPriceFromSource, getPricingContext } from '../../services/clientPricingEngine';
 import MicImage from '../../assets/images/mic.png';
-
-const CHUNK_DURATION_MS = 4000;
 
 const titleCase = (value) =>
   String(value || '')
@@ -35,14 +34,11 @@ const BulkOrderParserScreen = ({ navigation }) => {
   const [result, setResult] = useState(null);
   const [overrides, setOverrides] = useState({});
   const [isRecording, setIsRecording] = useState(false);
-  const [isTranscribing, setIsTranscribing] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
-
-  const recorderRef = useRef(new AudioRecorderPlayer());
-  const isRecordingRef = useRef(false);
-  const chunkTimerRef = useRef(null);
-  const currentChunkPathRef = useRef('');
+  const [isSpeechReady, setIsSpeechReady] = useState(true);
   const timerRef = useRef(null);
+  const recorderRef = useRef(new AudioRecorderPlayer());
+  const [recordingPath, setRecordingPath] = useState('');
 
   const unresolvedItems = useMemo(
     () => (Array.isArray(result?.items) ? result.items.filter((item) => item?.status !== 'matched') : []),
@@ -52,94 +48,80 @@ const BulkOrderParserScreen = ({ navigation }) => {
   useEffect(() => {
     const recorder = recorderRef.current;
     return () => {
-      isRecordingRef.current = false;
-      if (chunkTimerRef.current) clearTimeout(chunkTimerRef.current);
       if (timerRef.current) clearInterval(timerRef.current);
       recorder.stopRecorder().catch(() => undefined);
       recorder.removeRecordBackListener();
     };
   }, []);
 
+  useEffect(() => {
+    if (isRecording) {
+      timerRef.current = setInterval(() => {
+        setRecordingSeconds((prev) => prev + 1);
+      }, 1000);
+      return () => {
+        if (timerRef.current) clearInterval(timerRef.current);
+      };
+    }
+    setRecordingSeconds(0);
+    if (timerRef.current) clearInterval(timerRef.current);
+    return undefined;
+  }, [isRecording]);
+
   const requestMicPermissions = async () => {
     if (Platform.OS !== 'android') return true;
     const results = await PermissionsAndroid.requestMultiple([
       PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
     ]);
-    return results?.[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === PermissionsAndroid.RESULTS.GRANTED;
-  };
-
-  const transcribeChunk = async (path) => {
-    try {
-      const fileInfo = await RNFS.stat(path).catch(() => null);
-      if (!fileInfo || Number(fileInfo.size) < 2048) return;
-      const uploadUri = path.startsWith('file://') ? path : `file://${path}`;
-      const form = new FormData();
-      form.append('audio', {
-        uri: uploadUri,
-        name: `chunk_${Date.now()}.m4a`,
-        type: Platform.OS === 'ios' ? 'audio/m4a' : 'audio/mp4',
-      });
-      setIsTranscribing(true);
-      const tr = await catalogApi.postForm('/bulk-orders/transcribe', form);
-      const transcript = String(tr?.transcript || '').trim();
-      if (transcript) {
-        setRawText((prev) => {
-          const existing = prev.trim();
-          return existing ? `${existing} ${transcript}` : transcript;
-        });
-      }
-    } catch (e) {
-      if (__DEV__) {
-        console.log('[BulkOrderParserScreen] chunk transcribe error', e?.message);
-      }
-    } finally {
-      setIsTranscribing(false);
-      RNFS.unlink(path).catch(() => undefined);
-    }
-  };
-
-  const startNewChunk = async () => {
-    const path = `${RNFS.CachesDirectoryPath}/bulk_chunk_${Date.now()}.m4a`;
-    currentChunkPathRef.current = path;
-    await recorderRef.current.startRecorder(path);
-    recorderRef.current.addRecordBackListener((e) => {
-      const secs = Math.floor(Number(e?.currentPosition || 0) / 1000);
-      setRecordingSeconds(secs);
-    });
-    chunkTimerRef.current = setTimeout(rollChunk, CHUNK_DURATION_MS);
-  };
-
-  const rollChunk = async () => {
-    if (!isRecordingRef.current) return;
-    const completedPath = currentChunkPathRef.current;
-    try {
-      await recorderRef.current.stopRecorder();
-      recorderRef.current.removeRecordBackListener();
-      if (isRecordingRef.current) {
-        await startNewChunk();
-      }
-      transcribeChunk(completedPath);
-    } catch (e) {
-      if (__DEV__) {
-        console.log('[BulkOrderParserScreen] rollChunk error', e?.message);
-      }
-    }
+    const micGranted = results?.[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === PermissionsAndroid.RESULTS.GRANTED;
+    return !!micGranted;
   };
 
   const toggleRecording = async () => {
+    if (!isSpeechReady) return;
     setError('');
     try {
-      if (isRecordingRef.current) {
-        isRecordingRef.current = false;
-        if (chunkTimerRef.current) clearTimeout(chunkTimerRef.current);
-        const lastPath = currentChunkPathRef.current;
+      if (isRecording) {
+        const result = await recorderRef.current.stopRecorder();
+        recorderRef.current.removeRecordBackListener();
         setIsRecording(false);
-        setRecordingSeconds(0);
-        try {
-          await recorderRef.current.stopRecorder();
-          recorderRef.current.removeRecordBackListener();
-        } catch {}
-        if (lastPath) transcribeChunk(lastPath);
+        const path = String(result || recordingPath || '').trim();
+        if (!path) {
+          setError('Recording path not found.');
+          return;
+        }
+        setRecordingPath(path);
+        const fileInfo = await RNFS.stat(path).catch(() => null);
+        const fileSize = Number(fileInfo?.size || 0);
+        if (!fileSize || fileSize < 2048) {
+          setError('No speech detected. Please record for at least 1-2 seconds and try again.');
+          return;
+        }
+        const uploadUri = path.startsWith('file://') ? path : `file://${path}`;
+        const fileName = `bulk_order_${Date.now()}.m4a`;
+        const mimeType = Platform.OS === 'ios' ? 'audio/m4a' : 'audio/mp4';
+        if (__DEV__) {
+          console.log('[BulkOrderParserScreen] transcribe upload', {
+            apiBase: CATALOG_API_BASE_URL,
+            path,
+            uploadUri,
+            fileSize,
+            mimeType,
+          });
+        }
+        const form = new FormData();
+        form.append('audio', {
+          uri: uploadUri,
+          name: fileName,
+          type: mimeType,
+        });
+        const tr = await catalogApi.postForm('/bulk-orders/transcribe', form);
+        const transcript = String(tr?.transcript || '').trim();
+        if (!transcript) {
+          setError('No speech detected. Please speak clearly and try again.');
+          return;
+        }
+        setRawText(transcript);
         return;
       }
       const hasPermission = await requestMicPermissions();
@@ -147,23 +129,38 @@ const BulkOrderParserScreen = ({ navigation }) => {
         setError('Microphone permission is required to transcribe your voice note.');
         return;
       }
-      isRecordingRef.current = true;
-      setIsRecording(true);
+      const path = Platform.select({
+        ios: 'bulk_order_note.m4a',
+        android: `${RNFS.CachesDirectoryPath}/bulk_order_note_${Date.now()}.m4a`,
+      });
+      const uri = await recorderRef.current.startRecorder(path);
+      recorderRef.current.addRecordBackListener((e) => {
+        const timeInSeconds = Math.floor(Number(e?.currentPosition || 0) / 1000);
+        setRecordingSeconds(timeInSeconds);
+      });
+      setRecordingPath(String(uri || path || ''));
       setRecordingSeconds(0);
-      await startNewChunk();
+      setIsRecording(true);
     } catch (voiceError) {
-      isRecordingRef.current = false;
       setIsRecording(false);
+      const message = String(voiceError?.message || 'Could not start voice capture.');
+      const status = voiceError?.status ? ` (status ${voiceError.status})` : '';
       if (__DEV__) {
-        console.log('[BulkOrderParserScreen] toggleRecording error', voiceError?.message);
+        console.log('[BulkOrderParserScreen] recording/transcribe error', {
+          message,
+          status: voiceError?.status,
+          data: voiceError?.data,
+        });
       }
-      setError(String(voiceError?.message || 'Could not start recording.'));
+      setError(`${message}${status}`);
     }
   };
 
   const formatRecordingTime = (seconds) => {
     const safeSeconds = Math.max(0, Number(seconds || 0));
-    const mins = Math.floor(safeSeconds / 60).toString().padStart(1, '0');
+    const mins = Math.floor(safeSeconds / 60)
+      .toString()
+      .padStart(1, '0');
     const secs = (safeSeconds % 60).toString().padStart(2, '0');
     return `${mins}:${secs}`;
   };
@@ -211,13 +208,13 @@ const BulkOrderParserScreen = ({ navigation }) => {
   };
 
   const onInitialParse = async () => {
-    if (isRecordingRef.current) {
-      isRecordingRef.current = false;
-      if (chunkTimerRef.current) clearTimeout(chunkTimerRef.current);
+    if (isRecording) {
       try {
         await recorderRef.current.stopRecorder();
         recorderRef.current.removeRecordBackListener();
-      } catch {}
+      } catch {
+        // no-op: parsing can proceed with the latest transcript text
+      }
       setIsRecording(false);
     }
     const text = String(rawText || '').trim();
@@ -248,7 +245,11 @@ const BulkOrderParserScreen = ({ navigation }) => {
 
   const setOverride = (lineRef, field, value) => {
     if (__DEV__) {
-      console.log('[BulkOrderParserScreen] setOverride', { lineRef, field, value });
+      console.log('[BulkOrderParserScreen] setOverride', {
+        lineRef,
+        field,
+        value,
+      });
     }
     setOverrides((prev) => ({
       ...prev,
@@ -302,6 +303,8 @@ const BulkOrderParserScreen = ({ navigation }) => {
         console.log('[BulkOrderParserScreen] pricing enriched for review', {
           lines: enrichedLines.length,
           pricedLines: enrichedLines.filter((line) => Number(line?.unitPrice || 0) > 0).length,
+          productDescription: result?.orderReviewPayload?.productDescription || '',
+          firstLineDescription: enrichedLines?.[0]?.description || '',
         });
       }
     } catch (priceError) {
@@ -318,14 +321,6 @@ const BulkOrderParserScreen = ({ navigation }) => {
       parsedItemsCount: Number(result.itemsParsedCount || 0),
     });
   };
-
-  const recordingLabel = isRecording
-    ? `Listening · ${formatRecordingTime(recordingSeconds)}`
-    : isTranscribing
-      ? 'Transcribing…'
-      : rawText
-        ? 'Order text ready'
-        : 'Tap the mic to dictate';
 
   return (
     <View style={styles.container}>
@@ -346,19 +341,19 @@ const BulkOrderParserScreen = ({ navigation }) => {
         </Text>
 
         <TouchableOpacity
-          style={[styles.micButton, isRecording && styles.micButtonActive]}
+          style={[styles.micButton, isRecording && styles.micButtonActive, !isSpeechReady && styles.micButtonDisabled]}
           activeOpacity={0.85}
           onPress={toggleRecording}
-          disabled={loading}>
-          {isTranscribing && !isRecording ? (
-            <ActivityIndicator color="#FFFFFF" size="large" />
-          ) : (
-            <Image source={MicImage} style={styles.micImage} resizeMode="contain" />
-          )}
+          disabled={loading || !isSpeechReady}>
+          <Image source={MicImage} style={styles.micImage} resizeMode="contain" />
         </TouchableOpacity>
 
-        <Text style={[styles.recordingStatus, isTranscribing && !isRecording && styles.recordingStatusTranscribing]}>
-          {recordingLabel}
+        <Text style={styles.recordingStatus}>
+          {isRecording
+            ? `Recording · ${formatRecordingTime(recordingSeconds)}`
+            : rawText
+              ? 'Order text ready'
+              : 'Tap the mic to dictate'}
         </Text>
 
         <View style={styles.transcriptCard}>
@@ -373,14 +368,9 @@ const BulkOrderParserScreen = ({ navigation }) => {
             placeholder="Type or paste your order here, or use the mic above…"
             placeholderTextColor="#9CA3AF"
             multiline
-            editable={!loading && !isRecording}
+            editable={!loading}
             textAlignVertical="top"
           />
-          {(isRecording || isTranscribing) ? (
-            <Text style={styles.liveIndicator}>
-              {isRecording ? '● Live — text updates every few seconds' : '● Processing last segment…'}
-            </Text>
-          ) : null}
         </View>
 
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -389,7 +379,7 @@ const BulkOrderParserScreen = ({ navigation }) => {
           style={styles.primaryButton}
           activeOpacity={0.85}
           onPress={onInitialParse}
-          disabled={loading || isRecording || isTranscribing || !String(rawText || '').trim()}>
+          disabled={loading || !String(rawText || '').trim()}>
           {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.primaryButtonText}>Parse this order</Text>}
         </TouchableOpacity>
 
@@ -513,6 +503,9 @@ const styles = StyleSheet.create({
   micButtonActive: {
     backgroundColor: '#B88F3D',
   },
+  micButtonDisabled: {
+    opacity: 0.45,
+  },
   micImage: {
     width: 88,
     height: 88,
@@ -523,9 +516,6 @@ const styles = StyleSheet.create({
     color: '#C06C75',
     fontSize: 16,
     fontWeight: '500',
-  },
-  recordingStatusTranscribing: {
-    color: '#0F5F65',
   },
   transcriptCard: {
     marginTop: 12,
@@ -552,7 +542,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E5E7EB',
   },
-  liveIndicator: { color: '#C06C75', fontSize: 11, fontWeight: '600', marginTop: 6 },
   errorText: { color: '#B91C1C', marginTop: 8, fontSize: 12 },
   primaryButton: {
     marginTop: 18,

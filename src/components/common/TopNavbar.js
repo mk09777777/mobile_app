@@ -8,6 +8,7 @@ import {
   Image,
   Modal,
 } from 'react-native';
+import { CommonActions } from '@react-navigation/native';
 import { useAuth } from '../../context/AuthContext';
 import AccountModal from '../modals/AccountModal';
 import { colors } from '../../constants/colors';
@@ -15,6 +16,7 @@ import { fonts } from '../../constants/fonts';
 import { images } from '../../constants/images';
 import Icon from './Icon';
 import { useGetUnreadNotificationsCountQuery } from '../../store/api';
+import { navigationRef } from '../../navigation/navigationRef';
 
 const TopNavbar = ({ navigation }) => {
   const { user, logout } = useAuth();
@@ -30,7 +32,9 @@ const TopNavbar = ({ navigation }) => {
   
 
   const handleSearchPress = () => {
-    navigation.navigate('Search');
+    if (navigationRef.isReady()) {
+      navigationRef.dispatch(CommonActions.navigate({ name: 'Search' }));
+    }
   };
 
   const handleNotificationPress = () => {

@@ -9,7 +9,6 @@ import {
   StatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
 const BG = '#F3F4F8';
 const CARD_BORDER = '#ECEEF2';
 const TITLE_COLOR = '#141D24';
