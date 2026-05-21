@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Dimensions,
   Image,
-  InteractionManager,
   ScrollView,
   StyleSheet,
   Text,
@@ -10,12 +10,16 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import { CommonActions } from '@react-navigation/native';
-import { navigationRef } from '../../navigation/navigationRef';
+import { useFocusEffect } from '@react-navigation/native';
 import { colors } from '../../constants/colors';
 import catalogApi from '../../services/catalogApi';
+
+const { width: SCREEN_W } = Dimensions.get('window');
+// 2-column grid: 16px side padding × 2, 10px gap between columns
+const PRODUCT_CARD_W = (SCREEN_W - 32 - 10) / 2;
 
 // ─── Type-pill colour themes ─────────────────────────────────────────────────
 const PILL = {
@@ -25,14 +29,6 @@ const PILL = {
   product:     { bg: '#D1FAE5', text: '#065F46' },   // green  — product
 };
 
-// ─── Global navigation helper ────────────────────────────────────────────────
-// Uses the root navigationRef so we can reach DashboardStack screens from
-// inside the App2Navigator stack without needing a reference to nested navs.
-const dispatchNavigate = (name, params) => {
-  if (navigationRef.isReady()) {
-    navigationRef.dispatch(CommonActions.navigate({ name, params }));
-  }
-};
 
 // ─── Shared card shell ────────────────────────────────────────────────────────
 const ResultCard = ({ imageUrl, pillLabel, pillTheme, onPress, children }) => (
@@ -105,30 +101,91 @@ const SubcategoryCard = ({ item, onPress }) => {
   );
 };
 
-// ─── Product card ─────────────────────────────────────────────────────────────
-const ProductCard = ({ item, onPress }) => {
+// ─── Helpers for product filter values ───────────────────────────────────────
+// Products store filter data as [{filterName, filterValue}]. filterValue can be
+// a string or an array of strings.
+function getFilterVal(filterArr, ...names) {
+  if (!Array.isArray(filterArr)) return '';
+  for (const name of names) {
+    const entry = filterArr.find(
+      (f) => String(f.filterName || '').toLowerCase() === name.toLowerCase(),
+    );
+    if (entry) {
+      const v = Array.isArray(entry.filterValue)
+        ? entry.filterValue[0]
+        : entry.filterValue;
+      return v ? String(v) : '';
+    }
+  }
+  return '';
+}
+
+// ─── Product card (grid tile matching catalog card design) ────────────────────
+const SearchProductCard = ({ item, onPress }) => {
   const pointer = Number(item.pointer || 0);
-  const metaParts = [
+  const filters = Array.isArray(item.filter) ? item.filter : [];
+
+  // Shape: stored under 'stoneshape' or 'shape' depending on subcategory setup
+  const shape = getFilterVal(filters, 'stoneshape', 'shape');
+  const stone = getFilterVal(filters, 'stone');
+
+  // Additional custom filters — skip metal/stone/size/stoneshape, take up to 1 more
+  const extra = filters
+    .filter((f) => {
+      const n = String(f.filterName || '').toLowerCase();
+      return !['metal', 'stone', 'size', 'stoneshape', 'shape'].includes(n);
+    })
+    .slice(0, 1)
+    .map((f) => (Array.isArray(f.filterValue) ? f.filterValue[0] : f.filterValue))
+    .filter(Boolean)
+    .map(String);
+
+  const specs = [
     pointer > 0 ? `${pointer} ct` : '',
-    item.subcategoryName || '',
+    shape,
+    stone,
+    ...extra,
   ].filter(Boolean);
 
   return (
-    <ResultCard
-      imageUrl={item.displayImage}
-      pillLabel="PRODUCT"
-      pillTheme={PILL.product}
-      onPress={onPress}>
-      {item.styleNo ? (
-        <Text style={styles.cardStyleNo} numberOfLines={1}>{item.styleNo}</Text>
-      ) : null}
-      <Text style={styles.cardTitle} numberOfLines={2}>
+    <TouchableOpacity
+      style={[styles.productCard, { width: PRODUCT_CARD_W }]}
+      onPress={onPress}
+      activeOpacity={0.85}>
+      {item.displayImage ? (
+        <Image
+          source={{ uri: item.displayImage }}
+          style={styles.productCardImg}
+          resizeMode="contain"
+        />
+      ) : (
+        <View style={[styles.productCardImg, styles.productCardImgPlaceholder]} />
+      )}
+
+      <Text style={styles.productCardName} numberOfLines={2}>
         {item.name || item.styleNo}
       </Text>
-      {metaParts.length > 0 ? (
-        <Text style={styles.cardMeta} numberOfLines={1}>{metaParts.join(' · ')}</Text>
+
+      {item.styleNo ? (
+        <Text style={styles.productCardSubtitle} numberOfLines={1}>{item.styleNo}</Text>
+      ) : item.subcategoryName ? (
+        <Text style={styles.productCardSubtitle} numberOfLines={1}>{item.subcategoryName}</Text>
       ) : null}
-    </ResultCard>
+
+      {specs.length > 0 ? (
+        <View style={styles.specPillRow}>
+          {specs.map((s) => (
+            <View key={s} style={styles.specPill}>
+              <Text style={styles.specPillText}>{s}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      <TouchableOpacity style={styles.addToCartBtn} onPress={onPress} activeOpacity={0.85}>
+        <Text style={styles.addToCartText}>Add to Cart</Text>
+      </TouchableOpacity>
+    </TouchableOpacity>
   );
 };
 
@@ -164,6 +221,15 @@ const SearchScreen = ({ navigation }) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
   }, []);
 
+  // Hide the bottom tab bar while this screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      const tabNav = navigation.getParent();
+      tabNav?.setOptions({ tabBarStyle: { display: 'none' } });
+      return () => tabNav?.setOptions({ tabBarStyle: undefined });
+    }, [navigation]),
+  );
+
   // ── Search execution ────────────────────────────────────────────────────────
   const runSearch = useCallback(async (q) => {
     const trimmed = q.trim();
@@ -180,10 +246,93 @@ const SearchScreen = ({ navigation }) => {
     setLoading(true);
     try {
       const res = await catalogApi.get(`/search?q=${encodeURIComponent(trimmed)}`);
-      setCategoryResults(Array.isArray(res?.categories)          ? res.categories          : []);
-      setProfileResults(Array.isArray(res?.subcategoryProfiles)  ? res.subcategoryProfiles : []);
-      setSubcategoryResults(Array.isArray(res?.subcategories)    ? res.subcategories       : []);
-      setProductResults(Array.isArray(res?.products)             ? res.products            : []);
+      const categories   = Array.isArray(res?.categories)         ? res.categories         : [];
+      const profiles     = Array.isArray(res?.subcategoryProfiles)? res.subcategoryProfiles: [];
+      const subcategories= Array.isArray(res?.subcategories)      ? res.subcategories      : [];
+      const directProds  = Array.isArray(res?.products)           ? res.products           : [];
+
+      setCategoryResults(categories);
+      setProfileResults(profiles);
+      setSubcategoryResults(subcategories);
+
+      // ── Fetch all products for every matched subcategory in parallel ─────────
+      // The base /search only returns up to 8 direct name/styleNo matches.
+      // We also pull every product that belongs to matched subcategories so
+      // the grid shows the full related catalogue.
+      let allProducts = [...directProds];
+
+      if (subcategories.length > 0) {
+        const fetches = subcategories.map((sub) =>
+          catalogApi
+            .get(`/subcategories/${sub._id}/products`)
+            .then((r) => ({ sub, list: Array.isArray(r?.products) ? r.products : [] }))
+            .catch(() => ({ sub, list: [] })),
+        );
+        const responses = await Promise.all(fetches);
+
+        for (const { sub, list } of responses) {
+          // Enrich each product with its parent subcategory's nav context so
+          // handleProductPress can navigate correctly without a second fetch.
+          const enriched = list.map((p) => ({
+            ...p,
+            categoryId:                 p.categoryId                || sub.categoryId,
+            categoryName:               p.categoryName              || sub.categoryName              || '',
+            subcategoryId:              p.subcategoryId             || sub._id,
+            subcategoryName:            p.subcategoryName           || sub.name                      || '',
+            subcategoryProfileName:     p.subcategoryProfileName    || sub.subcategoryProfileName    || '',
+            subcategoryFilterSchema:    p.subcategoryFilterSchema   || (Array.isArray(sub.filterSchema) ? sub.filterSchema : []),
+            subcategoryImages:          p.subcategoryImages         || (Array.isArray(sub.images) ? sub.images : []),
+            subcategoryThumbnailImage:  p.subcategoryThumbnailImage || sub.imageUrl || sub.thumbnailImage || '',
+            subcategorySubtext:         p.subcategorySubtext        || sub.subtext                  || '',
+            specialNotePlaceholderText: p.specialNotePlaceholderText|| sub.specialNotePlaceholderText|| 'Length variation',
+          }));
+          allProducts = allProducts.concat(enriched);
+        }
+
+        // Deduplicate by _id (direct search matches take priority)
+        const seen = new Set();
+        allProducts = allProducts.filter((p) => {
+          const id = String(p._id);
+          if (seen.has(id)) return false;
+          seen.add(id);
+          return true;
+        });
+      }
+
+      // ── Semantic filter narrowing ────────────────────────────────────────────
+      // For multi-word queries (e.g. "round rings"), detect which words appear
+      // as filter values in the product set (e.g. "round" → stoneshape=Round)
+      // and narrow the list to products that satisfy ALL such filter words.
+      // Single-word queries skip this so we don't over-restrict.
+      const queryWords = trimmed.toLowerCase().split(/\s+/).filter((w) => w.length >= 2);
+      if (queryWords.length > 1 && allProducts.length > 0) {
+        const matchesFilterValue = (product, word) => {
+          const pFilters = Array.isArray(product.filter) ? product.filter : [];
+          return pFilters.some((f) => {
+            const vals = Array.isArray(f.filterValue)
+              ? f.filterValue
+              : [f.filterValue];
+            return vals.some((v) => String(v || '').toLowerCase().includes(word));
+          });
+        };
+
+        // Words that appear in at least one product's filter values
+        const filterTerms = queryWords.filter((w) =>
+          allProducts.some((p) => matchesFilterValue(p, w)),
+        );
+
+        // Only narrow when the filter terms are a strict subset of the query
+        // (i.e. at least one word is a structural term like a category name).
+        // If ALL words are filter terms we skip narrowing to avoid empty results
+        // for unusual combinations.
+        if (filterTerms.length > 0 && filterTerms.length < queryWords.length) {
+          allProducts = allProducts.filter((p) =>
+            filterTerms.every((term) => matchesFilterValue(p, term)),
+          );
+        }
+      }
+
+      setProductResults(allProducts);
     } catch (err) {
       if (__DEV__) console.warn('[SearchScreen] search error:', err?.message);
       setCategoryResults([]);
@@ -215,13 +364,11 @@ const SearchScreen = ({ navigation }) => {
   }, []);
 
   // ── Navigation ──────────────────────────────────────────────────────────────
-  // Pops SearchScreen from App2Navigator first so it doesn't sit behind CatalogMain.
-  // InteractionManager waits for the back-animation to finish before deep-linking.
+  // SearchScreen now lives in DashboardStack alongside all destination screens,
+  // so a plain navigate pushes the destination onto the same stack — pressing
+  // back from the destination returns here naturally.
   const navigateToResult = useCallback((screenName, params) => {
-    navigation.goBack();
-    InteractionManager.runAfterInteractions(() => {
-      dispatchNavigate(screenName, params);
-    });
+    navigation.navigate(screenName, params);
   }, [navigation]);
 
   // Category → CategoryDetails
@@ -298,7 +445,7 @@ const SearchScreen = ({ navigation }) => {
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={styles.safeArea} edges={['left', 'right']}>
 
       {/* ── Header bar ──────────────────────────────────────────────────────── */}
       <View style={styles.header}>
@@ -314,7 +461,7 @@ const SearchScreen = ({ navigation }) => {
           <TextInput
             ref={inputRef}
             style={styles.textInput}
-            placeholder="Search products, categories, profiles..."
+            placeholder="Search by name, category or style no..."
             placeholderTextColor={colors.textLight}
             value={query}
             onChangeText={handleChange}
@@ -344,7 +491,7 @@ const SearchScreen = ({ navigation }) => {
             <MaterialIcons name="search" size={52} color={colors.border} />
             <Text style={styles.stateTitle}>Search the catalog</Text>
             <Text style={styles.stateSub}>
-              Find categories, profiles, subcategories and products
+              Find by name, category, subcategory or style no.
             </Text>
           </View>
         ) : null}
@@ -408,17 +555,19 @@ const SearchScreen = ({ navigation }) => {
           </View>
         ) : null}
 
-        {/* ── 4. Products ─────────────────────────────────────────────────── */}
+        {/* ── 4. Products (2-column grid) ──────────────────────────────────── */}
         {showResults && productResults.length > 0 ? (
           <View style={styles.section}>
             <SectionHeading label="PRODUCTS" count={productResults.length} />
-            {productResults.map((item) => (
-              <ProductCard
-                key={String(item._id)}
-                item={item}
-                onPress={() => handleProductPress(item)}
-              />
-            ))}
+            <View style={styles.productGrid}>
+              {productResults.map((item) => (
+                <SearchProductCard
+                  key={String(item._id)}
+                  item={item}
+                  onPress={() => handleProductPress(item)}
+                />
+              ))}
+            </View>
           </View>
         ) : null}
 
@@ -580,6 +729,78 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'AvenirLTStd-Roman',
     color: colors.textSecondary,
+  },
+
+  // Product grid
+  productGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+
+  // Rich product card tile
+  productCard: {
+    backgroundColor: colors.cardBackground,
+    borderRadius: 14,
+    padding: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  productCardImg: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 8,
+    marginBottom: 10,
+    backgroundColor: colors.borderLight,
+  },
+  productCardImgPlaceholder: {
+    backgroundColor: colors.borderLight,
+  },
+  productCardName: {
+    fontSize: 14,
+    fontFamily: 'AvenirLTStd-Heavy',
+    color: colors.textPrimary,
+    marginBottom: 3,
+    lineHeight: 19,
+  },
+  productCardSubtitle: {
+    fontSize: 11,
+    fontFamily: 'AvenirLTStd-Roman',
+    color: colors.textSecondary,
+    marginBottom: 8,
+  },
+  specPillRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 10,
+  },
+  specPill: {
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  specPillText: {
+    fontSize: 11,
+    fontFamily: 'AvenirLTStd-Roman',
+    color: colors.textPrimary,
+  },
+  addToCartBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  addToCartText: {
+    fontSize: 13,
+    fontFamily: 'AvenirLTStd-Medium',
+    color: colors.textWhite,
   },
 });
 

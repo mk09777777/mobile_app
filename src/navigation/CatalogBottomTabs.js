@@ -17,8 +17,7 @@ import OrderPlacedScreen from '../screens/ClientApp/OrderPlacedScreen';
 import MyOrdersScreen from '../screens/ClientApp/MyOrdersScreen';
 import MyOrderDetailsScreen from '../screens/ClientApp/MyOrderDetailsScreen';
 import MyShipmentTrackingScreen from '../screens/ClientApp/MyShipmentTrackingScreen';
-import CatalogChatsScreen from '../screens/ClientApp/CatalogChatsScreen';
-
+import SearchScreen from '../screens/ClientApp/SearchScreen';
 const Tab = createBottomTabNavigator();
 const DashboardStack = createStackNavigator();
 const CartStack = createStackNavigator();
@@ -30,6 +29,7 @@ const DashboardStackScreen = () => (
       headerShown: false,
     }}>
     <DashboardStack.Screen name="HomeScreen" component={HomeScreen} />
+    <DashboardStack.Screen name="Search" component={SearchScreen} />
     <DashboardStack.Screen name="FeaturedCollection" component={FeaturedCollectionScreen} />
     <DashboardStack.Screen name="CategoryDetails" component={CategoryDetailsScreen} />
     <DashboardStack.Screen name="ProductList" component={ProductListScreen} />
@@ -66,7 +66,7 @@ const CatalogBottomTabs = () => {
   return (
     <CartProvider>
       <Tab.Navigator
-        tabBar={(props) => <CustomTabBar {...props} />}
+        tabBar={(props) => <CustomTabBar {...props} currentApp="catalog" />}
         screenOptions={{
           headerShown: false,
         }}
@@ -85,11 +85,6 @@ const CatalogBottomTabs = () => {
           name="MyOrders"
           component={OrdersStackScreen}
           options={{ title: 'My Orders' }}
-        />
-        <Tab.Screen
-          name="Chats"
-          component={CatalogChatsScreen}
-          options={{ title: 'Chats' }}
         />
       </Tab.Navigator>
     </CartProvider>

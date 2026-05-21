@@ -5,7 +5,6 @@ import { colors } from '../constants/colors';
 import { fonts } from '../constants/fonts';
 import Icon from '../components/common/Icon';
 import CustomTabBar from '../components/common/CustomTabBar';
-import SwitchAppFAB from '../components/common/SwitchAppFAB';
 
 // Import screens
 import DashboardScreen from '../screens/Dashboard/DashboardScreen';
@@ -18,7 +17,7 @@ const BottomTabs = () => {
   return (
     <View style={{ flex: 1 }}>
       <Tab.Navigator
-        tabBar={(props) => <CustomTabBar {...props} />}
+        tabBar={(props) => <CustomTabBar {...props} currentApp="custom" />}
         screenOptions={{
           headerShown: false,
         }}>
@@ -44,7 +43,6 @@ const BottomTabs = () => {
           }}
         />
       </Tab.Navigator>
-      <SwitchAppFAB currentApp="custom" insideSafeArea={false} />
     </View>
   );
 };
