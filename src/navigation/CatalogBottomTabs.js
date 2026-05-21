@@ -4,10 +4,12 @@ import { createStackNavigator } from '@react-navigation/stack';
 import CustomTabBar from '../components/common/CustomTabBar';
 import { CartProvider } from '../context/CartContext';
 import HomeScreen from '../screens/ClientApp/HomeScreen';
+import FeaturedCollectionScreen from '../screens/ClientApp/FeaturedCollectionScreen';
 import CategoryDetailsScreen from '../screens/ClientApp/CategoryDetailsScreen';
 import ProductListScreen from '../screens/ClientApp/ProductListScreen';
 import ProductMatrixScreen from '../screens/ClientApp/ProductMatrixScreen';
 import RingMatrixPage from '../screens/ClientApp/RingMatrixPage';
+import JacketsScreen from '../screens/ClientApp/JacketsScreen';
 import OrderReviewScreen from '../screens/ClientApp/OrderReviewScreen';
 import BulkOrderParserScreen from '../screens/ClientApp/BulkOrderParserScreen';
 import OrderCartScreen from '../screens/ClientApp/OrderCartScreen';
@@ -28,10 +30,12 @@ const DashboardStackScreen = () => (
       headerShown: false,
     }}>
     <DashboardStack.Screen name="HomeScreen" component={HomeScreen} />
+    <DashboardStack.Screen name="FeaturedCollection" component={FeaturedCollectionScreen} />
     <DashboardStack.Screen name="CategoryDetails" component={CategoryDetailsScreen} />
     <DashboardStack.Screen name="ProductList" component={ProductListScreen} />
     <DashboardStack.Screen name="ProductMatrix" component={ProductMatrixScreen} />
     <DashboardStack.Screen name="RingMatrixPage" component={RingMatrixPage} />
+    <DashboardStack.Screen name="JacketsScreen" component={JacketsScreen} />
     <DashboardStack.Screen name="BulkOrderParser" component={BulkOrderParserScreen} />
     <DashboardStack.Screen name="OrderReview" component={OrderReviewScreen} />
   </DashboardStack.Navigator>

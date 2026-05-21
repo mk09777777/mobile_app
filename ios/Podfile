@@ -1,5 +1,5 @@
 # React Native 0.82+ Podfile
-# Load React Native pods helper
+# Load React Native pods helper first
 react_native_path = File.expand_path('../node_modules/react-native', __dir__)
 require_relative File.join(react_native_path, 'scripts', 'react_native_pods.rb')
 
@@ -20,7 +20,7 @@ end
 target 'chandrajewellery' do
   # Disable Sentry before autolinking (react-native.config.js should handle this, but ensure it here too)
   ENV['SENTRY_SKIP_AUTO_SETUP'] = '1'
-
+  
   # Auto-link React Native modules (Sentry should be excluded via react-native.config.js)
   config = use_native_modules!
   config ||= { reactNativePath: '../node_modules/react-native' }
@@ -60,6 +60,29 @@ target 'chandrajewellery' do
       if target.name.include?('Sentry') || target.name.include?('RNSentry')
         puts "  Removing target: #{target.name}"
         target.remove_from_project
+      end
+    end
+    
+    # Fix fmt consteval error by forcing C++17 for the fmt target
+    installer.pods_project.targets.each do |target|
+      if target.name == 'fmt'
+        target.build_configurations.each do |config|
+          config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
+        end
+      end
+    end
+    
+    # Also patch the fmt base.h header to ensure FMT_USE_CONSTEVAL is disabled
+    # because other targets compiled with C++20 might still trigger the error
+    fmt_base = File.join(installer.sandbox.root, 'fmt', 'include', 'fmt', 'base.h')
+    if File.exist?(fmt_base)
+      # Make file writable
+      File.chmod(0644, fmt_base)
+      content = File.read(fmt_base)
+      if content.include?('define FMT_USE_CONSTEVAL 1')
+        patched = content.gsub(/define FMT_USE_CONSTEVAL 1/, 'define FMT_USE_CONSTEVAL 0')
+        File.write(fmt_base, patched)
+        puts "  Patched fmt/base.h to disable consteval"
       end
     end
     
@@ -135,9 +158,13 @@ target 'chandrajewellery' do
         # Fix Firebase pods to find FirebaseCore module
         # Apply to all Firebase targets that depend on FirebaseCore
         target_name_lower = target.name.downcase
+        # FirebaseCoreInternal is Swift and imports the FirebaseCore module; without this flag Xcode reports
+        # "Module 'FirebaseCore' not found" (see FirebaseCoreInternal.debug.xcconfig — only GoogleUtilities was listed).
         if target_name_lower == 'firebasemessaging' || target_name_lower == 'firebaseinstallations' ||
+           target_name_lower == 'firebasecoreinternal' ||
            (target_name_lower.include?('firebasemessaging') && !target_name_lower.include?('privacy')) ||
-           (target_name_lower.include?('firebaseinstallations') && !target_name_lower.include?('privacy'))
+           (target_name_lower.include?('firebaseinstallations') && !target_name_lower.include?('privacy')) ||
+           (target_name_lower.include?('firebasecoreinternal') && !target_name_lower.include?('privacy'))
           firebase_core_module_flag = '-fmodule-map-file="${PODS_ROOT}/Target Support Files/FirebaseCore/FirebaseCore.modulemap"'
           
           # Add to OTHER_CFLAGS

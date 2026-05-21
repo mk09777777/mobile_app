@@ -113,8 +113,35 @@ const getOrderSummaryTitle = (order) => {
   const selectedFilters = normalizeSelectedFilters(firstMeta?.selectedFilters || {});
   const totalPieces = (order?.items || []).reduce((sum, item) => sum + Number(item?.quantity || 0), 0);
   const subcategory = firstMeta?.subcategoryName || firstMeta?.productSnapshot?.subcategoryName || '';
-  const metal = selectedFilters?.metal || '';
-  const bits = [`${totalPieces} pcs`, subcategory, metal].map((item) => String(item || '').trim()).filter(Boolean);
+  const rawMetal = firstDefined(
+    selectedFilters?.metal,
+    selectedFilters?.Metal,
+    selectedFilters?.metalType,
+    selectedFilters?.metal_type,
+    selectedFilters?.['Metal Type'],
+    '',
+  );
+  const metalKt = firstDefined(
+    selectedFilters?.metalKt,
+    selectedFilters?.metal_kt,
+    selectedFilters?.kt,
+    selectedFilters?.KT,
+    '',
+  );
+  const stoneType = firstDefined(
+    selectedFilters?.stoneType,
+    selectedFilters?.stone_type,
+    selectedFilters?.['Stone Type'],
+    selectedFilters?.stone,
+    selectedFilters?.Stone,
+    '',
+  );
+  const metal = String(rawMetal || '').trim();
+  const kt = String(metalKt || '').trim();
+  const metalDisplay = metal && kt && !metal.toLowerCase().includes(kt.toLowerCase()) ? `${metal} ${kt}` : metal || kt;
+  const bits = [`${totalPieces} pcs`, subcategory, metalDisplay, stoneType]
+    .map((item) => String(item || '').trim())
+    .filter(Boolean);
   return bits.join(' | ');
 };
 
@@ -200,25 +227,68 @@ const getLiveStageIndex = (status) => {
   return index >= 0 ? index : 0;
 };
 
+const navigateToSubcategory = (navigation, subcategory, highlightOptions = {}) => {
+  const { onlyBestSeller = false, onlyReadyToShip = false } = highlightOptions;
+  const categoryName = subcategory.categoryName || '';
+  const isStuds = String(categoryName).trim().toLowerCase() === 'studs';
+  const isJackets = String(subcategory.name || '').trim().toLowerCase() === 'jackets';
+  const sharedParams = {
+    categoryId: subcategory.categoryId,
+    categoryName,
+    subcategoryProfileName: subcategory.subcategoryProfileName || '',
+    subcategoryId: subcategory._id,
+    subcategoryName: subcategory.name,
+    subcategorySubtext: subcategory.subtext || '',
+    subcategoryFilterSchema: subcategory.filterSchema || [],
+    subcategoryDescription:
+      subcategory.description || subcategory.infoText || subcategory.subtext || '',
+    subcategoryImages: Array.isArray(subcategory.images) ? subcategory.images : [],
+    subcategoryThumbnailImage: subcategory.imageUrl || subcategory.thumbnailImage || '',
+    specialNotePlaceholderText: subcategory.specialNotePlaceholderText || 'Length variation',
+    onlyBestSeller,
+    onlyReadyToShip,
+  };
+
+  if (isStuds && isJackets) {
+    navigation.navigate('JacketsScreen', sharedParams);
+    return;
+  }
+
+  navigation.navigate('ProductList', sharedParams);
+};
+
 const HomeScreen = ({ navigation }) => {
   const { refreshCartCount } = useCart();
   const { width } = useWindowDimensions();
   const [banners, setBanners] = useState([]);
+  const [featuredCollections, setFeaturedCollections] = useState([]);
+  const [activeFeaturedIndex, setActiveFeaturedIndex] = useState(0);
+  const [bestSellers, setBestSellers] = useState([]);
+  const [readyToShip, setReadyToShip] = useState([]);
   const [categories, setCategories] = useState([]);
   const [recentOrders, setRecentOrders] = useState([]);
   const [liveOrders, setLiveOrders] = useState([]);
   const [activeReorderIndex, setActiveReorderIndex] = useState(0);
   const [activeLivePage, setActiveLivePage] = useState(0);
   const [loadingBanners, setLoadingBanners] = useState(true);
+  const [loadingFeaturedCollections, setLoadingFeaturedCollections] = useState(true);
+  const [loadingBestSellers, setLoadingBestSellers] = useState(true);
+  const [loadingReadyToShip, setLoadingReadyToShip] = useState(true);
   const [loadingCategories, setLoadingCategories] = useState(true);
   const [loadingOrders, setLoadingOrders] = useState(true);
   const [bannerError, setBannerError] = useState('');
+  const [featuredError, setFeaturedError] = useState('');
+  const [bestSellersError, setBestSellersError] = useState('');
+  const [readyToShipError, setReadyToShipError] = useState('');
   const [categoryError, setCategoryError] = useState('');
   const reorderListRef = useRef(null);
   const liveOrdersListRef = useRef(null);
+  const featuredListRef = useRef(null);
 
   const bannerWidth = width;
   const bannerHeight = bannerWidth * (9 / 16);
+  const featuredCarouselWidth = width - 20 * 2 - 56;
+  const featuredCarouselHeight = featuredCarouselWidth * 0.62;
   const reorderCardWidth = width - 20 * 2;
   const categoryGap = 8;
   const categoryCardWidth = (width - 20 * 2 - categoryGap) / 2;
@@ -239,6 +309,52 @@ const HomeScreen = ({ navigation }) => {
       setBanners([]);
     } finally {
       setLoadingBanners(false);
+    }
+  }, []);
+
+  const fetchFeaturedCollections = useCallback(async () => {
+    try {
+      setLoadingFeaturedCollections(true);
+      setFeaturedError('');
+      const response = await catalogApi.get('/featured-collections');
+      const fetched = Array.isArray(response?.featuredCollections) ? response.featuredCollections : [];
+      setFeaturedCollections(fetched);
+      setActiveFeaturedIndex(0);
+    } catch (err) {
+      setFeaturedError(err?.message || 'Failed to load featured collections');
+      setFeaturedCollections([]);
+    } finally {
+      setLoadingFeaturedCollections(false);
+    }
+  }, []);
+
+  const fetchBestSellers = useCallback(async () => {
+    try {
+      setLoadingBestSellers(true);
+      setBestSellersError('');
+      const response = await catalogApi.get('/best-sellers');
+      const fetched = Array.isArray(response?.subcategories) ? response.subcategories : [];
+      setBestSellers(fetched);
+    } catch (err) {
+      setBestSellersError(err?.message || 'Failed to load best sellers');
+      setBestSellers([]);
+    } finally {
+      setLoadingBestSellers(false);
+    }
+  }, []);
+
+  const fetchReadyToShip = useCallback(async () => {
+    try {
+      setLoadingReadyToShip(true);
+      setReadyToShipError('');
+      const response = await catalogApi.get('/ready-to-ship');
+      const fetched = Array.isArray(response?.subcategories) ? response.subcategories : [];
+      setReadyToShip(fetched);
+    } catch (err) {
+      setReadyToShipError(err?.message || 'Failed to load ready to ship');
+      setReadyToShip([]);
+    } finally {
+      setLoadingReadyToShip(false);
     }
   }, []);
 
@@ -311,8 +427,11 @@ const HomeScreen = ({ navigation }) => {
 
   useEffect(() => {
     fetchBanners();
+    fetchFeaturedCollections();
+    fetchBestSellers();
+    fetchReadyToShip();
     fetchCategories();
-  }, [fetchBanners, fetchCategories]);
+  }, [fetchBanners, fetchFeaturedCollections, fetchBestSellers, fetchReadyToShip, fetchCategories]);
 
   useFocusEffect(
     useCallback(() => {
@@ -499,6 +618,105 @@ const HomeScreen = ({ navigation }) => {
       />
     </View>
   );
+
+  const scrollFeaturedToIndex = useCallback(
+    (index) => {
+      if (!featuredCollections.length) return;
+      const nextIndex = Math.max(0, Math.min(index, featuredCollections.length - 1));
+      setActiveFeaturedIndex(nextIndex);
+      featuredListRef.current?.scrollToOffset({
+        offset: nextIndex * featuredCarouselWidth,
+        animated: true,
+      });
+    },
+    [featuredCarouselWidth, featuredCollections.length],
+  );
+
+  const onFeaturedScrollEnd = useCallback(
+    (event) => {
+      const offsetX = event?.nativeEvent?.contentOffset?.x || 0;
+      const index = Math.round(offsetX / featuredCarouselWidth);
+      setActiveFeaturedIndex(index);
+    },
+    [featuredCarouselWidth],
+  );
+
+  const renderFeaturedCollection = ({ item }) => (
+    <TouchableOpacity
+      activeOpacity={0.9}
+      onPress={() =>
+        navigation.navigate('FeaturedCollection', {
+          collectionId: item._id,
+          collectionName: item.name,
+        })
+      }
+      style={[styles.featuredCarouselCard, { width: featuredCarouselWidth, height: featuredCarouselHeight }]}>
+      <Image source={{ uri: item.bannerImageUrl }} style={styles.featuredCarouselImage} resizeMode="cover" />
+    </TouchableOpacity>
+  );
+
+  const shouldShowFeatured =
+    loadingFeaturedCollections || featuredError || featuredCollections.length > 0;
+
+  const getSubcategoryCardSubtext = (item) => {
+    const customSubtext = String(item?.subtext || '').trim();
+    if (customSubtext) return customSubtext;
+    const description = String(item?.description || '').trim();
+    if (description) return description;
+    return `${Number(item?.designCount || 0)} Designs`;
+  };
+
+  const renderHighlightSection = ({
+    title,
+    items,
+    loading,
+    error,
+    onRetry,
+    highlightOptions,
+  }) => {
+    const shouldShow = loading || error || items.length > 0;
+    if (!shouldShow) return null;
+
+    return (
+      <View style={styles.categoriesSection}>
+        <Text style={styles.categoriesTitle}>{title}</Text>
+
+        {loading ? (
+          <View style={styles.categoryGrid}>
+            {[0, 1, 2, 3].map((item) => (
+              <View
+                key={`${title}-skeleton-${item}`}
+                style={[styles.categorySkeletonCard, { width: categoryCardWidth }]}
+              />
+            ))}
+          </View>
+        ) : null}
+
+        {!loading && error ? (
+          <TouchableOpacity style={styles.categoryStateCard} onPress={onRetry} activeOpacity={0.8}>
+            <Text style={styles.fallbackTitle}>Unable to load section</Text>
+            <Text style={styles.fallbackSubtitle}>Tap to retry</Text>
+          </TouchableOpacity>
+        ) : null}
+
+        {!loading && !error && items.length > 0 ? (
+          <View style={styles.categoryGrid}>
+            {items.map((item) => (
+              <CategoryCard
+                key={item._id || `${title}-${item.name}`}
+                style={{ width: categoryCardWidth }}
+                thumbnailUrl={item.imageUrl}
+                title={item.name}
+                subtext={getSubcategoryCardSubtext(item)}
+                infoText={item.infoText}
+                onPress={() => navigateToSubcategory(navigation, item, highlightOptions)}
+              />
+            ))}
+          </View>
+        ) : null}
+      </View>
+    );
+  };
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
@@ -694,6 +912,86 @@ const HomeScreen = ({ navigation }) => {
           </View>
         ) : null}
       </View>
+
+      {shouldShowFeatured ? (
+        <View style={styles.categoriesSection}>
+          <Text style={styles.featuredCollectionsTitle}>FEATURED COLLECTIONS</Text>
+
+          {loadingFeaturedCollections ? (
+            <View style={[styles.featuredCarouselSkeleton, { height: featuredCarouselHeight }]} />
+          ) : null}
+
+          {!loadingFeaturedCollections && featuredError ? (
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={fetchFeaturedCollections}
+              style={[styles.featuredFallback, { height: featuredCarouselHeight }]}>
+              <Text style={styles.fallbackTitle}>Unable to load featured collections</Text>
+              <Text style={styles.fallbackSubtitle}>Tap to retry</Text>
+            </TouchableOpacity>
+          ) : null}
+
+          {!loadingFeaturedCollections && !featuredError && featuredCollections.length > 0 ? (
+            <View style={styles.featuredCarouselRow}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => scrollFeaturedToIndex(activeFeaturedIndex - 1)}
+                style={styles.featuredNavButton}
+                disabled={activeFeaturedIndex <= 0}>
+                <MaterialIcons
+                  name="chevron-left"
+                  size={28}
+                  color={activeFeaturedIndex <= 0 ? '#C5C5C5' : '#1A1A1A'}
+                />
+              </TouchableOpacity>
+
+              <FlatList
+                ref={featuredListRef}
+                data={featuredCollections}
+                keyExtractor={(item) => item._id || item.bannerImageUrl}
+                renderItem={renderFeaturedCollection}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                snapToAlignment="center"
+                decelerationRate="fast"
+                onMomentumScrollEnd={onFeaturedScrollEnd}
+                style={{ width: featuredCarouselWidth }}
+              />
+
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => scrollFeaturedToIndex(activeFeaturedIndex + 1)}
+                style={styles.featuredNavButton}
+                disabled={activeFeaturedIndex >= featuredCollections.length - 1}>
+                <MaterialIcons
+                  name="chevron-right"
+                  size={28}
+                  color={activeFeaturedIndex >= featuredCollections.length - 1 ? '#C5C5C5' : '#1A1A1A'}
+                />
+              </TouchableOpacity>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
+      {renderHighlightSection({
+        title: 'BEST SELLERS',
+        items: bestSellers,
+        loading: loadingBestSellers,
+        error: bestSellersError,
+        onRetry: fetchBestSellers,
+        highlightOptions: { onlyBestSeller: true },
+      })}
+
+      {renderHighlightSection({
+        title: 'READY TO SHIP',
+        items: readyToShip,
+        loading: loadingReadyToShip,
+        error: readyToShipError,
+        onRetry: fetchReadyToShip,
+        highlightOptions: { onlyReadyToShip: true },
+      })}
     </ScrollView>
   );
 };
@@ -1007,6 +1305,38 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 12,
   },
+  featuredCarouselRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  featuredNavButton: {
+    width: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  featuredCarouselCard: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: colors.cardBackground,
+  },
+  featuredCarouselImage: {
+    width: '100%',
+    height: '100%',
+  },
+  featuredCarouselSkeleton: {
+    borderRadius: 16,
+    backgroundColor: '#E9ECEF',
+  },
+  featuredFallback: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.cardBackground,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+  },
   categoriesSection: {
     paddingHorizontal: 20,
     paddingTop: 14,
@@ -1017,6 +1347,14 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     marginBottom: 10,
     letterSpacing: 0.2,
+  },
+  featuredCollectionsTitle: {
+    color: colors.textPrimary,
+    fontSize: 20,
+    fontWeight: '400',
+    marginBottom: 10,
+    letterSpacing: 0.2,
+    textAlign: 'center',
   },
   categoryGrid: {
     flexDirection: 'row',

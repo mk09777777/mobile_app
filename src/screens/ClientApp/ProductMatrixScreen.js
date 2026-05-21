@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View, Keyboard } from 'react-native';
 import { colors } from '../../constants/colors';
 import ProductMatrixCard from '../../components/client/ProductMatrixCard';
 import catalogApi from '../../services/catalogApi';
+import { getSubcategoryProductsPath } from '../../utils/subcategoryProductsPath';
 import { computeUnitPriceFromSource, getPricingContext } from '../../services/clientPricingEngine';
 
 const ProductMatrixScreen = ({ route, navigation }) => {
@@ -21,6 +22,8 @@ const ProductMatrixScreen = ({ route, navigation }) => {
   const productImageUrl = route?.params?.productImageUrl || '';
   const subcategoryThumbnailImage = route?.params?.subcategoryThumbnailImage || '';
   const productDescription = route?.params?.productDescription || '';
+  const onlyBestSeller = Boolean(route?.params?.onlyBestSeller);
+  const onlyReadyToShip = Boolean(route?.params?.onlyReadyToShip);
   const breadcrumbParts = ['HOME', categoryName, subcategoryProfileName]
     .map((part) => (typeof part === 'string' ? part.trim() : ''))
     .filter(Boolean)
@@ -32,6 +35,16 @@ const ProductMatrixScreen = ({ route, navigation }) => {
   const [quantitiesByProduct, setQuantitiesByProduct] = useState({});
   const [notesByProduct, setNotesByProduct] = useState({});
   const [pricingContext, setPricingContext] = useState(null);
+  const [isKeyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
+    const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+    return () => {
+      keyboardDidShowListener.remove();
+      keyboardDidHideListener.remove();
+    };
+  }, []);
 
   const normalizeToken = useCallback(
     (value) =>
@@ -95,7 +108,9 @@ const ProductMatrixScreen = ({ route, navigation }) => {
     try {
       setLoading(true);
       setError('');
-      const response = await catalogApi.get(`/subcategories/${subcategoryId}/products`);
+      const response = await catalogApi.get(
+        getSubcategoryProductsPath(subcategoryId, { onlyBestSeller, onlyReadyToShip }),
+      );
       const fetchedProducts = Array.isArray(response?.products) ? response.products : [];
       const visibleProducts = fetchedProducts.filter(matchesSelectedFilters);
       if (__DEV__) {
@@ -143,7 +158,7 @@ const ProductMatrixScreen = ({ route, navigation }) => {
     } finally {
       setLoading(false);
     }
-  }, [matchesSelectedFilters, selectedFilters, subcategoryId]);
+  }, [matchesSelectedFilters, onlyBestSeller, onlyReadyToShip, subcategoryId]);
 
   useEffect(() => {
     fetchProducts();
@@ -216,6 +231,7 @@ const ProductMatrixScreen = ({ route, navigation }) => {
             styleNo: product?.styleNo || '',
             name: product?.name || product?.title || product?.styleNo || `${product?.pointer || 0} Pointer`,
             imageUrl:
+              product?.displayImage ||
               product?.imageUrl ||
               product?.thumbnailUrl ||
               (Array.isArray(product?.images) ? product.images[0] : '') ||
@@ -317,32 +333,34 @@ const ProductMatrixScreen = ({ route, navigation }) => {
           : null}
       </ScrollView>
 
-      <View style={styles.footerWrap}>
-        <View style={styles.totalBadge}>
-          <Text style={styles.totalBadgeText}>{totalSelectedQty} Designs Added</Text>
+      {!isKeyboardVisible && (
+        <View style={styles.footerWrap}>
+          <View style={styles.totalBadge}>
+            <Text style={styles.totalBadgeText}>{totalSelectedQty} Designs Added</Text>
+          </View>
+          <TouchableOpacity
+            activeOpacity={canProceed ? 0.85 : 1}
+            disabled={!canProceed}
+            style={[styles.proceedButton, !canProceed && styles.proceedButtonDisabled]}
+            onPress={() =>
+              navigation.navigate('OrderReview', {
+                categoryName,
+                subcategoryProfileName,
+                subcategoryId,
+                subcategoryName,
+                totalSelectedQty,
+                selectedProductLines,
+                selectedFilters,
+                specialNotePlaceholderText,
+                productImageUrl,
+                productDescription,
+                subcategoryThumbnailImage,
+              })
+            }>
+            <Text style={styles.proceedText}>Proceed</Text>
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity
-          activeOpacity={canProceed ? 0.85 : 1}
-          disabled={!canProceed}
-          style={[styles.proceedButton, !canProceed && styles.proceedButtonDisabled]}
-          onPress={() =>
-            navigation.navigate('OrderReview', {
-              categoryName,
-              subcategoryProfileName,
-              subcategoryId,
-              subcategoryName,
-              totalSelectedQty,
-              selectedProductLines,
-              selectedFilters,
-              specialNotePlaceholderText,
-              productImageUrl,
-              productDescription,
-              subcategoryThumbnailImage,
-            })
-          }>
-          <Text style={styles.proceedText}>Proceed</Text>
-        </TouchableOpacity>
-      </View>
+      )}
     </View>
   );
 };

@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Easing, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Keyboard } from 'react-native';
 import catalogApi from '../../services/catalogApi';
+import { getSubcategoryProductsPath } from '../../utils/subcategoryProductsPath';
 import RingProductMatrixCard from '../../components/client/RingProductMatrixCard';
 import { computeUnitPriceFromSource, getPricingContext } from '../../services/clientPricingEngine';
 
@@ -18,6 +19,8 @@ const RingMatrixPage = ({ route, navigation }) => {
     route?.params?.specialNotePlaceholder ||
     'Length variation';
   const selectedFilters = useMemo(() => route?.params?.selectedFilters || {}, [route?.params?.selectedFilters]);
+  const onlyBestSeller = Boolean(route?.params?.onlyBestSeller);
+  const onlyReadyToShip = Boolean(route?.params?.onlyReadyToShip);
   const [stoneShapes, setStoneShapes] = useState([]);
   const [selectedStoneShapes, setSelectedStoneShapes] = useState([]);
   const [allProducts, setAllProducts] = useState([]);
@@ -27,6 +30,27 @@ const RingMatrixPage = ({ route, navigation }) => {
   const [specialNotesByShape, setSpecialNotesByShape] = useState({});
   const [specialRemark, setSpecialRemark] = useState('');
   const [pricingContext, setPricingContext] = useState(null);
+  const [isKeyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener(
+      'keyboardDidShow',
+      () => {
+        setKeyboardVisible(true);
+      }
+    );
+    const keyboardDidHideListener = Keyboard.addListener(
+      'keyboardDidHide',
+      () => {
+        setKeyboardVisible(false);
+      }
+    );
+
+    return () => {
+      keyboardDidHideListener.remove();
+      keyboardDidShowListener.remove();
+    };
+  }, []);
 
   const pills = useMemo(() => {
     const next = [];
@@ -120,7 +144,7 @@ const RingMatrixPage = ({ route, navigation }) => {
       setError('');
       const [shapeResponse, productResponse] = await Promise.all([
         catalogApi.get('/stone-shapes'),
-        catalogApi.get(`/subcategories/${subcategoryId}/products`),
+        catalogApi.get(getSubcategoryProductsPath(subcategoryId, { onlyBestSeller, onlyReadyToShip })),
       ]);
       const shapes = Array.isArray(shapeResponse?.stoneShapes) ? shapeResponse.stoneShapes : [];
       const fetchedProducts = Array.isArray(productResponse?.products) ? productResponse.products : [];
@@ -144,7 +168,7 @@ const RingMatrixPage = ({ route, navigation }) => {
     } finally {
       setLoading(false);
     }
-  }, [matchesBaseFilters, subcategoryId]);
+  }, [matchesBaseFilters, onlyBestSeller, onlyReadyToShip, subcategoryId]);
 
   useEffect(() => {
     fetchData();
@@ -267,6 +291,7 @@ const RingMatrixPage = ({ route, navigation }) => {
             name: product?.styleNo || '',
             shapeName,
             imageUrl:
+              product?.displayImage ||
               product?.imageUrl ||
               product?.thumbnailUrl ||
               (Array.isArray(product?.images) ? product.images[0] : '') ||
@@ -304,48 +329,50 @@ const RingMatrixPage = ({ route, navigation }) => {
 
   return (
     <View style={styles.container}>
-      <View style={styles.topWhiteSection}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentInsetAdjustmentBehavior="never"
-          automaticallyAdjustContentInsets={false}
-          style={styles.pillsScroll}
-          contentContainerStyle={styles.pillsRow}>
-          {pills.map((pillText, index) => (
-            <View key={`${pillText}-${index}`} style={styles.pill}>
-              <Text style={styles.pillText}>{pillText}</Text>
-            </View>
-          ))}
-        </ScrollView>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.shapeRow}>
-          {stoneShapes.map((shape) => {
-            const name = String(shape?.name || '').trim();
-            if (!name) return null;
-            const active = selectedStoneShapes.includes(name);
-            return (
-              <TouchableOpacity
-                key={String(shape?._id || name)}
-                style={styles.shapeItem}
-                onPress={() =>
-                  setSelectedStoneShapes((prev) =>
-                    prev.includes(name) ? prev.filter((value) => value !== name) : [...prev, name],
-                  )
-                }
-                activeOpacity={0.85}
-              >
-                <View style={[styles.shapeCircle, active && styles.shapeCircleActive]}>
-                  {shape?.thumbnailImage ? (
-                    <Image source={{ uri: shape.thumbnailImage }} style={styles.shapeImage} resizeMode="cover" />
-                  ) : (
-                    <View style={styles.shapeImagePlaceholder} />
-                  )}
-                </View>
-                <Text style={styles.shapeTitle}>{name}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
+      <View style={styles.topSectionAnimatedWrap}>
+        <View style={styles.topWhiteSection}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentInsetAdjustmentBehavior="never"
+            automaticallyAdjustContentInsets={false}
+            style={styles.pillsScroll}
+            contentContainerStyle={styles.pillsRow}>
+            {pills.map((pillText, index) => (
+              <View key={`${pillText}-${index}`} style={styles.pill}>
+                <Text style={styles.pillText}>{pillText}</Text>
+              </View>
+            ))}
+          </ScrollView>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.shapeRow}>
+            {stoneShapes.map((shape) => {
+              const name = String(shape?.name || '').trim();
+              if (!name) return null;
+              const active = selectedStoneShapes.includes(name);
+              return (
+                <TouchableOpacity
+                  key={String(shape?._id || name)}
+                  style={styles.shapeItem}
+                  onPress={() =>
+                    setSelectedStoneShapes((prev) =>
+                      prev.includes(name) ? prev.filter((value) => value !== name) : [...prev, name],
+                    )
+                  }
+                  activeOpacity={0.85}
+                >
+                  <View style={[styles.shapeCircle, active && styles.shapeCircleActive]}>
+                    {shape?.thumbnailImage ? (
+                      <Image source={{ uri: shape.thumbnailImage }} style={styles.shapeImage} resizeMode="cover" />
+                    ) : (
+                      <View style={styles.shapeImagePlaceholder} />
+                    )}
+                  </View>
+                  <Text style={styles.shapeTitle}>{name}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
       </View>
       <ScrollView
         contentContainerStyle={styles.contentContainer}
@@ -446,32 +473,34 @@ const RingMatrixPage = ({ route, navigation }) => {
           </View>
         ) : null}
       </ScrollView>
-      <TouchableOpacity
-        style={[styles.proceedButton, !canProceed && styles.proceedButtonDisabled]}
-        disabled={!canProceed}
-        onPress={() =>
-          navigation.navigate('OrderReview', {
-            categoryName,
-            subcategoryProfileName,
-            subcategoryId,
-            subcategoryName,
-            subcategorySubtext,
-            totalSelectedQty,
-            selectedProductLines,
-            selectedFilters: {
-              ...(selectedFilters || {}),
-              stoneShape: selectedStoneShapes,
-            },
-            specialNotePlaceholderText,
-            productImageUrl,
-            productDescription,
-            subcategoryThumbnailImage,
-            specialRemark: specialRemark.trim(),
-          })
-        }
-      >
-        <Text style={styles.proceedText}>Add to order - {totalSelectedQty} pcs</Text>
-      </TouchableOpacity>
+      {!isKeyboardVisible && (
+        <TouchableOpacity
+          style={[styles.proceedButton, !canProceed && styles.proceedButtonDisabled]}
+          disabled={!canProceed}
+          onPress={() =>
+            navigation.navigate('OrderReview', {
+              categoryName,
+              subcategoryProfileName,
+              subcategoryId,
+              subcategoryName,
+              subcategorySubtext,
+              totalSelectedQty,
+              selectedProductLines,
+              selectedFilters: {
+                ...(selectedFilters || {}),
+                stoneShape: selectedStoneShapes,
+              },
+              specialNotePlaceholderText,
+              productImageUrl,
+              productDescription,
+              subcategoryThumbnailImage,
+              specialRemark: specialRemark.trim(),
+            })
+          }
+        >
+          <Text style={styles.proceedText}>Add to order - {totalSelectedQty} pcs</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 };
@@ -486,6 +515,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     paddingTop: 0,
     paddingBottom: 8,
+  },
+  topSectionAnimatedWrap: {
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
   },
   contentContainer: {
     paddingTop: 2,
