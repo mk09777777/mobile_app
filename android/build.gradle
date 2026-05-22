@@ -4,7 +4,7 @@ buildscript {
         minSdkVersion = 24
         compileSdkVersion = 36
         targetSdkVersion = 36
-        ndkVersion = "27.0.12077973"
+        ndkVersion = "27.1.12297006"
         kotlinVersion = "2.1.20"
     }
     repositories {
@@ -20,13 +20,3 @@ buildscript {
 }
 
 apply plugin: "com.facebook.react.rootproject"
-
-gradle.projectsEvaluated {
-    rootProject.subprojects { proj ->
-        def sourcesJar = proj.tasks.findByName("releaseSourcesJar")
-        def codegen = proj.tasks.findByName("generateCodegenArtifactsFromSchema")
-        if (sourcesJar != null && codegen != null) {
-            sourcesJar.dependsOn(codegen)
-        }
-    }
-}
