@@ -99,7 +99,12 @@ const ClientPricingScreen = ({ route, navigation }) => {
       setLoss(pricing.Loss?.toString() || pricing.loss?.toString() || '0');
       setLabour(pricing.Labour?.toString() || pricing.labour?.toString() || '0');
       setExtraCharges(pricing.ExtraCharges?.toString() || pricing.extraCharges?.toString() || '0');
-      setDuties(pricing.Duties?.toString() || pricing.duties?.toString() || '0');
+      setNaturalDuties(pricing.NaturalDuties?.toString() ?? pricing.naturalDuties?.toString() ?? '0');
+      setLabDuties(pricing.LabDuties?.toString() ?? pricing.labDuties?.toString() ?? '0');
+      setGoldDuties(pricing.GoldDuties?.toString() ?? pricing.goldDuties?.toString() ?? '0');
+      setSilverAndLabsDuties(pricing.SilverAndLabsDuties?.toString() ?? pricing.silverAndLabsDuties?.toString() ?? '0');
+      setLossAndLabourDuties(pricing.LossAndLabourDuties?.toString() ?? pricing.lossAndLabourDuties?.toString() ?? '0');
+      setUndercutPrice(pricing.UndercutPrice?.toString() ?? pricing.undercutPrice?.toString() ?? '0');
       setPricingMessageFormat(pricing.PricingMessageFormat || pricing.pricingMessageFormat || '');
 
       const diamondsData = pricing.Diamonds || pricing.diamonds || [];
@@ -397,7 +402,12 @@ const ClientPricingScreen = ({ route, navigation }) => {
           Loss: parseFloat(loss) || 0,
           Labour: parseFloat(labour) || 0,
           ExtraCharges: parseFloat(extraCharges) || 0,
-          Duties: parseFloat(duties) || 0,
+          NaturalDuties: parseFloat(naturalDuties) || 0,
+          LabDuties: parseFloat(labDuties) || 0,
+          GoldDuties: parseFloat(goldDuties) || 0,
+          SilverAndLabsDuties: parseFloat(silverAndLabsDuties) || 0,
+          LossAndLabourDuties: parseFloat(lossAndLabourDuties) || 0,
+          UndercutPrice: parseFloat(undercutPrice) || 0,
           PricingMessageFormat: pricingMessageFormat || '',
           Diamonds: diamonds.map(d => ({
             Type: d.Type || '',
