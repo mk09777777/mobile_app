@@ -122,14 +122,17 @@ function getFilterVal(filterArr, ...names) {
 
 // ─── Product card (grid tile matching catalog card design) ────────────────────
 const SearchProductCard = ({ item, onPress }) => {
-  const pointer = Number(item.pointer || 0);
-  const filters = Array.isArray(item.filter) ? item.filter : [];
+  // totalDiamondWeightCt is the actual carat weight (e.g. 3 ct).
+  // pointer is in pointer-units (100 pointer = 1 ct) — used only as fallback.
+  const caratCt  = Number(item.totalDiamondWeightCt || 0);
+  const pointerPt = Number(item.pointer || 0);
+  const filters  = Array.isArray(item.filter) ? item.filter : [];
 
-  // Shape: stored under 'stoneshape' or 'shape' depending on subcategory setup
+  // Shape is stored as filterName='stoneshape'
   const shape = getFilterVal(filters, 'stoneshape', 'shape');
   const stone = getFilterVal(filters, 'stone');
 
-  // Additional custom filters — skip metal/stone/size/stoneshape, take up to 1 more
+  // Up to 1 extra custom filter — skip the common base filters
   const extra = filters
     .filter((f) => {
       const n = String(f.filterName || '').toLowerCase();
@@ -141,17 +144,25 @@ const SearchProductCard = ({ item, onPress }) => {
     .map(String);
 
   const specs = [
-    pointer > 0 ? `${pointer} ct` : '',
+    caratCt   > 0 ? `${caratCt} ct`   : '',
+    pointerPt > 0 ? `${pointerPt} pt` : '',
     shape,
     stone,
     ...extra,
   ].filter(Boolean);
+
+  // Only show subtitle when it adds new info — styleNo as subtitle only when
+  // the name field exists (otherwise styleNo is already shown as the title).
+  const subtitle = item.name
+    ? (item.styleNo || '')
+    : (item.subcategoryName || '');
 
   return (
     <TouchableOpacity
       style={[styles.productCard, { width: PRODUCT_CARD_W }]}
       onPress={onPress}
       activeOpacity={0.85}>
+
       {item.displayImage ? (
         <Image
           source={{ uri: item.displayImage }}
@@ -162,25 +173,26 @@ const SearchProductCard = ({ item, onPress }) => {
         <View style={[styles.productCardImg, styles.productCardImgPlaceholder]} />
       )}
 
-      <Text style={styles.productCardName} numberOfLines={2}>
-        {item.name || item.styleNo}
-      </Text>
+      {/* flex:1 so this block expands and pins the button to the card bottom */}
+      <View style={styles.productCardContent}>
+        <Text style={styles.productCardName} numberOfLines={2}>
+          {item.name || item.styleNo}
+        </Text>
 
-      {item.styleNo ? (
-        <Text style={styles.productCardSubtitle} numberOfLines={1}>{item.styleNo}</Text>
-      ) : item.subcategoryName ? (
-        <Text style={styles.productCardSubtitle} numberOfLines={1}>{item.subcategoryName}</Text>
-      ) : null}
+        {subtitle ? (
+          <Text style={styles.productCardSubtitle} numberOfLines={1}>{subtitle}</Text>
+        ) : null}
 
-      {specs.length > 0 ? (
-        <View style={styles.specPillRow}>
-          {specs.map((s) => (
-            <View key={s} style={styles.specPill}>
-              <Text style={styles.specPillText}>{s}</Text>
-            </View>
-          ))}
-        </View>
-      ) : null}
+        {specs.length > 0 ? (
+          <View style={styles.specPillRow}>
+            {specs.map((s) => (
+              <View key={s} style={styles.specPill}>
+                <Text style={styles.specPillText}>{s}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+      </View>
 
       <TouchableOpacity style={styles.addToCartBtn} onPress={onPress} activeOpacity={0.85}>
         <Text style={styles.addToCartText}>Add to Cart</Text>
@@ -748,6 +760,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 6,
     elevation: 3,
+    flexDirection: 'column',
+  },
+  productCardContent: {
+    flex: 1,
   },
   productCardImg: {
     width: '100%',
