@@ -19,6 +19,7 @@ export default function AllStatus({
   styles,
   currentTab,
   user: propUser,
+  statusValues,
 }) {
   const { user: authUser } = useAuth();
   const user = propUser || authUser;
@@ -39,25 +40,16 @@ export default function AllStatus({
 
     if (!currentTab || currentTab === 'all') return params;
 
-    const statusMap = {
-      NewEnquiry: 'enquiry created',
-      CoralPending: 'coral',
-      CadPending: 'cad',
-      Quotation: 'quotation',
-      ApprovalPending: 'design approval pending',
-      OrderPlaced: 'order placement',
-      Production: 'production',
-      Shipped: 'shipped',
-    };
-
     if (currentTab === 'AssignedToYou') {
+      params.assignedTo = user?.id || user?._id;
+      params.AssignedTo = user?.id || user?._id;
       params.filters = { assignedTo: user?.id || user?._id };
-    } else if (statusMap[currentTab]) {
-      params.filters = { status: statusMap[currentTab] };
+    } else if (statusValues) {
+      params.filters = { status: statusValues };
     }
 
     return params;
-  }, [user, page, currentTab]);
+  }, [user, page, currentTab, statusValues]);
 
   const { data, isLoading, isFetching, refetch } = useGetEnquiriesQuery(
     queryParams,

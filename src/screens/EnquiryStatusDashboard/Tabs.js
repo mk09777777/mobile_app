@@ -13,7 +13,7 @@ import { SearchInput } from '../../components/common';
 import Icon from '../../components/common/Icon';
 import AllStatus from './All';
 import { useAuth } from '../../context/AuthContext';
-import { useGetUsersQuery } from '../../store/api';
+import { useGetUsersQuery, useGetStatusesQuery } from '../../store/api';
 
 export default function StatusTabs({
   activeTab,
@@ -62,6 +62,46 @@ export default function StatusTabs({
 
 
   const { data: users } = useGetUsersQuery(undefined, { skip: !isAdmin });
+  const { data: statusesFromApi = [] } = useGetStatusesQuery();
+
+  const tabStatusValues = React.useMemo(() => {
+    if (!statusesFromApi.length) return {};
+
+    const FILTER_TAB_KEYS = ['NewEnquiry', 'CoralPending', 'CadPending', 'Quotation', 'ApprovalPending', 'OrderPlaced', 'Production', 'Shipped'];
+    const map = {};
+
+    for (const tabKey of FILTER_TAB_KEYS) {
+      const words = tabKey.split(/(?=[A-Z])/).map(w => w.toLowerCase());
+      const keywords = words.filter(w => !['pending', 'placed', 'new'].includes(w));
+
+      let bestStatus = null;
+      let bestScore = -1;
+
+      for (const status of statusesFromApi) {
+        const name = status.name;
+        if (!name) continue;
+        const nameLower = name.toLowerCase();
+
+        for (const kw of keywords) {
+          let score = -1;
+          if (nameLower === kw) score = 10;
+          else if (nameLower.startsWith(kw + ' ')) score = 8;
+          else if (nameLower.endsWith(' ' + kw)) score = 7;
+          else if (nameLower.includes(' ' + kw + ' ')) score = 6;
+          else if (nameLower.includes(kw)) score = 4;
+
+          if (score > bestScore) {
+            bestScore = score;
+            bestStatus = name;
+          }
+        }
+      }
+
+      map[tabKey] = bestStatus ? [bestStatus] : [];
+    }
+
+    return map;
+  }, [statusesFromApi]);
 
   const [activeEnquiryId, setActiveEnquiryId] = React.useState(null);
   const [showAssignDropdown, setShowAssignDropdown] = React.useState(false);
@@ -329,6 +369,7 @@ export default function StatusTabs({
             styles={parentStyles}
             currentTab="AssignedToYou"
             user={user}
+            statusValues={tabStatusValues[activeTab]}
           />
         </>
       )}
@@ -375,6 +416,7 @@ export default function StatusTabs({
             styles={parentStyles}
             currentTab="all"
             user={user}
+            statusValues={tabStatusValues[activeTab]}
           />
         </>
       )}
@@ -420,6 +462,7 @@ export default function StatusTabs({
             styles={parentStyles}
             currentTab="NewEnquiry"
             user={user}
+            statusValues={tabStatusValues[activeTab]}
           />
         </>
       )}
@@ -465,6 +508,7 @@ export default function StatusTabs({
             styles={parentStyles}
             currentTab="ApprovalPending"
             user={user}
+            statusValues={tabStatusValues[activeTab]}
           />
         </>
       )}
@@ -510,6 +554,7 @@ export default function StatusTabs({
             styles={parentStyles}
             currentTab="CoralPending"
             user={user}
+            statusValues={tabStatusValues[activeTab]}
           />
         </>
       )}
@@ -555,6 +600,7 @@ export default function StatusTabs({
             styles={parentStyles}
             currentTab="CadPending"
             user={user}
+            statusValues={tabStatusValues[activeTab]}
           />
         </>
       )}
@@ -600,6 +646,7 @@ export default function StatusTabs({
             styles={parentStyles}
             currentTab="Quotation"
             user={user}
+            statusValues={tabStatusValues[activeTab]}
           />
         </>
       )}
@@ -645,6 +692,7 @@ export default function StatusTabs({
             styles={parentStyles}
             currentTab="OrderPlaced"
             user={user}
+            statusValues={tabStatusValues[activeTab]}
           />
         </>
       )}
@@ -690,6 +738,7 @@ export default function StatusTabs({
             styles={parentStyles}
             currentTab="Production"
             user={user}
+            statusValues={tabStatusValues[activeTab]}
           />
         </>
       )}
@@ -734,6 +783,7 @@ export default function StatusTabs({
             styles={parentStyles}
             currentTab="Shipped"
             user={user}
+            statusValues={tabStatusValues[activeTab]}
           />
         </>
       )}
