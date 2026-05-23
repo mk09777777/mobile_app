@@ -52,6 +52,7 @@ const CustomTabBar = ({ state, descriptors, navigation, currentApp }) => {
     else if (route.name === 'Cart') iconName = 'cartIcon';
     else if (route.name === 'MyOrders') iconName = 'ordersIcon';
     else if (route.name === 'Chats') iconName = 'chatIcon';
+    else if (route.name === 'Enquiries') iconName = 'assignment';
 
     return (
       <TouchableOpacity

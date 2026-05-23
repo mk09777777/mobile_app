@@ -1,25 +1,19 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   TouchableOpacity,
   Text,
   StyleSheet,
   FlatList,
   View,
-  ScrollView,
+  Modal,
 } from 'react-native';
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
 import { SearchInput } from '../../components/common';
 import Icon from '../../components/common/Icon';
 import AllStatus from './All';
-import CoralPending from './CoralPending';
-import ApprovalPending from './ApprovalPending';
-import CADPending from './CadPending';
-import Quotation from './Quotation';
-import OrderPlaced from './OrderPlaced';
-import Shipped from './Shipped';
 import { useAuth } from '../../context/AuthContext';
-import { useGetStatusStatisticsQuery } from '../../store/api';
+import { useGetUsersQuery } from '../../store/api';
 
 export default function StatusTabs({
   activeTab,
@@ -52,41 +46,50 @@ export default function StatusTabs({
   onSelectClient,
   onClearClient,
   isAdmin,
+  statusCounts,
+  onUpdateEnquiry,
 }) {
   const { user } = useAuth();
   const userRole = user?.role?.toLowerCase();
-  const { data } = useGetStatusStatisticsQuery();
-  console.log('📊 Status statistics:', data);
 
   const [selectedStatus, setSelectedStatus] = React.useState(null);
   const [selectedAssignTo, setSelectedAssignTo] = React.useState(null);
-  const [coralCounts, setCoralCounts] = React.useState(0);
-  const [approvalCounts, setApprovalCounts] = React.useState(0);
-  const [orderCounts, setOrderCounts] = React.useState(0);
-  const [productionCounts, setProductionCounts] = React.useState(0);
-  const [shippedCounts, setShippedCounts] = React.useState(0);
-  const [newEnquiryCounts, setNewEnquiryCounts] = React.useState(0);
-  const [quotationCounts, setQuotationCounts] = React.useState(0);
 
 
   React.useEffect(() => {
     setSelectedAssignTo(null);
   }, [selectedStatus]);
 
-  React.useEffect(() => {
-    if (data?.statusStats?.length) {
-      data.statusStats.forEach(item => {
-        if (item.name === 'Coral') setCoralCounts(item.count);
-        else if (item.name === 'Design Approval Pending')
-          setApprovalCounts(item.count);
-        else if (item.name === 'Order Placement') setOrderCounts(item.count);
-        else if (item.name === 'Production') setProductionCounts(item.count);
-        else if (item.name === 'Shipped') setShippedCounts(item.count);
-        else if (item.name === 'Enquiry Created') setNewEnquiryCounts(item.count);
-        else if (item.name === 'Quotation') setQuotationCounts(item.count);
-      });
+
+  const { data: users } = useGetUsersQuery(undefined, { skip: !isAdmin });
+
+  const [activeEnquiryId, setActiveEnquiryId] = React.useState(null);
+  const [showAssignDropdown, setShowAssignDropdown] = React.useState(false);
+  const [assignDropDownUsers, setAssignDropDownUsers] = React.useState([]);
+  const [activeEnquiryStatus, setActiveEnquiryStatus] = React.useState(null);
+
+  const updateEnquiryStatusWrapper = async (updateData) => {
+    if (!onUpdateEnquiry) {
+      console.log('⚠️ onUpdateEnquiry is not available');
+      return false;
     }
-  }, [data]);
+    
+    const payload = {
+      id: activeEnquiryId,
+      ...updateData,
+    };
+    
+    console.log('📦 Calling onUpdateEnquiry with payload:', payload);
+    
+    try {
+      const result = await onUpdateEnquiry(payload);
+      console.log('✅ onUpdateEnquiry result:', result);
+      return result;
+    } catch (error) {
+      console.error('❌ onUpdateEnquiry error:', error);
+      return false;
+    }
+  };
 
   const tabs = React.useMemo(() => {
     if (userRole === 'admin') {
@@ -94,7 +97,7 @@ export default function StatusTabs({
         { key: 'all', label: 'All' },
         { key: 'NewEnquiry', label: 'New Enquiries' },
         { key: 'CoralPending', label: 'Coral Pending' },
-        // { key: 'CadPending', label: 'CAD Pending' },
+        { key: 'CadPending', label: 'CAD Pending' },
         { key: 'Quotation', label: 'Quotation' },
         { key: 'ApprovalPending', label: 'Approval Pending' },
         { key: 'OrderPlaced', label: 'Order Placement' },
@@ -102,11 +105,20 @@ export default function StatusTabs({
         { key: 'Shipped', label: 'Shipped' },
       ];
     } else if (userRole === 'coral') {
-      return [{ key: 'CoralPending', label: 'Coral Pending' }];
+      return [
+        { key: 'AssignedToYou', label: 'Assigned to You' },
+        { key: 'CoralPending', label: 'Coral Pending' }
+      ];
     } else if (userRole === 'cad') {
-      return [{ key: 'CadPending', label: 'CAD Pending' }];
+      return [
+        { key: 'AssignedToYou', label: 'Assigned to You' },
+        { key: 'CadPending', label: 'CAD Pending' }
+      ];
     }
-    return [];
+    return [
+      { key: 'AssignedToYou', label: 'Assigned to You' },
+      { key: 'all', label: 'All' }
+    ];
   }, [userRole]);
 
   React.useEffect(() => {
@@ -115,28 +127,30 @@ export default function StatusTabs({
     }
   }, [tabs, activeTab, onTabChange]);
 
-  const NewEnquiryData = React.useMemo(
-    () => displayEnquiries.filter(
-      enquiry => enquiry.CurrentStatus === 'Enquiry Created',
-    ),
-    [displayEnquiries],
-  );
-
-
-
+  const assignedToYouCount = React.useMemo(() => {
+    const userId = String(user?.id || user?._id).trim();
+    return displayEnquiries.filter(enquiry => {
+      let assignedToId = enquiry.AssignedTo || enquiry.assignedTo || enquiry._originalData?.AssignedTo || enquiry._originalData?.assignedTo;
+      if (assignedToId && typeof assignedToId === 'object') {
+        assignedToId = assignedToId.id || assignedToId._id || assignedToId.toString();
+      }
+      return String(assignedToId).trim() === userId;
+    }).length;
+  }, [displayEnquiries, user]);
   const getCountForTab = React.useCallback((tabKey) => {
     switch (tabKey) {
       case 'all': return displayEnquiries.length;
-      case 'NewEnquiry': return newEnquiryCounts;
-      case 'CoralPending': return coralCounts;
-      case 'Quotation': return quotationCounts;
-      case 'ApprovalPending': return approvalCounts;
-      case 'OrderPlaced': return orderCounts;
-      case 'Production': return productionCounts;
-      case 'Shipped': return shippedCounts;
+      case 'NewEnquiry': return statusCounts?.newEnquiry || 0;
+      case 'CoralPending': return statusCounts?.coral || 0;
+      case 'Quotation': return statusCounts?.quotation || 0;
+      case 'ApprovalPending': return statusCounts?.approval || 0;
+      case 'OrderPlaced': return statusCounts?.order || 0;
+      case 'Production': return statusCounts?.production || 0;
+      case 'Shipped': return statusCounts?.shipped || 0;
+        case 'AssignedToYou': return assignedToYouCount;
       default: return 0;
     }
-  }, [displayEnquiries.length, newEnquiryCounts, coralCounts, quotationCounts, approvalCounts, orderCounts, productionCounts, shippedCounts]);
+  }, [displayEnquiries.length, statusCounts, assignedToYouCount]);
 
   const renderTab = ({ item }) => {
     const count = getCountForTab(item.key);
@@ -170,6 +184,98 @@ export default function StatusTabs({
     );
   };
 
+  const renderItemWithActions = (props) => {
+    const { item, currentTab } = props;
+    
+    // Check all possible field variations for assigned user
+    let assigned = item.AssignedTo || item.assignedTo || item.assigned_to || item.Assigned_To;
+    
+    // If assigned is an object, try to extract the ID
+    if (assigned && typeof assigned === 'object') {
+      assigned = assigned.id || assigned._id || assigned.userId || null;
+    }
+    
+    // Convert to string and trim if it exists
+    const assignedStr = assigned ? String(assigned).trim() : '';
+    
+    // More comprehensive check for unassigned status
+    // Consider it unassigned if:
+    // 1. No assigned value exists
+    // 2. Assigned value is explicitly '-' or empty string
+    // 3. Assigned string is empty after trimming
+    // 4. Assigned value is 'null' or 'undefined' as string
+    const isUnassignedCheck = 
+      !assignedStr || 
+      assignedStr === '-' || 
+      assignedStr === '' || 
+      assignedStr === 'null' || 
+      assignedStr === 'undefined';
+    
+    // Only show "Assign To" button in specific tabs where assignment is relevant
+    const tabsWithAssignButton = ['all', 'NewEnquiry', 'CoralPending', 'CadPending'];
+    const shouldShowAssignButton = isAdmin && isUnassignedCheck && tabsWithAssignButton.includes(currentTab);
+    
+    // Debug log to help identify issues
+    if (__DEV__ && isAdmin && tabsWithAssignButton.includes(currentTab)) {
+      console.log('🔍 Assignment check:', {
+        id: item.Id || item._id || item.id,
+        name: item.Name || item.name,
+        assignedToRaw: item.AssignedTo || item.assignedTo,
+        assignedToType: typeof (item.AssignedTo || item.assignedTo),
+        assignedStr: assignedStr,
+        isUnassigned: isUnassignedCheck,
+        currentTab: currentTab,
+        shouldShowButton: shouldShowAssignButton,
+      });
+    }
+    
+    return (
+      <View style={{ paddingBottom: shouldShowAssignButton ? 10 : 0 }}>
+        {renderEnquiryItem(props)}
+        {shouldShowAssignButton && (
+          <View style={styles.QuickButtonContainerWrapper}>
+            <View style={styles.QuickButtonContainer}>
+              <TouchableOpacity
+                style={styles.ActionButton}
+                onPress={() => {
+                  const statusStr = item.CurrentStatus || item.Status || item.status || '';
+                  const statusLower = statusStr.toLowerCase();
+                  
+                  let targetRoleId = null;
+                  if (statusLower.includes('coral')) targetRoleId = 2;
+                  else if (statusLower.includes('cad')) targetRoleId = 3;
+                  
+                  let usersToList = [];
+                  if (targetRoleId && users && users.length > 0) {
+                    usersToList = users.filter(u => u.role === targetRoleId);
+                  } else if (users && users.length > 0) {
+                    usersToList = users;
+                  }
+                  
+                  if (usersToList.length > 0) {
+                    setAssignDropDownUsers(usersToList.map(u => ({
+                      id: u.id,
+                      name: u.name || u.Name || u.username || u.email,
+                    })));
+                    setActiveEnquiryId(item.Id || item._id || item.id);
+                    setActiveEnquiryStatus(statusStr);
+                    setShowAssignDropdown(true);
+                  } else {
+                    console.log('No users available for assignment');
+                  }
+                }}
+              >
+                <Icon name="person-add" size={16} color={colors.textWhite} />
+                <Text style={styles.ActionButtonText}>Assign To</Text>
+                <Icon name="arrow-drop-down" size={16} color={colors.textWhite} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+      </View>
+    );
+  };
+
   return (
     <View style={{ flex: 1 }}>
       <FlatList
@@ -181,6 +287,51 @@ export default function StatusTabs({
         contentContainerStyle={styles.tabsContainer}
         style={styles.flatListStyle}
       />
+
+      {activeTab === 'AssignedToYou' && (
+        <>
+          <View style={[styles.header, isTablet && styles.headerTablet]}>
+            <View style={styles.searchRow}>
+              <View style={styles.searchContainer}>
+                <SearchInput
+                  placeholder="Search enquiries..."
+                  value={searchQuery}
+                  onChangeText={onSearchChange}
+                  onClear={onSearchClear}
+                />
+              </View>
+
+              <TouchableOpacity style={styles.sortButton} onPress={onSortPress}>
+                <Icon name="sort" size={20} color={colors.primary} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.filterButton}
+                onPress={onFilterPress}
+              >
+                <Icon name="tune" size={20} color={colors.primary} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.downloadButton}
+                onPress={onDownloadPress}
+              >
+                <Icon name="download" size={20} color={colors.primary} />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <AllStatus
+            flatListRef={flatListRef}
+            renderEnquiryItem={renderItemWithActions}
+            renderEmpty={renderEmpty}
+            isTablet={isTablet}
+            styles={parentStyles}
+            currentTab="AssignedToYou"
+            user={user}
+          />
+        </>
+      )}
 
       {/* Render All tab content */}
       {activeTab === 'all' && (
@@ -217,20 +368,13 @@ export default function StatusTabs({
           </View>
 
           <AllStatus
-            displayEnquiries={displayEnquiries}
             flatListRef={flatListRef}
-            renderEnquiryItem={renderEnquiryItem}
-            renderListFooter={renderListFooter}
+            renderEnquiryItem={renderItemWithActions}
             renderEmpty={renderEmpty}
             isTablet={isTablet}
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            handleScroll={handleScroll}
-            saveScrollPosition={saveScrollPosition}
-            onEndReachedDuringMomentumRef={onEndReachedDuringMomentumRef}
-            handleLoadMore={handleLoadMore}
             styles={parentStyles}
             currentTab="all"
+            user={user}
           />
         </>
       )}
@@ -269,20 +413,13 @@ export default function StatusTabs({
           </View>
 
           <AllStatus
-            displayEnquiries={NewEnquiryData}
             flatListRef={flatListRef}
-            renderEnquiryItem={renderEnquiryItem}
-            renderListFooter={renderListFooter}
+            renderEnquiryItem={renderItemWithActions}
             renderEmpty={renderEmpty}
             isTablet={isTablet}
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            handleScroll={handleScroll}
-            saveScrollPosition={saveScrollPosition}
-            onEndReachedDuringMomentumRef={onEndReachedDuringMomentumRef}
-            handleLoadMore={handleLoadMore}
             styles={parentStyles}
             currentTab="NewEnquiry"
+            user={user}
           />
         </>
       )}
@@ -320,21 +457,14 @@ export default function StatusTabs({
             </View>
           </View>
 
-          <ApprovalPending
-            displayEnquiries={displayEnquiries.filter(e => e.CurrentStatus === 'Design Approval Pending')}
+          <AllStatus
             flatListRef={flatListRef}
-            renderEnquiryItem={renderEnquiryItem}
-            renderListFooter={renderListFooter}
+            renderEnquiryItem={renderItemWithActions}
             renderEmpty={renderEmpty}
             isTablet={isTablet}
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            handleScroll={handleScroll}
-            saveScrollPosition={saveScrollPosition}
-            onEndReachedDuringMomentumRef={onEndReachedDuringMomentumRef}
-            handleLoadMore={handleLoadMore}
             styles={parentStyles}
             currentTab="ApprovalPending"
+            user={user}
           />
         </>
       )}
@@ -372,21 +502,14 @@ export default function StatusTabs({
             </View>
           </View>
 
-          <CoralPending
-            displayEnquiries={displayEnquiries.filter(e => e.CurrentStatus === 'Coral')}
+          <AllStatus
             flatListRef={flatListRef}
-            renderEnquiryItem={renderEnquiryItem}
-            renderListFooter={renderListFooter}
+            renderEnquiryItem={renderItemWithActions}
             renderEmpty={renderEmpty}
             isTablet={isTablet}
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            handleScroll={handleScroll}
-            saveScrollPosition={saveScrollPosition}
-            onEndReachedDuringMomentumRef={onEndReachedDuringMomentumRef}
-            handleLoadMore={handleLoadMore}
             styles={parentStyles}
             currentTab="CoralPending"
+            user={user}
           />
         </>
       )}
@@ -424,21 +547,14 @@ export default function StatusTabs({
             </View>
           </View>
 
-          <CADPending
-            displayEnquiries={displayEnquiries.filter(e => e.CurrentStatus === 'CAD')}
+          <AllStatus
             flatListRef={flatListRef}
-            renderEnquiryItem={renderEnquiryItem}
-            renderListFooter={renderListFooter}
+            renderEnquiryItem={renderItemWithActions}
             renderEmpty={renderEmpty}
             isTablet={isTablet}
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            handleScroll={handleScroll}
-            saveScrollPosition={saveScrollPosition}
-            onEndReachedDuringMomentumRef={onEndReachedDuringMomentumRef}
-            handleLoadMore={handleLoadMore}
             styles={parentStyles}
             currentTab="CadPending"
+            user={user}
           />
         </>
       )}
@@ -476,21 +592,14 @@ export default function StatusTabs({
             </View>
           </View>
 
-          <Quotation
-            displayEnquiries={displayEnquiries.filter(e => e.CurrentStatus === 'Quotation')}
+          <AllStatus
             flatListRef={flatListRef}
-            renderEnquiryItem={renderEnquiryItem}
-            renderListFooter={renderListFooter}
+            renderEnquiryItem={renderItemWithActions}
             renderEmpty={renderEmpty}
             isTablet={isTablet}
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            handleScroll={handleScroll}
-            saveScrollPosition={saveScrollPosition}
-            onEndReachedDuringMomentumRef={onEndReachedDuringMomentumRef}
-            handleLoadMore={handleLoadMore}
             styles={parentStyles}
             currentTab="Quotation"
+            user={user}
           />
         </>
       )}
@@ -528,21 +637,14 @@ export default function StatusTabs({
             </View>
           </View>
 
-          <OrderPlaced
-            displayEnquiries={displayEnquiries.filter(e => e.CurrentStatus === 'Order Placement')}
+          <AllStatus
             flatListRef={flatListRef}
-            renderEnquiryItem={renderEnquiryItem}
-            renderListFooter={renderListFooter}
+            renderEnquiryItem={renderItemWithActions}
             renderEmpty={renderEmpty}
             isTablet={isTablet}
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            handleScroll={handleScroll}
-            saveScrollPosition={saveScrollPosition}
-            onEndReachedDuringMomentumRef={onEndReachedDuringMomentumRef}
-            handleLoadMore={handleLoadMore}
             styles={parentStyles}
             currentTab="OrderPlaced"
+            user={user}
           />
         </>
       )}
@@ -581,20 +683,13 @@ export default function StatusTabs({
           </View>
 
           <AllStatus
-            displayEnquiries={displayEnquiries.filter(e => e.CurrentStatus === 'Production')}
             flatListRef={flatListRef}
-            renderEnquiryItem={renderEnquiryItem}
-            renderListFooter={renderListFooter}
+            renderEnquiryItem={renderItemWithActions}
             renderEmpty={renderEmpty}
             isTablet={isTablet}
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            handleScroll={handleScroll}
-            saveScrollPosition={saveScrollPosition}
-            onEndReachedDuringMomentumRef={onEndReachedDuringMomentumRef}
-            handleLoadMore={handleLoadMore}
             styles={parentStyles}
             currentTab="Production"
+            user={user}
           />
         </>
       )}
@@ -631,26 +726,80 @@ export default function StatusTabs({
             </View>
           </View>
 
-          <Shipped
-            displayEnquiries={displayEnquiries.filter(e => e.CurrentStatus === 'Shipped')}
+          <AllStatus
             flatListRef={flatListRef}
-            renderEnquiryItem={renderEnquiryItem}
-            renderListFooter={renderListFooter}
+            renderEnquiryItem={renderItemWithActions}
             renderEmpty={renderEmpty}
             isTablet={isTablet}
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            handleScroll={handleScroll}
-            saveScrollPosition={saveScrollPosition}
-            onEndReachedDuringMomentumRef={onEndReachedDuringMomentumRef}
-            handleLoadMore={handleLoadMore}
             styles={parentStyles}
             currentTab="Shipped"
+            user={user}
           />
         </>
       )}
 
-      {/* Other tabs placeholder - removed as all tabs are now implemented */}
+      <Modal
+        visible={showAssignDropdown}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowAssignDropdown(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowAssignDropdown(false)}
+        >
+          <View style={styles.dropdownModalContent}>
+            <Text style={styles.dropdownModalTitle}>Assign To</Text>
+            {(assignDropDownUsers || []).map(u => (
+              <TouchableOpacity
+                key={u.id || u.name}
+                style={styles.dropdownModalItem}
+                onPress={async () => {
+                  try {
+                    if (u.id && activeEnquiryId) {
+                      console.log('🔄 Assigning enquiry:', {
+                        enquiryId: activeEnquiryId,
+                        userId: u.id,
+                        userName: u.name,
+                        status: activeEnquiryStatus,
+                      });
+
+                      const success = await updateEnquiryStatusWrapper({
+                        assignedTo: u.id,
+                        status: activeEnquiryStatus,
+                      });
+
+                      if (success) {
+                        console.log('✅ Enquiry assigned successfully');
+                        setShowAssignDropdown(false);
+                        setActiveEnquiryId(null);
+                        setActiveEnquiryStatus(null);
+                        setAssignDropDownUsers([]);
+                        
+                        // Trigger refresh to update the list
+                        if (onRefresh) {
+                          onRefresh();
+                        }
+                      } else {
+                        console.log('❌ Failed to assign enquiry');
+                      }
+                    } else {
+                      console.log('⚠️ Missing required data for assignment');
+                      setShowAssignDropdown(false);
+                    }
+                  } catch (error) {
+                    console.error('❌ Error assigning enquiry:', error);
+                    setShowAssignDropdown(false);
+                  }
+                }}
+              >
+                <Text style={styles.dropdownModalItemText}>{u.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -837,5 +986,78 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: fonts.xs,
     fontFamily: fonts.medium,
+  },
+  QuickButtonContainerWrapper: {
+    paddingHorizontal: 16,
+    marginTop: -8,
+    marginBottom: 12,
+  },
+  QuickButtonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 10,
+    backgroundColor: colors.cardBackground || colors.background,
+    padding: 12,
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
+    borderWidth: 1,
+    borderTopWidth: 0,
+    borderColor: colors.borderLight,
+    shadowColor: colors.cardShadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  ActionButton: {
+    flex: 1,
+    backgroundColor: colors.primaryDark || colors.primary,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 5,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+  },
+  ActionButtonText: {
+    fontFamily: fonts.medium,
+    fontSize: 13,
+    color: colors.textWhite,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  dropdownModalContent: {
+    backgroundColor: colors.cardBackground || colors.background,
+    borderRadius: 10,
+    padding: 20,
+    width: '80%',
+    maxWidth: 300,
+  },
+  dropdownModalTitle: {
+    fontFamily: fonts.bold,
+    fontSize: 18,
+    color: colors.textPrimary,
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  dropdownModalItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 5,
+    backgroundColor: colors.background,
+    marginBottom: 10,
+    borderBottomColor: colors.borderLight || colors.border,
+    borderBottomWidth: 1,
+  },
+  dropdownModalItemText: {
+    fontFamily: fonts.medium,
+    fontSize: 14,
+    color: colors.textPrimary,
+    textAlign: 'center',
   },
 });

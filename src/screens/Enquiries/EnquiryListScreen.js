@@ -15,9 +15,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute } from '@react-navigation/native';
 import { useSelector, useDispatch } from 'react-redux';
+import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../../context/AuthContext';
 import { useClients } from '../../features/clients/clientsHooks';
 import { useStatusOptions } from '../../features/statuses/statusesHooks';
+import { useUpdateEnquiryMutation, useDeleteEnquiryMutation, useGetStatusStatisticsQuery } from '../../store/api';
 import {
   setFilters,
   setSearchQuery,
@@ -125,6 +127,56 @@ const EnquiryListScreen = ({ navigation }) => {
   const { user } = useAuth();
   const route = useRoute();
   const { isTablet, width } = useDeviceLayout();
+
+  // RTK Query mutations
+  const [updateEnquiry] = useUpdateEnquiryMutation();
+  const [deleteEnquiry] = useDeleteEnquiryMutation();
+  
+  // Fetch aggregate status statistics
+  const { data: statusStatsData, refetch: refetchStatusStats } = useGetStatusStatisticsQuery();
+  
+  // Status counts state
+  const [statusCounts, setStatusCounts] = useState({
+    coral: 0,
+    approval: 0,
+    order: 0,
+    production: 0,
+    shipped: 0,
+    newEnquiry: 0,
+    quotation: 0,
+  });
+  
+  // Update status counts when data changes
+  useEffect(() => {
+    if (statusStatsData?.statusStats?.length) {
+      const counts = {
+        coral: 0,
+        approval: 0,
+        order: 0,
+        production: 0,
+        shipped: 0,
+        newEnquiry: 0,
+        quotation: 0,
+      };
+      
+      statusStatsData.statusStats.forEach(item => {
+        const name = (item.name || item.status || item.Status || item._id || item.group || '').toLowerCase();
+        if (name === 'coral') counts.coral = item.count;
+        else if (name === 'design approval pending') counts.approval = item.count;
+        else if (name === 'order placement') counts.order = item.count;
+        else if (name === 'production') counts.production = item.count;
+        else if (name === 'shipped') counts.shipped = item.count;
+        else if (name === 'enquiry created') counts.newEnquiry = item.count;
+        else if (name === 'quotation') counts.quotation = item.count;
+      });
+      
+      setStatusCounts(counts);
+      
+      if (__DEV__) {
+        console.log('📊 Updated status counts:', counts);
+      }
+    }
+  }, [statusStatsData]);
 
   // Check if user is a designer (coral or cad)
   const isDesigner = user?.role === 'coral' || user?.role === 'cad';
@@ -271,6 +323,7 @@ const EnquiryListScreen = ({ navigation }) => {
           value.forEach(item => {
             if (item && item !== 'all' && item !== 'All') {
               params.append(key, String(item).trim());
+              if (key === 'assignedTo') params.append('AssignedTo', String(item).trim());
             }
           });
         }
@@ -281,6 +334,7 @@ const EnquiryListScreen = ({ navigation }) => {
           });
         } else {
           params.append(key, String(value));
+          if (key === 'assignedTo') params.append('AssignedTo', String(value));
         }
       }
     });
@@ -428,7 +482,7 @@ const EnquiryListScreen = ({ navigation }) => {
           ...new Set(statusFilterList.map(s => canonicalStatusForFilter(s)).filter(Boolean)),
         ];
 
-        filteredData = normalized.filter(item => {
+        filteredData = filteredData.filter(item => {
           const itemStatusRaw = (
             item?.CurrentStatus ||
             item?.Status ||
@@ -456,6 +510,18 @@ const EnquiryListScreen = ({ navigation }) => {
             filteredStatuses: filteredData.map(e => e?.CurrentStatus || e?.Status || 'N/A').slice(0, 5),
           });
         }
+      }
+
+      // Frontend filtering workaround for assignedTo
+      if (resolvedFilters.assignedTo && resolvedFilters.assignedTo !== 'all' && resolvedFilters.assignedTo !== 'All') {
+        const assignedToFilters = Array.isArray(resolvedFilters.assignedTo) 
+          ? resolvedFilters.assignedTo.map(a => String(a).trim().toLowerCase()) 
+          : [String(resolvedFilters.assignedTo).trim().toLowerCase()];
+          
+        filteredData = filteredData.filter(item => {
+          const itemAssignedTo = String(item?.AssignedTo || item?.assignedTo || '').trim().toLowerCase();
+          return assignedToFilters.includes(itemAssignedTo);
+        });
       }
 
       setEnquiries(prev => {
@@ -531,7 +597,23 @@ const EnquiryListScreen = ({ navigation }) => {
     }
 
     fetchEnquiriesRef.current?.({ pageToLoad: 1, append: false }).catch(() => { });
+    // Also refetch status statistics on mount
+    if (refetchStatusStats) {
+      refetchStatusStats();
+    }
   }, [user]);
+
+  // Refetch status statistics when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      if (user && refetchStatusStats) {
+        refetchStatusStats();
+        if (__DEV__) {
+          console.log('🔄 Screen focused - refetching status statistics');
+        }
+      }
+    }, [user])
+  );
 
   // Convert status filter to a stable string for dependency comparison
   const statusFilterKey = useMemo(() => {
@@ -810,9 +892,7 @@ const EnquiryListScreen = ({ navigation }) => {
   
   // Initialize activeTab based on user role
   const getInitialTab = () => {
-    const role = user?.role?.toLowerCase();
-    if (role === 'coral') return 'CoralPending';
-    if (role === 'cad') return 'CadPending';
+    const role = user?.role?.toLowerCase();    if (role !== 'admin' ) return 'AssignedToYou';
     return 'all';
   };
   
@@ -1338,6 +1418,131 @@ const EnquiryListScreen = ({ navigation }) => {
     setSelectedPdfUrl(null);
   }, []);
 
+  const handleUpdateEnquiry = useCallback(async (updateData) => {
+    return new Promise((resolve) => {
+      let actionName = 'Update Enquiry';
+      let actionMessage = 'Are you sure you want to update this enquiry?';
+
+      if (updateData.assignedTo && updateData.status) {
+        // When both assignedTo and status are provided (assignment case)
+        actionName = 'Assign Enquiry';
+        actionMessage = 'Are you sure you want to assign this enquiry to the selected user?';
+      } else if (updateData.status) {
+        actionName = 'Update Status';
+        actionMessage = `Are you sure you want to change the status to "${updateData.status}"?`;
+      } else if (updateData.assignedTo) {
+        actionName = 'Reassign Enquiry';
+        actionMessage = 'Are you sure you want to reassign this enquiry?';
+      }
+
+      Alert.alert(
+        actionName,
+        actionMessage,
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
+            onPress: () => resolve(false),
+          },
+          {
+            text: 'Confirm',
+            onPress: async () => {
+              try {
+                console.log('🔄 Updating enquiry:', updateData);
+                
+                // Build payload with proper field mapping
+                const payload = {
+                  id: updateData.id,
+                };
+                
+                // If status is being updated, set ALL status-related fields
+                if (updateData.status) {
+                  payload.status = updateData.status;
+                  payload.Status = updateData.status;
+                  payload.CurrentStatus = updateData.status;
+                }
+                
+                // If assignedTo is being updated, set ALL assignment-related fields
+                if (updateData.assignedTo) {
+                  payload.assignedTo = updateData.assignedTo;
+                  payload.AssignedTo = updateData.assignedTo;
+                }
+                
+                // Copy any other fields from updateData
+                Object.keys(updateData).forEach(key => {
+                  if (key !== 'id' && key !== 'status' && key !== 'assignedTo' && !payload[key]) {
+                    payload[key] = updateData[key];
+                  }
+                });
+                
+                console.log('📦 Final payload:', JSON.stringify(payload, null, 2));
+                
+                // Call RTK mutation
+                await updateEnquiry(payload).unwrap();
+                console.log('✅ Successfully updated!');
+                
+                // Refetch aggregate counts
+                if (refetchStatusStats) {
+                  await refetchStatusStats();
+                }
+                
+                // Trigger refresh after update
+                await fetchEnquiries({ pageToLoad: 1, append: false, suppressInlineLoader: false });
+                
+                resolve(true);
+              } catch (error) {
+                console.error('❌ Failed to update:', error);
+                resolve(false);
+              }
+            },
+          },
+        ]
+      );
+    });
+  }, [updateEnquiry, fetchEnquiries, refetchStatusStats]);
+
+  const handleDeleteEnquiry = useCallback(async (enquiryId) => {
+    return new Promise((resolve) => {
+      Alert.alert(
+        'Delete Enquiry',
+        'Are you sure you want to delete this enquiry? This action cannot be undone.',
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
+            onPress: () => resolve(false),
+          },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                console.log('🗑️ Deleting enquiry:', enquiryId);
+                
+                // Call RTK mutation
+                await deleteEnquiry(enquiryId).unwrap();
+                console.log('✅ Successfully deleted!');
+                
+                // Refetch aggregate counts
+                if (refetchStatusStats) {
+                  await refetchStatusStats();
+                }
+                
+                // Trigger refresh after delete
+                await fetchEnquiries({ pageToLoad: 1, append: false, suppressInlineLoader: false });
+                
+                resolve(true);
+              } catch (error) {
+                console.error('❌ Failed to delete:', error);
+                resolve(false);
+              }
+            },
+          },
+        ]
+      );
+    });
+  }, [deleteEnquiry, fetchEnquiries, refetchStatusStats]);
+
   const renderEnquiryItem = useCallback(({ item: enquiry, currentTab }) => {
     if (!enquiry || !enquiry.id) {
       if (__DEV__) {
@@ -1353,6 +1558,8 @@ const EnquiryListScreen = ({ navigation }) => {
           navigation={navigation}
           onViewQuotation={handleViewQuotation}
           currentTab={currentTab || activeTab}
+          onUpdateEnquiry={handleUpdateEnquiry}
+          onDeleteEnquiry={handleDeleteEnquiry}
           onPress={() => navigation.navigate('SingleEnquiry', {
             enquiryId: enquiry.id || enquiry._id,
             enquiry: enquiry,
@@ -1365,7 +1572,7 @@ const EnquiryListScreen = ({ navigation }) => {
       }
       return null;
     }
-  }, [navigation, handleViewQuotation, activeTab]);
+  }, [navigation, handleViewQuotation, activeTab, handleUpdateEnquiry, handleDeleteEnquiry]);
 
   // Render list header - no longer needed as chips are moved outside FlatList
   const renderListHeader = () => {
@@ -1626,6 +1833,12 @@ const EnquiryListScreen = ({ navigation }) => {
       }
       scrollPositionRef.current = 0;
       await AsyncStorage.removeItem(scrollPositionKey);
+      
+      // Refetch aggregate counts
+      if (refetchStatusStats) {
+        await refetchStatusStats();
+      }
+      
       await fetchEnquiries({ pageToLoad: 1, append: false, suppressInlineLoader: true });
     } catch (error) {
       if (__DEV__) {
@@ -1647,6 +1860,7 @@ const EnquiryListScreen = ({ navigation }) => {
 
   const handleApplyFilters = (newFilters) => {
     dispatch(setFilters(newFilters));
+    onRefresh()
   };
 
   const getStatusOptions = () => {
@@ -2126,6 +2340,8 @@ const EnquiryListScreen = ({ navigation }) => {
           dispatch(setFilters({ clientId: 'all', client: 'all' }));
         }}
         isAdmin={isAdmin}
+        statusCounts={statusCounts}
+        onUpdateEnquiry={handleUpdateEnquiry}
       />
 
       {shouldShowScreenApiLoader && (

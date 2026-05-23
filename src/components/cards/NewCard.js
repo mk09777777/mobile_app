@@ -26,7 +26,11 @@ import { FILE_BASE_URL } from '../../config/apiConfig';
 import Icon from '../common/Icon';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigation } from '@react-navigation/native';
-import { useGetUsersQuery, useUpdateEnquiryMutation, useDeleteEnquiryMutation } from '../../store/api';
+import {
+  useGetUsersQuery,
+  useGetStatusesQuery,
+  useGetRolesQuery,
+} from '../../store/api';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -36,14 +40,16 @@ export default function NewEnquiryCard({
   onViewQuotation,
   onPress,
   currentTab,
+  onUpdateEnquiry,
+  onDeleteEnquiry,
 }) {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
   
-  // Always call the hook - React hooks must be called unconditionally
   const { data: users, isLoading } = useGetUsersQuery();
-  const [updateEnquiry, { isLoading: isUpdating }] = useUpdateEnquiryMutation();
-  const [deleteEnquiry, { isLoading: isDeleting }] = useDeleteEnquiryMutation();
+  const { data: statusesData, isLoading: isStatusesLoading } =
+    useGetStatusesQuery();
+  const { data: rolesData } = useGetRolesQuery();
 
   // console.log('User Data is:', users);
   const [imagesData, setImagesData] = useState([]);
@@ -57,6 +63,8 @@ export default function NewEnquiryCard({
   const [assignDropDownUsers, setAssignDropDownUsers] = useState([]);
   const [showMoreOptions, setShowMoreOptions] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState(null);
+  const [isRemarkExpanded, setIsRemarkExpanded] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const modalFlatListRef = useRef(null);
   const screenHeight = Dimensions.get('window').height;
@@ -101,8 +109,9 @@ export default function NewEnquiryCard({
   const isCoralPending = status === 'coral';
   const isCadPending = status === 'cad';
   const isQuotation = status === 'quotation';
-  const isApprovalPending = status === 'Design Approval Pending';
-  const isPlacementStage = status === 'Order Placement';
+  const isApprovalPending = status === 'design approval pending';
+  const isPlacementStage = status === 'order placement';
+  const isProduction = status === 'production';
 
   // Button visibility based on user role and status
   const shouldShowActionButtons = isAdmin && isJustCreated;
@@ -113,6 +122,7 @@ export default function NewEnquiryCard({
   const shouldShowQuotationButtons = isQuotation;
   const showApprovalButton = isAdmin && isApprovalPending;
   const showPlacementButton = isAdmin && isPlacementStage;
+  const showProductionButton = isAdmin && isProduction;
 
   // Log bearer token on component mount
 
@@ -217,74 +227,40 @@ export default function NewEnquiryCard({
     [zoomedImageIndex],
   );
 
-  const DropDownStatus = [
-    {
-      Id: 1,
-      value: 'EC',
-      label: 'Enquiry Created',
-    },
-    {
-      Id: 4,
-      value: 'CO',
-      label: 'Coral',
-    },
-    {
-      Id: 7,
-      value: 'CD',
-      label: 'CAD',
-    },
-    {
-      Id: 10,
-      value: 'AC',
-      label: 'Approved Cad',
-    },
-    {
-      Id: 12,
-      value: 'QT',
-      label: 'Quotation',
-    },
-    {
-      Id: 13,
-      value: 'DAP',
-      label: 'Design Approval Pending',
-    },
-    {
-      Id: 16,
-      value: 'OP',
-      label: 'Order Placement',
-    },
-    {
-      Id: 19,
-      value: 'CAMP',
-      label: 'CAM Pending',
-    },
-    {
-      Id: 22,
-      value: 'PROD',
-      label: 'Production',
-    },
-    {
-      Id: 25,
-      value: 'SHIP',
-      label: 'Shipped',
-    },
-  ];
+  const DropDownStatus = useMemo(() => {
+    if (!statusesData) return [];
+    return statusesData.map(status => ({
+      Id: status.id,
+      value: status.name,
+      label: status.label,
+    }));
+  }, [statusesData]);
 
   //role
+
+  const statusToRoleMap = useMemo(() => {
+    const map = {};
+    (rolesData || []).forEach(role => {
+      const name = (role.name || '').toLowerCase();
+      const code = (role.code || '').toLowerCase();
+      if (name === 'coral' || code === 'co') {
+        map['coral'] = role.id;
+        map['co'] = role.id;
+      }
+      if (name === 'cad' || code === 'cd' || name === 'cad designer') {
+        map['cad'] = role.id;
+        map['cd'] = role.id;
+      }
+    });
+    return map;
+  }, [rolesData]);
 
   const handleStatusSelect = (value, label, id) => {
     console.log('Selected status:', value, label);
     setSelectedStatus({ value, label });
     setShowStatusDropdown(false);
 
-    // Map status value to role ID for filtering users
-    // Role IDs: 1=Admin, 2=Coral, 3=CAD, 4=Client
-    const statusToRoleMap = {
-      'CO': 2, // Coral
-      'CD': 3, // CAD
-    };
-
-    const targetRoleId = statusToRoleMap[value];
+    const targetRoleId = statusToRoleMap[value.toLowerCase()];
     
     if (targetRoleId && users && users.length > 0) {
       // Filter users by role ID
@@ -303,31 +279,34 @@ export default function NewEnquiryCard({
 
 
   const updateEnquiryStatus = async (updateData) => {
-    try {
-      console.log('🔄 Updating enquiry:', updateData);
-      
-      const result = await updateEnquiry({
-        id: item?.Id || item?._id || item?.id,
-        ...updateData,
-      }).unwrap();
-      
-      console.log('✅ Successfully updated! Result:', result);
-      console.log('🔄 RTK Query will auto-refetch due to cache invalidation');
-      return true;
-    } catch (error) {
-      console.error('❌ Failed to update:', error);
+    if (!onUpdateEnquiry) {
+      console.error('onUpdateEnquiry prop not provided');
       return false;
     }
+    
+    const payload = {
+      id: item?.Id || item?._id || item?.id,
+      ...updateData,
+    };
+    
+    return await onUpdateEnquiry(payload);
   };
 
   const handleDeleteEnquiry = async () => {
+    if (!onDeleteEnquiry) {
+      console.error('onDeleteEnquiry prop not provided');
+      return;
+    }
+    
+    setIsDeleting(true);
     try {
-      console.log('🗑️ Deleting enquiry:', item?.Id || item?._id || item?.id);
-      await deleteEnquiry(item?.Id || item?._id || item?.id).unwrap();
-      console.log('✅ Successfully deleted!');
+      const enquiryId = item?.Id || item?._id || item?.id;
+      await onDeleteEnquiry(enquiryId);
       setShowMoreOptions(false);
     } catch (error) {
-      console.error('❌ Failed to delete:', error);
+      console.error('Failed to delete:', error);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -405,14 +384,60 @@ export default function NewEnquiryCard({
             </View>
           ) : (
             <View style={styles.placeholderContainer}>
+              <View style={[styles.StatusContainerStart, { position: 'absolute', top: 0, left: 0, right: 0 }]}>
+                <View
+                  style={[
+                    styles.PriortyContainer,
+                    { backgroundColor: getPriorityColor(priority) },
+                  ]}
+                >
+                  <Text style={styles.PriorityText}>
+                    {priority.toUpperCase()} Priority
+                  </Text>
+                </View>
+                <View style={styles.StatusContainerEnd}>
+                  <View
+                    style={[
+                      styles.statusContainer,
+                      { backgroundColor: getStatusColor(status) },
+                    ]}
+                  >
+                    <Text style={styles.StatusText}>
+                      {status.toUpperCase()}
+                    </Text>
+                  </View>
+                  {isAdmin && (
+                    <TouchableOpacity
+                      style={styles.moreOptionsButton}
+                      onPress={() => setShowMoreOptions(true)}
+                    >
+                      <Icon name="more-vert" size={20} color={colors.textWhite} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
               <Text style={styles.placeholderText}>No Image</Text>
             </View>
           )}
         </View>
         <Text style={styles.Heading}>{item?.Name || 'Untitled Enquiry'}</Text>
-        <Text style={styles.placeholderText2} numberOfLines={8}>
-          {item?.SpecialRemarks || 'No description available.'}
-        </Text>
+        <View style={styles.remarkContainer}>
+          <Text style={styles.placeholderText2} numberOfLines={isRemarkExpanded ? undefined : 2}>
+            {item?.Remarks || 'No description available.'}
+          </Text>
+          {item?.Remarks && (item.Remarks.length > 60 || item.Remarks.includes('\n')) && (
+            <TouchableOpacity 
+              style={styles.expandButton}
+              onPress={() => setIsRemarkExpanded(!isRemarkExpanded)}
+            >
+              <Icon 
+                name={isRemarkExpanded ? "keyboard-arrow-up" : "keyboard-arrow-down"} 
+                size={24} 
+                color={colors.textLight} 
+              />
+            </TouchableOpacity>
+          )}
+        </View>
       </TouchableOpacity>
       <View style={styles.ButtonContainer}>
         <View style={styles.ClientTimeContainer}>
@@ -479,6 +504,8 @@ export default function NewEnquiryCard({
               onPress={() =>
                 navigation.navigate('UploadDesign', {
                   enquiryId: item?.id || item?._id,
+                  designType: 'coral',
+                  enquiry: item,
                 })
               }
             >
@@ -504,6 +531,8 @@ export default function NewEnquiryCard({
               onPress={() =>
                 navigation.navigate('UploadDesign', {
                   enquiryId: item?.id || item?._id,
+                  designType: 'cad',
+                  enquiry: item,
                 })
               }
             >
@@ -529,6 +558,8 @@ export default function NewEnquiryCard({
               onPress={() =>
                 navigation.navigate('UploadDesign', {
                   enquiryId: item?.id || item?._id,
+                  designType: 'coral',
+                  enquiry: item,
                 })
               }
             >
@@ -554,6 +585,8 @@ export default function NewEnquiryCard({
               onPress={() =>
                 navigation.navigate('UploadDesign', {
                   enquiryId: item?.id || item?._id,
+                  designType: 'cad',
+                  enquiry: item,
                 })
               }
             >
@@ -614,12 +647,26 @@ export default function NewEnquiryCard({
                 await updateEnquiryStatus({ status: 'production' });
               }}
             >
-              <Icon name="file" size={16} color={colors.textWhite} />
+              <Icon name="build" size={16} color={colors.textWhite} />
               <Text style={styles.QuickActionButtonText}>
                 Move to Production
               </Text>
             </TouchableOpacity>
           </View>
+      ) : showProductionButton ? (
+        <View style={styles.QuickButtonContainer}>
+          <TouchableOpacity
+            style={styles.QuickActionButton}
+            onPress={async () => {
+              await updateEnquiryStatus({ status: 'shipped' });
+            }}
+          >
+            <Icon name="local-shipping" size={16} color={colors.textWhite} />
+            <Text style={styles.QuickActionButtonText}>
+              Move to Shipped
+            </Text>
+          </TouchableOpacity>
+        </View>
         ) : null}
       </View>
       <Modal
@@ -670,7 +717,7 @@ export default function NewEnquiryCard({
                 onPress={async () => {
                   const success = await updateEnquiryStatus({
                     assignedTo: user.id,
-                    status: selectedStatus?.value || status,
+                    status: selectedStatus?.label || status,
                   });
                   if (success) {
                     setShowAssignDropdown(false);
@@ -931,6 +978,14 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     paddingHorizontal: 10,
     lineHeight: 16,
+  },
+  remarkContainer: {
+    marginBottom: 5,
+  },
+  expandButton: {
+    alignItems: 'flex-end',
+    marginTop: 2,
+    paddingHorizontal: 10,
   },
   Heading: {
     fontFamily: fonts.semiBold,

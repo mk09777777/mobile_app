@@ -23,7 +23,7 @@ import Icon from '../../components/common/Icon';
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
 import { useClients } from '../../features/clients/clientsHooks';
-import { useGetStoneTypesQuery, useGetMetalPricesQuery } from '../../store/api';
+import { useGetStoneTypesQuery, useGetMetalPricesQuery, useCalculatePricingMutation,useImagepriceDataMutation } from '../../store/api';
 
 export default function PricingCalci() {
   // Form State
@@ -32,16 +32,21 @@ export default function PricingCalci() {
   const [metalKt, setMetalKt] = useState('18K');
   const [imageFile, setImageFile] = useState(null);
   const [excelFile, setExcelFile] = useState(null);
+  const [imageData, setImageData] = useState(null);
+  const [isExtracting, setIsExtracting] = useState(false);
 
   // Modals Visibility
   const [showClientModal, setShowClientModal] = useState(false);
   const [showStoneModal, setShowStoneModal] = useState(false);
   const [showMetalModal, setShowMetalModal] = useState(false);
+  const [showAllPricesModal, setShowAllPricesModal] = useState(false);
 
   // API Data
   const { clients = [] } = useClients();
   const { data: stoneTypesData = [] } = useGetStoneTypesQuery();
   const { data: metalPricesData } = useGetMetalPricesQuery(false);
+  const [calculatePricing, { isLoading: isCalculating }] = useCalculatePricingMutation();
+  const [GetimagepriceData, { isLoading: isImageLoading }] = useImagepriceDataMutation();
 
   // Options Formatting
   const clientOptions = clients.map((c) => ({
@@ -90,11 +95,21 @@ export default function PricingCalci() {
 
   // Handlers
   const handleImagePick = async () => {
+    // Validate required fields before picking image
+    if (!clientId) {
+      Alert.alert('Validation Error', 'Please select a client first');
+      return;
+    }
+    if (!stoneType) {
+      Alert.alert('Validation Error', 'Please select a stone type first');
+      return;
+    }
+
     try {
-      const result = await launchImageLibrary({ mediaType: 'photo', quality: 0.8 });
-      if (result.didCancel) return;
-      if (result.assets && result.assets.length > 0) {
-        const asset = result.assets[0];
+      const pickerResult = await launchImageLibrary({ mediaType: 'photo', quality: 0.8 });
+      if (pickerResult.didCancel) return;
+      if (pickerResult.assets && pickerResult.assets.length > 0) {
+        const asset = pickerResult.assets[0];
         // Max 20MB limit validation
         if (asset.fileSize && asset.fileSize > 20 * 1024 * 1024) {
           Alert.alert('File too large', 'Maximum allowed image size is 20MB.');
@@ -105,9 +120,37 @@ export default function PricingCalci() {
           name: asset.fileName || `image_${Date.now()}.jpg`,
           type: asset.type || 'image/jpeg',
         });
+
+        // Show loader and extract data from image
+        setIsExtracting(true);
+        try {
+          const apiResult = await GetimagepriceData({
+            image: {
+              uri: asset.uri,
+              name: asset.fileName || `image_${Date.now()}.jpg`,
+              type: asset.type || 'image/jpeg',
+            },
+            clientId: clientId,
+            stoneType: stoneType,
+            metalQuality: metalKt,
+          }).unwrap();
+
+          console.log('🚀 image price data', apiResult);
+          setImageData(apiResult);
+        } catch (apiError) {
+          console.error('❌ API Error:', apiError);
+          const errorMsg = apiError?.data?.message || apiError?.error || 'Failed to extract pricing data. Please ensure the client has pricing configuration set up.';
+          Alert.alert('Extraction Error', errorMsg);
+          // Clear the image on error
+          setImageFile(null);
+        } finally {
+          setIsExtracting(false);
+        }
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to pick image');
+      console.error('❌ Image Picker Error:', error);
+      Alert.alert('Error', 'Failed to pick image. Please try again.');
+      setIsExtracting(false);
     }
   };
 
@@ -135,22 +178,60 @@ export default function PricingCalci() {
     }
   };
 
-  const handleCalculate = () => {
-    if (!clientId) {
-      Alert.alert('Validation Error', 'Please select a client');
-      return;
-    }
-    if (!stoneType) {
-      Alert.alert('Validation Error', 'Please select a stone type');
-      return;
-    }
-    if (!imageFile) {
-      Alert.alert('Validation Error', 'Please select an image');
+  const handleCalculate = async (extractedDetails = null) => {
+    const data = extractedDetails || imageData;
+    const detailsData = data?.pricing || data?.extractedData || data?.details || data;
+    
+    if (!detailsData) {
+      Alert.alert('Validation Error', 'No pricing data available. Please upload an image first.');
       return;
     }
     
-    Alert.alert('Calculation Started', 'Gathering form data and initializing calculation...');
-    // TODO: Dispatch calculation logic payload to API
+    try {
+      // Structure the payload exactly as the backend expects
+      const rawStones = Array.isArray(detailsData.Stones) 
+        ? detailsData.Stones 
+        : Array.isArray(detailsData.stones) ? detailsData.stones : [];
+
+      const formattedStones = rawStones.map(stone => ({
+        Type: stone.Type || stone.type || stoneType || '',
+        Color: stone.Color || stone.color || '',
+        Shape: stone.Shape || stone.shape || '',
+        MmSize: (stone.MmSize || stone.mmSize || stone.MM || stone.mm || '0').toString(),
+        SieveSize: (stone.SieveSize || stone.sieveSize || stone.Sieve || stone.sieve || '0').toString(),
+        CtWeight: parseFloat(stone.CtWeight || stone.ctWeight || stone.CaratWeight || stone.caratWeight || 0) || 0,
+        Weight: parseFloat(stone.Weight || stone.weight || 0) || 0,
+        Pcs: parseInt(stone.Pcs || stone.pcs || stone.Pieces || stone.pieces || 0, 10) || 0,
+        Price: parseFloat(stone.Price || stone.price || 0) || 0,
+      })).filter(s => s.Type);
+
+      const payloadDetails = {
+        Metal: {
+          Weight: parseFloat(detailsData.Metal?.Weight || detailsData.metalWeight || 0) || 0,
+          Quality: detailsData.Metal?.Quality || detailsData.metalQuality || metalKt,
+        },
+        Stones: formattedStones,
+        Quantity: parseInt(detailsData.Quantity || detailsData.quantity || 1, 10) || 1,
+      };
+
+      const result = await calculatePricing({
+        details: payloadDetails,
+        clientId,
+      }).unwrap();
+
+      const finalPrice = result?.TotalPrice !== undefined ? result.TotalPrice : (result?.totalPrice || 'N/A');
+      Alert.alert(
+        'Calculation Complete',
+        `Total Price: $${finalPrice}\n\nPlease check the console for detailed pricing breakdown.`,
+        [{ text: 'OK' }]
+      );
+      
+      console.log('💰 Pricing Result:', result);
+    } catch (error) {
+      console.error('❌ Pricing calculation error:', error);
+      const errorMsg = error?.data?.message || error?.message || 'Failed to calculate pricing. Please ensure the client has pricing configuration set up.';
+      Alert.alert('Calculation Failed', errorMsg);
+    }
   };
 
   // Reusable Dropdown Render Function
@@ -263,7 +344,12 @@ export default function PricingCalci() {
             showMetalModal,
             setShowMetalModal,
             setMetalKt,
-            <Text style={styles.extraText}>Today: {todayPriceDisplay}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Text style={styles.extraText}>Today: {todayPriceDisplay}</Text>
+              <TouchableOpacity onPress={() => setShowAllPricesModal(true)} style={{ marginLeft: 8 }}>
+                <Icon name="monetization-on" size={20} color={colors.primary} />
+              </TouchableOpacity>
+            </View>
           )}
 
           <View style={styles.inputContainer}>
@@ -272,12 +358,19 @@ export default function PricingCalci() {
               style={styles.uploadArea}
               onPress={handleImagePick}
               activeOpacity={0.7}
+              disabled={isExtracting || isImageLoading}
             >
-              {imageFile ? (
+              {isExtracting || isImageLoading ? (
+                <View style={styles.loadingContainer}>
+                  <Icon name="hourglass-empty" size={40} color={colors.primary} />
+                  <Text style={styles.uploadText}>Extracting pricing data...</Text>
+                  <Text style={styles.uploadSubText}>Please wait while we analyze the image</Text>
+                </View>
+              ) : imageFile ? (
                 <View style={styles.filePreview}>
                   <Image source={{ uri: imageFile.uri }} style={styles.previewImage} />
                   <Text style={styles.fileName} numberOfLines={1}>{imageFile.name}</Text>
-                  <TouchableOpacity onPress={() => setImageFile(null)}>
+                  <TouchableOpacity onPress={() => { setImageFile(null); setImageData(null); }}>
                     <Icon name="close" size={20} color={colors.error} />
                   </TouchableOpacity>
                 </View>
@@ -285,7 +378,7 @@ export default function PricingCalci() {
                 <>
                   <Icon name="cloud-upload" size={40} color={colors.primary} />
                   <Text style={styles.uploadText}>No file chosen</Text>
-                  <Text style={styles.uploadSubText}>Drag & drop or click to upload (max 20 MB)</Text>
+                  <Text style={styles.uploadSubText}>Select client & stone type first, then upload (max 20 MB)</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -320,14 +413,55 @@ export default function PricingCalci() {
 
       <View style={styles.footer}>
         <TouchableOpacity
-          onPress={handleCalculate}
-          style={styles.calculateButton}
+          onPress={() => handleCalculate()}
+          disabled={isCalculating || isExtracting || isImageLoading || !imageData}
+          style={[
+            styles.calculateButton,
+            (isCalculating || isExtracting || isImageLoading || !imageData) && styles.calculateButtonDisabled,
+          ]}
           activeOpacity={0.8}
         >
           <Icon name="calculate" size={20} color={colors.textWhite} />
-          <Text style={styles.calculateButtonText}>Calculate</Text>
+          <Text style={styles.calculateButtonText}>
+            {isCalculating ? 'Calculating...' : isExtracting || isImageLoading ? 'Extracting...' : 'Calculate'}
+          </Text>
         </TouchableOpacity>
       </View>
+
+      <Modal
+        visible={showAllPricesModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowAllPricesModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowAllPricesModal(false)}
+        >
+          <View style={styles.pricesModalContent}>
+            <Text style={styles.pricesModalTitle}>Current Metal Prices</Text>
+            <ScrollView style={styles.pricesList}>
+              {metalPricesData?.prices ? (
+                Object.entries(metalPricesData.prices).map(([metal, data]) => (
+                  <View key={metal} style={styles.priceRow}>
+                    <Text style={styles.priceMetal}>{metal.charAt(0).toUpperCase() + metal.slice(1)}</Text>
+                    <Text style={styles.priceValue}>${data?.price?.toFixed(2)} / {data?.unit || 'g'}</Text>
+                  </View>
+                ))
+              ) : (
+                <Text style={styles.noPricesText}>No prices available</Text>
+              )}
+            </ScrollView>
+            <TouchableOpacity
+              style={styles.closePricesButton}
+              onPress={() => setShowAllPricesModal(false)}
+            >
+              <Text style={styles.closePricesButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -471,6 +605,10 @@ const styles = StyleSheet.create({
     fontFamily: fonts.medium,
     color: colors.textPrimary,
   },
+  loadingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   footer: {
     position: 'absolute',
     bottom: 0,
@@ -490,7 +628,67 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     gap: 8,
   },
+  calculateButtonDisabled: {
+    opacity: 0.6,
+  },
   calculateButtonText: {
+    color: colors.textWhite,
+    fontFamily: fonts.bold,
+    fontSize: fonts.md,
+  },
+  pricesModalContent: {
+    backgroundColor: colors.background,
+    borderRadius: 12,
+    width: '80%',
+    maxHeight: '60%',
+    padding: 20,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
+  pricesModalTitle: {
+    fontSize: fonts.lg,
+    fontFamily: fonts.bold,
+    color: colors.textPrimary,
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  pricesList: {
+    marginBottom: 16,
+  },
+  priceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderLight || colors.border,
+  },
+  priceMetal: {
+    fontSize: fonts.md,
+    fontFamily: fonts.medium,
+    color: colors.textPrimary,
+  },
+  priceValue: {
+    fontSize: fonts.md,
+    fontFamily: fonts.bold,
+    color: colors.primary,
+  },
+  noPricesText: {
+    fontSize: fonts.md,
+    fontFamily: fonts.regular,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    padding: 20,
+  },
+  closePricesButton: {
+    backgroundColor: colors.primary,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  closePricesButtonText: {
     color: colors.textWhite,
     fontFamily: fonts.bold,
     fontSize: fonts.md,
