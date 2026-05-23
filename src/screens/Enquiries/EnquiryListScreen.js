@@ -85,6 +85,9 @@ const canonicalStatusForFilter = (raw) => {
   if (n.includes('production')) {
     return 'production';
   }
+  if (n.includes('shipped')) {
+    return 'shipped';
+  }
   if (n.includes('completed')) {
     return 'completed';
   }
@@ -97,7 +100,10 @@ const canonicalStatusForFilter = (raw) => {
   if (n === 'coral') {
     return 'coral';
   }
-  if (n.includes('cad')) {
+  if (n.includes('quotation')) {
+    return 'quotation';
+  }
+  if (n.includes('cad') && !n.includes('approved')) {
     return 'cad';
   }
 
@@ -138,6 +144,7 @@ const EnquiryListScreen = ({ navigation }) => {
   // Status counts state
   const [statusCounts, setStatusCounts] = useState({
     coral: 0,
+    cad: 0,
     approval: 0,
     order: 0,
     production: 0,
@@ -151,6 +158,7 @@ const EnquiryListScreen = ({ navigation }) => {
     if (statusStatsData?.statusStats?.length) {
       const counts = {
         coral: 0,
+        cad: 0,
         approval: 0,
         order: 0,
         production: 0,
@@ -160,14 +168,16 @@ const EnquiryListScreen = ({ navigation }) => {
       };
       
       statusStatsData.statusStats.forEach(item => {
-        const name = (item.name || item.status || item.Status || item._id || item.group || '').toLowerCase();
-        if (name === 'coral') counts.coral = item.count;
-        else if (name === 'design approval pending') counts.approval = item.count;
-        else if (name === 'order placement') counts.order = item.count;
-        else if (name === 'production') counts.production = item.count;
-        else if (name === 'shipped') counts.shipped = item.count;
-        else if (name === 'enquiry created') counts.newEnquiry = item.count;
-        else if (name === 'quotation') counts.quotation = item.count;
+        const name = (item.name || item.status || item.Status || item._id || item.group || '').toLowerCase().trim();
+        const val = Number(item.count) || 0;
+        if (name === 'coral' || name === 'coral pending') counts.coral += val;
+        else if (name === 'cad' || name === 'cad pending') counts.cad += val;
+        else if (name === 'design approval pending') counts.approval += val;
+        else if (name === 'order placement') counts.order += val;
+        else if (name === 'production') counts.production += val;
+        else if (name === 'shipped') counts.shipped += val;
+        else if (name === 'enquiry created') counts.newEnquiry += val;
+        else if (name === 'quotation') counts.quotation += val;
       });
       
       setStatusCounts(counts);

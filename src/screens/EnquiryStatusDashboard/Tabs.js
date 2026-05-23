@@ -65,41 +65,29 @@ export default function StatusTabs({
   const { data: statusesFromApi = [] } = useGetStatusesQuery();
 
   const tabStatusValues = React.useMemo(() => {
-    if (!statusesFromApi.length) return {};
+    // Explicit expected status names for each tab — matches DB values
+    const STATUS_MAP = {
+      NewEnquiry: ['Enquiry Created'],
+      CoralPending: ['Coral'],
+      CadPending: ['CAD'],
+      Quotation: ['Quotation'],
+      ApprovalPending: ['Design Approval Pending'],
+      OrderPlaced: ['Order Placement'],
+      Production: ['Production'],
+      Shipped: ['Shipped'],
+    };
 
-    const FILTER_TAB_KEYS = ['NewEnquiry', 'CoralPending', 'CadPending', 'Quotation', 'ApprovalPending', 'OrderPlaced', 'Production', 'Shipped'];
+    if (!statusesFromApi.length) return STATUS_MAP;
+
+    // Try to find matching status names from the API (preserves exact casing from DB)
     const map = {};
-
-    for (const tabKey of FILTER_TAB_KEYS) {
-      const words = tabKey.split(/(?=[A-Z])/).map(w => w.toLowerCase());
-      const keywords = words.filter(w => !['pending', 'placed', 'new'].includes(w));
-
-      let bestStatus = null;
-      let bestScore = -1;
-
-      for (const status of statusesFromApi) {
-        const name = status.name;
-        if (!name) continue;
-        const nameLower = name.toLowerCase();
-
-        for (const kw of keywords) {
-          let score = -1;
-          if (nameLower === kw) score = 10;
-          else if (nameLower.startsWith(kw + ' ')) score = 8;
-          else if (nameLower.endsWith(' ' + kw)) score = 7;
-          else if (nameLower.includes(' ' + kw + ' ')) score = 6;
-          else if (nameLower.includes(kw)) score = 4;
-
-          if (score > bestScore) {
-            bestScore = score;
-            bestStatus = name;
-          }
-        }
-      }
-
-      map[tabKey] = bestStatus ? [bestStatus] : [];
+    for (const [tabKey, expectedNames] of Object.entries(STATUS_MAP)) {
+      const found = statusesFromApi.find(s => {
+        const name = (s.name || '').toLowerCase().trim();
+        return expectedNames.some(e => e.toLowerCase() === name);
+      });
+      map[tabKey] = found ? [found.name] : expectedNames;
     }
-
     return map;
   }, [statusesFromApi]);
 
@@ -182,12 +170,13 @@ export default function StatusTabs({
       case 'all': return displayEnquiries.length;
       case 'NewEnquiry': return statusCounts?.newEnquiry || 0;
       case 'CoralPending': return statusCounts?.coral || 0;
+      case 'CadPending': return statusCounts?.cad || 0;
       case 'Quotation': return statusCounts?.quotation || 0;
       case 'ApprovalPending': return statusCounts?.approval || 0;
       case 'OrderPlaced': return statusCounts?.order || 0;
       case 'Production': return statusCounts?.production || 0;
       case 'Shipped': return statusCounts?.shipped || 0;
-        case 'AssignedToYou': return assignedToYouCount;
+      case 'AssignedToYou': return assignedToYouCount;
       default: return 0;
     }
   }, [displayEnquiries.length, statusCounts, assignedToYouCount]);
@@ -228,7 +217,9 @@ export default function StatusTabs({
     const { item, currentTab } = props;
     
     // Check all possible field variations for assigned user
-    let assigned = item.AssignedTo || item.assignedTo || item.assigned_to || item.Assigned_To;
+    const raw = item._originalData || item;
+    let assigned = item.AssignedTo || item.assignedTo || item.assigned_to || item.Assigned_To
+      || raw.AssignedTo || raw.assignedTo || raw.assigned_to || raw.Assigned_To;
     
     // If assigned is an object, try to extract the ID
     if (assigned && typeof assigned === 'object') {
@@ -244,6 +235,7 @@ export default function StatusTabs({
     // 2. Assigned value is explicitly '-' or empty string
     // 3. Assigned string is empty after trimming
     // 4. Assigned value is 'null' or 'undefined' as string
+    // 5. Assigned is a valid-looking ObjectId (24 hex chars) — treat as assigned
     const isUnassignedCheck = 
       !assignedStr || 
       assignedStr === '-' || 

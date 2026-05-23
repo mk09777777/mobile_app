@@ -137,6 +137,14 @@ const DashboardScreen = ({ navigation }) => {
           <Icon name="attach-money" size={20} color={colors.textWhite} />
           <Text style={styles.NewEnquiryText}>Pricing Calculator</Text>
         </TouchableOpacity>
+
+          <TouchableOpacity
+          style={styles.NewEnquiryButton}
+          onPress={() => navigation.navigate('Reports')}
+        >
+          <Icon name="report" size={20} color={colors.textWhite} />
+          <Text style={styles.NewEnquiryText}>Reports</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Overview Section - Only show on mobile, hidden on tablets */}
@@ -1182,6 +1190,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 10,
     gap: 10,
+    margin:10
   },
 
   NewEnquiryButton: {

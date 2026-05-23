@@ -345,7 +345,7 @@ export default function NewEnquiryCard({
                             { backgroundColor: getPriorityColor(priority) },
                           ]}
                         >
-                          <Text style={styles.PriorityText}>
+                          <Text style={styles.PriorityText} numberOfLines={1} ellipsizeMode="tail">
                             {priority.toUpperCase()} Priority
                           </Text>
                         </View>
@@ -356,7 +356,7 @@ export default function NewEnquiryCard({
                               { backgroundColor: getStatusColor(status) },
                             ]}
                           >
-                            <Text style={styles.StatusText}>
+                            <Text style={styles.StatusText} numberOfLines={1} ellipsizeMode="tail">
                               {status.toUpperCase()}
                             </Text>
                           </View>
@@ -391,7 +391,7 @@ export default function NewEnquiryCard({
                     { backgroundColor: getPriorityColor(priority) },
                   ]}
                 >
-                  <Text style={styles.PriorityText}>
+                  <Text style={styles.PriorityText} numberOfLines={1} ellipsizeMode="tail">
                     {priority.toUpperCase()} Priority
                   </Text>
                 </View>
@@ -402,7 +402,7 @@ export default function NewEnquiryCard({
                       { backgroundColor: getStatusColor(status) },
                     ]}
                   >
-                    <Text style={styles.StatusText}>
+                    <Text style={styles.StatusText} numberOfLines={1} ellipsizeMode="tail">
                       {status.toUpperCase()}
                     </Text>
                   </View>
@@ -906,18 +906,14 @@ const styles = StyleSheet.create({
     marginLeft: 5,
   },
 
-  StatusContainerEnd: {
-    marginRight: 5,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-
   PriortyContainer: {
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 5,
+    flexShrink: 1,
+    maxWidth: '45%',
   },
 
   PriorityText: {
@@ -932,12 +928,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 5,
+    flexShrink: 1,
+    maxWidth: 120,
   },
 
   StatusText: {
     fontSize: 12,
     color: colors.textWhite,
     fontFamily: fonts.regular,
+  },
+
+  StatusContainerEnd: {
+    marginRight: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexShrink: 1,
+    maxWidth: '55%',
   },
 
   moreOptionsButton: {

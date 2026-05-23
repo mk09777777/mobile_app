@@ -11,6 +11,23 @@ import { colors } from '../../constants/colors';
 
 const PAGE_SIZE = 50;
 
+const canonicalStatusForFilter = (raw) => {
+  const n = String(raw || '').toLowerCase().trim().replace(/[\s_\-]+/g, '');
+  if (!n) return '';
+  if (n.includes('designapproval') || (n.includes('approval') && n.includes('pending'))) return 'design_approval_pending';
+  if (n.includes('approved') && n.includes('cad')) return 'approved_cad';
+  if (n.includes('orderplacement')) return 'order_placement';
+  if (n.includes('production')) return 'production';
+  if (n.includes('shipped')) return 'shipped';
+  if (n.includes('completed')) return 'completed';
+  if (n.includes('rejected')) return 'rejected';
+  if (n === 'pending' || (n.includes('enquiry') && n.includes('created'))) return 'enquiry_created';
+  if (n === 'coral') return 'coral';
+  if (n.includes('cad')) return 'cad';
+  if (n.includes('quotation')) return 'quotation';
+  return n;
+};
+
 export default function AllStatus({
   flatListRef,
   renderEnquiryItem,
@@ -45,7 +62,16 @@ export default function AllStatus({
       params.AssignedTo = user?.id || user?._id;
       params.filters = { assignedTo: user?.id || user?._id };
     } else if (statusValues) {
-      params.filters = { status: statusValues };
+      // Send common case variants so backend matches regardless of DB casing
+      const expanded = [...new Set(
+        statusValues.flatMap(s => [
+          s,
+          s.toLowerCase(),
+          s.toUpperCase(),
+          s.charAt(0).toUpperCase() + s.slice(1).toLowerCase(),
+        ]),
+      )];
+      params.filters = { status: expanded };
     }
 
     return params;
@@ -56,18 +82,53 @@ export default function AllStatus({
     { skip: !user },
   );
 
+  // Frontend filtering fallback (backend may not filter by multi-word statuses or assignedTo correctly)
   useEffect(() => {
-    if (data?.data) {
-      setAllItems(prev => {
-        if (page === 1) return data.data;
-        const existingIds = new Set(prev.map(item => item.id));
-        const newItems = data.data.filter(
-          item => !existingIds.has(item.id),
-        );
-        return [...prev, ...newItems];
-      });
+    if (!data?.data) return;
+
+    let filtered = data.data.filter(item => item && (item.id || item._id || item.Id));
+
+    // Apply status filter on frontend as safety net
+    if (statusValues && Array.isArray(statusValues) && statusValues.length > 0) {
+      const canonicalFilters = [
+        ...new Set(statusValues.map(s => canonicalStatusForFilter(s)).filter(Boolean)),
+      ];
+      if (canonicalFilters.length > 0) {
+        filtered = filtered.filter(item => {
+          const itemStatus = item.CurrentStatus || item.Status || item.status || '';
+          return canonicalFilters.includes(canonicalStatusForFilter(itemStatus));
+        });
+      }
     }
-  }, [data, page]);
+
+    // Apply assignedTo filter on frontend (API ignores assignedTo for admin users)
+    if (currentTab === 'AssignedToYou') {
+      const userId = String(user?.id || user?._id || '').trim().toLowerCase();
+      if (userId) {
+        filtered = filtered.filter(item => {
+          const raw = item._originalData || item;
+          const assignedId = raw.AssignedTo || raw.assignedTo || raw.assigned_to || raw.Assigned_To;
+          if (assignedId && typeof assignedId === 'object') {
+            return String(assignedId.id || assignedId._id || '').trim().toLowerCase() === userId;
+          }
+          return String(assignedId || '').trim().toLowerCase() === userId;
+        });
+      }
+    }
+
+    // Normalize item ids
+    const normalized = filtered.map(item => ({
+      ...item,
+      id: item.id || item._id || item.Id || item.EnquiryId || item.enquiryId,
+    }));
+
+    setAllItems(prev => {
+      if (page === 1) return normalized;
+      const existingIds = new Set(prev.map(item => item.id));
+      const newItems = normalized.filter(item => !existingIds.has(item.id));
+      return [...prev, ...newItems];
+    });
+  }, [data, page, statusValues, currentTab, user]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);

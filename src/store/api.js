@@ -950,7 +950,7 @@ export const api = createApi({
             StoneType: enquiry.StoneType,
             ShippingDate: enquiry.ShippingDate,
             ClientId: enquiry.ClientId,
-            AssignedTo: enquiry.AssignedTo,
+            AssignedTo: enquiry.AssignedTo || enquiry.assignedTo,
             AssignedDate: enquiry.AssignedDate,
             CurrentStatus: enquiry.CurrentStatus,
             CreatedDate: enquiry.CreatedDate,
