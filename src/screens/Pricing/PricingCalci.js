@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -8,7 +8,12 @@ import {
   Modal,
   Image,
   Alert,
+  TextInput,
+  ActivityIndicator,
+  Platform,
 } from 'react-native';
+import RNFS from 'react-native-fs';
+import Share from 'react-native-share';
 import { launchImageLibrary } from 'react-native-image-picker';
 
 let DocumentPicker;
@@ -25,6 +30,14 @@ import { fonts } from '../../constants/fonts';
 import { useClients } from '../../features/clients/clientsHooks';
 import { useGetStoneTypesQuery, useGetMetalPricesQuery, useCalculatePricingMutation,useImagepriceDataMutation } from '../../store/api';
 
+let generatePDFModule = null;
+try {
+  const mod = require('react-native-html-to-pdf');
+  generatePDFModule = mod.generatePDF || mod.default?.generatePDF || mod.default;
+} catch (e) {
+  // module will be checked before use
+}
+
 export default function PricingCalci() {
   // Form State
   const [clientId, setClientId] = useState('');
@@ -34,6 +47,8 @@ export default function PricingCalci() {
   const [excelFile, setExcelFile] = useState(null);
   const [imageData, setImageData] = useState(null);
   const [isExtracting, setIsExtracting] = useState(false);
+
+
 
   // Modals Visibility
   const [showClientModal, setShowClientModal] = useState(false);
@@ -47,6 +62,482 @@ export default function PricingCalci() {
   const { data: metalPricesData } = useGetMetalPricesQuery(false);
   const [calculatePricing, { isLoading: isCalculating }] = useCalculatePricingMutation();
   const [GetimagepriceData, { isLoading: isImageLoading }] = useImagepriceDataMutation();
+
+  // Editable form state (populated from imageData)
+  const [editableStones, setEditableStones] = useState([]);
+  const [editableMetal, setEditableMetal] = useState({ Weight: 0, Quality: '18K', Rate: 0 });
+  const [editableCharges, setEditableCharges] = useState({ Loss: 10, Labour: 7, ExtraCharges: 0, UndercutPrice: 0 });
+  const [pricingResult, setPricingResult] = useState(null);
+  const [isRecalculating, setIsRecalculating] = useState(false);
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editingStoneIndex, setEditingStoneIndex] = useState(null);
+
+  useEffect(() => {
+    if (!imageData?.pricing) return;
+    const p = imageData.pricing;
+    setEditableStones(
+      (p.Stones || []).map(s => ({ ...s }))
+    );
+    setEditableMetal({
+      Weight: p.Metal?.Weight || 0,
+      Quality: p.Metal?.Quality || metalKt,
+      Rate: p.Metal?.Rate || 0,
+    });
+    setEditableCharges({
+      Loss: p.Client?.Loss ?? 10,
+      Labour: p.Client?.Labour ?? 7,
+      ExtraCharges: p.Client?.ExtraCharges ?? 0,
+      UndercutPrice: p.Client?.UndercutPrice ?? 0,
+    });
+    setPricingResult(p);
+    
+    // Log the full response for debugging
+    console.log('📊 Full Image Data:', JSON.stringify(imageData, null, 2));
+  }, [imageData]);
+
+  const updateStone = (index, field, value) => {
+    setEditableStones(prev => {
+      const next = [...prev];
+      next[index] = { ...next[index], [field]: value };
+      return next;
+    });
+  };
+
+  const deleteStone = (index) => {
+    setEditableStones(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const addStone = () => {
+    setEditableStones(prev => [...prev, {
+      Type: '', Color: 'WH', Shape: 'RD',
+      MmSize: '', SieveSize: '',
+      Weight: 0, Pcs: 0, CtWeight: 0,
+      Price: 0, Markup: 0,
+    }]);
+  };
+
+
+
+  const handleRecalculate = async () => {
+    if (!clientId) {
+      Alert.alert('Validation Error', 'Client is required for pricing');
+      return;
+    }
+    setIsRecalculating(true);
+    try {
+      const formattedStones = editableStones.map(s => ({
+        Type: s.Type || stoneType || '',
+        Color: s.Color || '',
+        Shape: s.Shape || '',
+        MmSize: (s.MmSize || '0').toString(),
+        SieveSize: (s.SieveSize || '0').toString(),
+        CtWeight: parseFloat(s.CtWeight || 0) || 0,
+        Weight: parseFloat(s.Weight || 0) || 0,
+        Pcs: parseInt(s.Pcs || 0, 10) || 0,
+        Price: parseFloat(s.Price || 0) || 0,
+      })).filter(s => s.Type);
+
+      const result = await calculatePricing({
+        details: {
+          Metal: {
+            Weight: parseFloat(editableMetal.Weight || 0) || 0,
+            Quality: editableMetal.Quality || metalKt,
+          },
+          Stones: formattedStones,
+          Quantity: 1,
+        },
+        clientId,
+      }).unwrap();
+
+      setPricingResult(result);
+      Alert.alert('Recalculation Complete', `Total Price: $${result.TotalPrice ?? result.totalPrice ?? 0}`);
+    } catch (error) {
+      const msg = error?.data?.message || error?.message || 'Recalculation failed';
+      Alert.alert('Error', msg);
+    } finally {
+      setIsRecalculating(false);
+    }
+  };
+
+  const buildPricingHtml = useCallback(() => {
+    if (!pricingResult) return '';
+
+    const stonesHtml = editableStones.map((s, idx) => `
+      <tr style="${idx % 2 === 0 ? 'background:#f9f9f9' : ''}">
+        <td style="padding:8px;border:1px solid #ddd;text-align:center">${s.MmSize || '-'}</td>
+        <td style="padding:8px;border:1px solid #ddd;text-align:center">${s.Color || '-'}</td>
+        <td style="padding:8px;border:1px solid #ddd;text-align:center">${s.Shape || '-'}</td>
+        <td style="padding:8px;border:1px solid #ddd;text-align:center">${s.SieveSize || '-'}</td>
+        <td style="padding:8px;border:1px solid #ddd;text-align:right">${s.Weight || 0}</td>
+        <td style="padding:8px;border:1px solid #ddd;text-align:center">${s.Pcs || 0}</td>
+        <td style="padding:8px;border:1px solid #ddd;text-align:right">${s.CtWeight || 0}</td>
+        <td style="padding:8px;border:1px solid #ddd;text-align:right">${s.Markup || 0}</td>
+        <td style="padding:8px;border:1px solid #ddd;text-align:right">$${s.Price || 0}</td>
+      </tr>
+    `).join('');
+
+    const applicableDuties = pricingResult.Applicable 
+      ? Object.entries(pricingResult.Applicable)
+          .filter(([_, value]) => value)
+          .map(([key]) => key.replace(/([A-Z])/g, ' $1').trim())
+          .join(', ')
+      : 'None';
+
+    const clientName = clients.find(c => c.id === clientId || c._id === clientId)?.name || 'N/A';
+    const currentDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <style>
+          body { font-family: Arial, sans-serif; padding: 30px; color: #333; }
+          .header { text-align: center; margin-bottom: 30px; border-bottom: 3px solid #D4AF37; padding-bottom: 20px; }
+          .header h1 { color: #D4AF37; margin: 0; font-size: 28px; }
+          .header p { color: #666; margin: 5px 0; font-size: 14px; }
+          .section { margin: 25px 0; }
+          .section-title { background: #D4AF37; color: white; padding: 10px 15px; font-size: 16px; font-weight: bold; margin-bottom: 15px; }
+          .info-grid { display: table; width: 100%; margin-bottom: 15px; }
+          .info-row { display: table-row; }
+          .info-label { display: table-cell; padding: 8px; font-weight: bold; color: #555; width: 40%; border-bottom: 1px solid #eee; }
+          .info-value { display: table-cell; padding: 8px; color: #333; border-bottom: 1px solid #eee; }
+          table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+          th { background: #8B4513; color: white; padding: 10px; text-align: center; font-size: 13px; border: 1px solid #ddd; }
+          td { padding: 8px; border: 1px solid #ddd; font-size: 12px; }
+          .total-section { background: #f5f5f5; padding: 20px; border-radius: 8px; margin-top: 20px; }
+          .total-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #ddd; }
+          .total-label { font-weight: bold; color: #555; }
+          .total-value { color: #333; font-weight: bold; }
+          .grand-total { font-size: 20px; color: #D4AF37; margin-top: 15px; padding-top: 15px; border-top: 2px solid #D4AF37; }
+          .footer { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 2px solid #eee; color: #999; font-size: 11px; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>Chandra Jewellery</h1>
+          <p>Pricing Calculation Report</p>
+          <p>${currentDate}</p>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Client Information</div>
+          <div class="info-grid">
+            <div class="info-row">
+              <div class="info-label">Client Name:</div>
+              <div class="info-value">${clientName}</div>
+            </div>
+            <div class="info-row">
+              <div class="info-label">Stone Type:</div>
+              <div class="info-value">${stoneType || 'N/A'}</div>
+            </div>
+            <div class="info-row">
+              <div class="info-label">Total Pieces:</div>
+              <div class="info-value">${imageData?.extractedData?.TotalPieces || pricingResult.TotalPieces || 0}</div>
+            </div>
+            <div class="info-row">
+              <div class="info-label">Diamond Weight:</div>
+              <div class="info-value">${pricingResult.DiamondWeight || 0} ct</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Metal Details</div>
+          <div class="info-grid">
+            <div class="info-row">
+              <div class="info-label">Weight:</div>
+              <div class="info-value">${editableMetal.Weight || 0} g</div>
+            </div>
+            <div class="info-row">
+              <div class="info-label">Quality:</div>
+              <div class="info-value">${editableMetal.Quality || 'N/A'}</div>
+            </div>
+            <div class="info-row">
+              <div class="info-label">Rate:</div>
+              <div class="info-value">$${editableMetal.Rate || 0}/g</div>
+            </div>
+          </div>
+        </div>
+
+        ${editableStones.length > 0 ? `
+        <div class="section">
+          <div class="section-title">Stones Breakdown (${editableStones.length} items)</div>
+          <table>
+            <thead>
+              <tr>
+                <th>MM</th>
+                <th>Color</th>
+                <th>Shape</th>
+                <th>Sieve</th>
+                <th>Avg Wt</th>
+                <th>Pcs</th>
+                <th>Ct Wt</th>
+                <th>Markup</th>
+                <th>$/Ct</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${stonesHtml}
+            </tbody>
+          </table>
+        </div>` : ''}
+
+        <div class="section">
+          <div class="section-title">Client Charges</div>
+          <div class="info-grid">
+            <div class="info-row">
+              <div class="info-label">Loss:</div>
+              <div class="info-value">${pricingResult.Client?.Loss || editableCharges.Loss || 0}%</div>
+            </div>
+            <div class="info-row">
+              <div class="info-label">Labour:</div>
+              <div class="info-value">$${pricingResult.Client?.Labour || editableCharges.Labour || 0}/g</div>
+            </div>
+            <div class="info-row">
+              <div class="info-label">Extra Charges:</div>
+              <div class="info-value">${pricingResult.Client?.ExtraCharges || editableCharges.ExtraCharges || 0}%</div>
+            </div>
+            ${(pricingResult.Client?.UndercutPrice || editableCharges.UndercutPrice) > 0 ? `
+            <div class="info-row">
+              <div class="info-label">Undercut Price:</div>
+              <div class="info-value">$${pricingResult.Client?.UndercutPrice || editableCharges.UndercutPrice || 0}/ct</div>
+            </div>` : ''}
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Applicable Duties</div>
+          <div class="info-grid">
+            <div class="info-row">
+              <div class="info-label">Applied Duties:</div>
+              <div class="info-value">${applicableDuties}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="total-section">
+          <div class="total-row">
+            <span class="total-label">Metal Price:</span>
+            <span class="total-value">$${(pricingResult.MetalPrice || 0).toFixed(2)}</span>
+          </div>
+          <div class="total-row">
+            <span class="total-label">Diamonds Price:</span>
+            <span class="total-value">$${(pricingResult.DiamondsPrice || 0).toFixed(2)}</span>
+          </div>
+          <div class="total-row">
+            <span class="total-label">Duties Amount:</span>
+            <span class="total-value">$${(pricingResult.DutiesAmount || 0).toFixed(2)}</span>
+          </div>
+          <div class="total-row grand-total">
+            <span class="total-label">TOTAL PRICE:</span>
+            <span class="total-value">$${(pricingResult.TotalPrice || 0).toFixed(2)}</span>
+          </div>
+        </div>
+
+        <div class="footer">
+          <p>Generated by Chandra Jewellery Management App</p>
+          <p>This is a computer-generated document and does not require a signature</p>
+        </div>
+      </body>
+      </html>`;
+  }, [pricingResult, editableStones, editableMetal, editableCharges, imageData, clients, clientId, stoneType]);
+
+  const generatePdfFile = useCallback(async () => {
+    if (!pricingResult) {
+      throw new Error('No pricing data available to export');
+    }
+    
+    if (typeof generatePDFModule !== 'function') {
+      throw new Error('PDF generation library is not available. Please install react-native-html-to-pdf');
+    }
+    
+    const html = buildPricingHtml();
+    if (!html) {
+      throw new Error('Failed to generate PDF content');
+    }
+    
+    const clientName = clients.find(c => c.id === clientId || c._id === clientId)?.name || 'Client';
+    const fileName = `Pricing_${clientName.replace(/\s+/g, '_')}_${Date.now()}`;
+    
+    const options = {
+      html,
+      fileName,
+      directory: 'Documents',
+      base64: false,
+    };
+    
+    const result = await generatePDFModule(options);
+    return result;
+  }, [buildPricingHtml, pricingResult, clients, clientId]);
+
+  const handleSharePDF = useCallback(async () => {
+    if (!pricingResult) {
+      Alert.alert('No Data', 'Please calculate pricing first before sharing');
+      return;
+    }
+    
+    try {
+      const pdf = await generatePdfFile();
+      
+      if (!pdf || !pdf.filePath) {
+        throw new Error('PDF generation failed - no file path returned');
+      }
+      
+      // Check if file exists
+      const fileExists = await RNFS.exists(pdf.filePath);
+      if (!fileExists) {
+        throw new Error('PDF file was not created successfully');
+      }
+      
+      // Copy to cache directory for sharing
+      const clientName = clients.find(c => c.id === clientId || c._id === clientId)?.name || 'Client';
+      const fileName = `Pricing_${clientName.replace(/\s+/g, '_')}_${Date.now()}.pdf`;
+      const cachePath = `${RNFS.CachesDirectoryPath}/${fileName}`;
+      
+      await RNFS.copyFile(pdf.filePath, cachePath);
+      
+      // Verify cache file exists
+      const cacheExists = await RNFS.exists(cachePath);
+      if (!cacheExists) {
+        throw new Error('Failed to copy PDF to cache');
+      }
+      
+      const shareOptions = {
+        title: 'Share Pricing Report',
+        message: 'Chandra Jewellery Pricing Report',
+        url: Platform.OS === 'android' ? `file://${cachePath}` : cachePath,
+        type: 'application/pdf',
+        subject: 'Pricing Report',
+        failOnCancel: false,
+      };
+      
+      const result = await Share.open(shareOptions);
+      
+      // Clean up cache file after sharing
+      setTimeout(async () => {
+        try {
+          await RNFS.unlink(cachePath);
+        } catch (cleanupError) {
+          console.log('Cache cleanup error:', cleanupError);
+        }
+      }, 5000);
+      
+    } catch (e) {
+      console.error('Share PDF Error:', e);
+      if (e?.message && !e.message.includes('User did not share') && !e.message.includes('cancelled') && !e.message.includes('User cancelled')) {
+        Alert.alert('Share Failed', e.message || 'Failed to share PDF. Please try again.');
+      }
+    }
+  }, [pricingResult, generatePdfFile, clients, clientId]);
+
+  const handleExportDownload = useCallback(async () => {
+    if (!pricingResult) {
+      Alert.alert('No Data', 'Please calculate pricing first before exporting');
+      return;
+    }
+    
+    try {
+      // Request storage permission for Android
+      if (Platform.OS === 'android') {
+        const { PermissionsAndroid } = require('react-native');
+        
+        // For Android 13+ (API 33+), we don't need WRITE_EXTERNAL_STORAGE
+        const androidVersion = Platform.Version;
+        
+        if (androidVersion < 33) {
+          const granted = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
+            {
+              title: 'Storage Permission',
+              message: 'App needs access to your storage to save PDF files',
+              buttonNeutral: 'Ask Me Later',
+              buttonNegative: 'Cancel',
+              buttonPositive: 'OK',
+            }
+          );
+          
+          if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+            Alert.alert('Permission Denied', 'Storage permission is required to download files');
+            return;
+          }
+        }
+      }
+      
+      const pdf = await generatePdfFile();
+      
+      if (!pdf || !pdf.filePath) {
+        throw new Error('PDF generation failed - no file path returned');
+      }
+      
+      // Check if source file exists
+      const fileExists = await RNFS.exists(pdf.filePath);
+      if (!fileExists) {
+        throw new Error('PDF file was not created successfully');
+      }
+      
+      const clientName = clients.find(c => c.id === clientId || c._id === clientId)?.name || 'Client';
+      const fileName = `Pricing_${clientName.replace(/\s+/g, '_')}_${Date.now()}.pdf`;
+      const fileUrl = Platform.OS === 'android' ? `file://${pdf.filePath}` : pdf.filePath;
+      
+      if (Platform.OS === 'ios') {
+        // For iOS, trigger the native "Save to Files" dialog
+        await Share.open({
+          url: fileUrl,
+          saveToFiles: true,
+          title: 'Save PDF',
+          filename: fileName,
+        });
+      } else {
+        // For Android, try to copy the file directly to the public Downloads folder
+        const downloadPath = `${RNFS.DownloadDirectoryPath}/${fileName}`;
+        
+        try {
+          // First attempt: copy directly
+          await RNFS.copyFile(pdf.filePath, downloadPath);
+          
+          Alert.alert(
+            'Export Successful',
+            `PDF saved successfully!\n\nFile: ${fileName}\nLocation: Downloads folder\n\nYou can access it from your File Manager.`,
+            [{ text: 'OK' }]
+          );
+        } catch (copyError) {
+          console.warn('Direct copy failed, trying base64 write', copyError);
+          try {
+            // Second attempt: read as base64 and write
+            // Helps bypass some scoped storage restrictions on Android 10/11
+            const base64data = await RNFS.readFile(pdf.filePath, 'base64');
+            await RNFS.writeFile(downloadPath, base64data, 'base64');
+            
+            Alert.alert(
+              'Export Successful',
+              `PDF saved successfully!\n\nFile: ${fileName}\nLocation: Downloads folder\n\nYou can access it from your File Manager.`,
+              [{ text: 'OK' }]
+            );
+          } catch (writeError) {
+            console.warn('Base64 write failed, falling back to Share', writeError);
+            // Final fallback: use the Share module so user can save or send it
+            await Share.open({
+              url: fileUrl,
+              title: 'Save PDF',
+              filename: fileName,
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Export PDF Error:', e);
+      // Ignore user cancellation errors
+      if (e?.message && !e.message.includes('User did not share') && !e.message.includes('cancelled') && !e.message.includes('User cancelled')) {
+        Alert.alert(
+          'Export Failed',
+          e?.message || 'Failed to export PDF. Please check storage permissions and try again.'
+        );
+      }
+    }
+  }, [pricingResult, generatePdfFile, clients, clientId]);
+
+
 
   // Options Formatting
   const clientOptions = clients.map((c) => ({
@@ -409,23 +900,245 @@ export default function PricingCalci() {
             </TouchableOpacity>
           </View>
         </Card>
+
+        {imageData && editableStones && editableStones.length > 0 && (
+          <Card style={styles.card}>
+            <Text style={styles.sectionTitle}>Extracted Details</Text>
+
+            {/* Display extracted data summary */}
+            {imageData.extractedData && (
+              <View style={styles.summaryContainer}>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>Total Pieces:</Text>
+                  <Text style={styles.summaryValue}>{imageData.extractedData.TotalPieces || 0}</Text>
+                </View>
+                {imageData.pricing && (
+                  <>
+                    <View style={styles.summaryRow}>
+                      <Text style={styles.summaryLabel}>Diamond Weight:</Text>
+                      <Text style={styles.summaryValue}>{imageData.pricing.DiamondWeight || 0} ct</Text>
+                    </View>
+                    <View style={styles.summaryRow}>
+                      <Text style={styles.summaryLabel}>Stone Type:</Text>
+                      <Text style={styles.summaryValue}>{imageData.pricing.Stones?.[0]?.Type || stoneType || 'N/A'}</Text>
+                    </View>
+                  </>
+                )}
+              </View>
+            )}
+
+            {/* ---- Stones Table (fixed width, no horizontal scroll) ---- */}
+            <Text style={styles.subSectionTitle}>Stones ({editableStones.length})</Text>
+            <View style={styles.compactTableWrapper}>
+              {/* Header */}
+              <View style={styles.compactTableHeader}>
+                <Text style={[styles.compactTableHeaderText, { width: 45 }]}>MM</Text>
+                <Text style={[styles.compactTableHeaderText, { width: 40 }]}>Col</Text>
+                <Text style={[styles.compactTableHeaderText, { width: 40 }]}>Shp</Text>
+                <Text style={[styles.compactTableHeaderText, { width: 45 }]}>Sieve</Text>
+                <Text style={[styles.compactTableHeaderText, { width: 45 }]}>Wt</Text>
+                <Text style={[styles.compactTableHeaderText, { width: 40 }]}>Pcs</Text>
+                <Text style={[styles.compactTableHeaderText, { width: 45 }]}>CtWt</Text>
+                <Text style={[styles.compactTableHeaderText, { width: 50 }]}>$/Ct</Text>
+                <Text style={[styles.compactTableHeaderText, { width: 10 }]}></Text>
+              </View>
+              
+              {/* Body */}
+              <ScrollView style={styles.compactTableBody} nestedScrollEnabled>
+                {editableStones.map((stone, i) => (
+                  <View key={i} style={styles.compactTableRowWrapper}>
+                    <TouchableOpacity
+                      style={styles.compactTableRow}
+                      onPress={() => { setEditingStoneIndex(i); setEditModalVisible(true); }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.compactTableCell, { width: 45 }]}>{stone.MmSize || '-'}</Text>
+                      <Text style={[styles.compactTableCell, { width: 40 }]}>{stone.Color || '-'}</Text>
+                      <Text style={[styles.compactTableCell, { width: 40 }]}>{stone.Shape || '-'}</Text>
+                      <Text style={[styles.compactTableCell, { width: 45 }]}>{stone.SieveSize || '-'}</Text>
+                      <Text style={[styles.compactTableCell, { width: 45 }]}>{stone.Weight ?? 0}</Text>
+                      <Text style={[styles.compactTableCell, { width: 40 }]}>{stone.Pcs ?? 0}</Text>
+                      <Text style={[styles.compactTableCell, { width: 45 }]}>{stone.CtWeight ?? 0}</Text>
+                      <Text style={[styles.compactTableCell, { width: 50 }]}>{stone.Price ?? 0}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                      style={styles.deleteIconButton} 
+                      onPress={() => deleteStone(i)}
+                    >
+                      <Icon name="delete" size={14} color={colors.error} />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+            <TouchableOpacity style={styles.addStoneButton} onPress={addStone}>
+              <Icon name="add" size={18} color={colors.textWhite} />
+              <Text style={styles.addStoneButtonText}>Add Stone</Text>
+            </TouchableOpacity>
+
+            {/* ---- Metal ---- */}
+            {editableMetal && (
+              <>
+                <Text style={styles.subSectionTitle}>Metal</Text>
+                <View style={styles.chargesRow}>
+                  <View style={styles.chargeField}>
+                    <Text style={styles.fieldLabel}>Weight (g)</Text>
+                    <TextInput style={styles.fieldInput} keyboardType="decimal-pad" value={String(editableMetal.Weight || 0)} onChangeText={v => setEditableMetal(p => ({ ...p, Weight: v }))} />
+                  </View>
+                  <View style={styles.chargeField}>
+                    <Text style={styles.fieldLabel}>Quality</Text>
+                    <TextInput style={styles.fieldInput} value={editableMetal.Quality || ''} onChangeText={v => setEditableMetal(p => ({ ...p, Quality: v }))} />
+                  </View>
+                  <View style={styles.chargeField}>
+                    <Text style={styles.fieldLabel}>Rate ($/g)</Text>
+                    <TextInput style={styles.fieldInput} keyboardType="decimal-pad" value={String(editableMetal.Rate || 0)} onChangeText={v => setEditableMetal(p => ({ ...p, Rate: v }))} />
+                  </View>
+                </View>
+              </>
+            )}
+
+            {/* ---- Charges ---- */}
+            {editableCharges && (
+              <>
+                <Text style={styles.subSectionTitle}>Charges & Duties</Text>
+                <View style={styles.chargesRow}>
+                  <View style={styles.chargeField}>
+                    <Text style={styles.fieldLabel}>Loss (%)</Text>
+                    <TextInput style={styles.fieldInput} keyboardType="decimal-pad" value={String(editableCharges.Loss || 0)} onChangeText={v => setEditableCharges(p => ({ ...p, Loss: v }))} />
+                  </View>
+                  <View style={styles.chargeField}>
+                    <Text style={styles.fieldLabel}>Labour ($/g)</Text>
+                    <TextInput style={styles.fieldInput} keyboardType="decimal-pad" value={String(editableCharges.Labour || 0)} onChangeText={v => setEditableCharges(p => ({ ...p, Labour: v }))} />
+                  </View>
+                  <View style={styles.chargeField}>
+                    <Text style={styles.fieldLabel}>Extra (%)</Text>
+                    <TextInput style={styles.fieldInput} keyboardType="decimal-pad" value={String(editableCharges.ExtraCharges || 0)} onChangeText={v => setEditableCharges(p => ({ ...p, ExtraCharges: v }))} />
+                  </View>
+                  <View style={styles.chargeField}>
+                    <Text style={styles.fieldLabel}>Undercut ($/ct)</Text>
+                    <TextInput style={styles.fieldInput} keyboardType="decimal-pad" value={String(editableCharges.UndercutPrice || 0)} onChangeText={v => setEditableCharges(p => ({ ...p, UndercutPrice: v }))} />
+                  </View>
+                </View>
+              </>
+            )}
+
+            {/* ---- Pricing Summary ---- */}
+            {pricingResult && (
+              <>
+                <Text style={styles.subSectionTitle}>Pricing Summary</Text>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>Metal Price</Text>
+                  <Text style={styles.summaryValue}>${(pricingResult.MetalPrice || 0).toFixed(2)}</Text>
+                </View>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>Diamonds Price</Text>
+                  <Text style={styles.summaryValue}>${(pricingResult.DiamondsPrice || 0).toFixed(2)}</Text>
+                </View>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>Duties Amount</Text>
+                  <Text style={styles.summaryValue}>${(pricingResult.DutiesAmount || 0).toFixed(2)}</Text>
+                </View>
+                
+                {/* Show applicable duties */}
+                {pricingResult.Applicable && (
+                  <View style={styles.dutiesContainer}>
+                    <Text style={styles.dutiesTitle}>Applicable Duties:</Text>
+                    {Object.entries(pricingResult.Applicable).map(([key, value]) => (
+                      value && (
+                        <View key={key} style={styles.dutyRow}>
+                          <Icon name="check-circle" size={14} color={colors.success} />
+                          <Text style={styles.dutyText}>{key.replace(/([A-Z])/g, ' $1').trim()}</Text>
+                        </View>
+                      )
+                    ))}
+                  </View>
+                )}
+                
+                <View style={[styles.summaryRow, styles.totalRow]}>
+                  <Text style={styles.totalLabel}>Total Price</Text>
+                  <Text style={styles.totalValue}>${(pricingResult.TotalPrice || 0).toFixed(2)}</Text>
+                </View>
+                
+                {/* Show client charges */}
+                {pricingResult.Client && (
+                  <View style={styles.clientChargesContainer}>
+                    <Text style={styles.clientChargesTitle}>Client Charges Applied:</Text>
+                    <View style={styles.chargeDetailRow}>
+                      <Text style={styles.chargeDetailLabel}>Loss:</Text>
+                      <Text style={styles.chargeDetailValue}>{pricingResult.Client.Loss || 0}%</Text>
+                    </View>
+                    <View style={styles.chargeDetailRow}>
+                      <Text style={styles.chargeDetailLabel}>Labour:</Text>
+                      <Text style={styles.chargeDetailValue}>${pricingResult.Client.Labour || 0}/g</Text>
+                    </View>
+                    <View style={styles.chargeDetailRow}>
+                      <Text style={styles.chargeDetailLabel}>Extra Charges:</Text>
+                      <Text style={styles.chargeDetailValue}>{pricingResult.Client.ExtraCharges || 0}%</Text>
+                    </View>
+                    {pricingResult.Client.UndercutPrice > 0 && (
+                      <View style={styles.chargeDetailRow}>
+                        <Text style={styles.chargeDetailLabel}>Undercut Price:</Text>
+                        <Text style={styles.chargeDetailValue}>${pricingResult.Client.UndercutPrice || 0}/ct</Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+                
+                <View style={styles.actionButtonRow}>
+                  <TouchableOpacity style={styles.recalcButton} onPress={handleRecalculate} disabled={isRecalculating}>
+                    {isRecalculating ? (
+                      <ActivityIndicator size="small" color={colors.textWhite} />
+                    ) : (
+                      <>
+                        <Text style={styles.actionButtonText}>Recalculate</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </Card>
+        )}
       </ScrollView>
 
       <View style={styles.footer}>
-        <TouchableOpacity
-          onPress={() => handleCalculate()}
-          disabled={isCalculating || isExtracting || isImageLoading || !imageData}
-          style={[
-            styles.calculateButton,
-            (isCalculating || isExtracting || isImageLoading || !imageData) && styles.calculateButtonDisabled,
-          ]}
-          activeOpacity={0.8}
-        >
-          <Icon name="calculate" size={20} color={colors.textWhite} />
-          <Text style={styles.calculateButtonText}>
-            {isCalculating ? 'Calculating...' : isExtracting || isImageLoading ? 'Extracting...' : 'Calculate'}
-          </Text>
-        </TouchableOpacity>
+        {imageData && pricingResult ? (
+          <View style={styles.footerActions}>
+            <TouchableOpacity style={styles.footerRecalcBtn} onPress={handleRecalculate} disabled={isRecalculating}>
+              {isRecalculating ? (
+                <ActivityIndicator size="small" color={colors.textWhite} />
+              ) : (
+                <>
+                  <Icon name="refresh" size={20} color={colors.textWhite} />
+                  <Text style={styles.calculateButtonText}>Recalculate</Text>
+                </>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.footerShareBtn} onPress={handleSharePDF}>
+              <Icon name="share" size={20} color={colors.textWhite} />
+              <Text style={styles.calculateButtonText}>Share</Text>
+            </TouchableOpacity>
+            {/* <TouchableOpacity style={styles.footerExportBtn} onPress={handleExportDownload}>
+              <Icon name="file-download" size={20} color={colors.textWhite} />
+              <Text style={styles.calculateButtonText}>Export</Text>
+            </TouchableOpacity> */}
+          </View>
+        ) : (
+          <TouchableOpacity
+            onPress={() => handleCalculate()}
+            disabled={isCalculating || isExtracting || isImageLoading || !imageData}
+            style={[
+              styles.calculateButton,
+              (isCalculating || isExtracting || isImageLoading || !imageData) && styles.calculateButtonDisabled,
+            ]}
+            activeOpacity={0.8}
+          >
+            <Icon name="calculate" size={20} color={colors.textWhite} />
+            <Text style={styles.calculateButtonText}>
+              {isCalculating ? 'Calculating...' : isExtracting || isImageLoading ? 'Extracting...' : 'Calculate'}
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <Modal
@@ -461,6 +1174,86 @@ export default function PricingCalci() {
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
+      </Modal>
+
+      {/* ---- Edit Stone Modal ---- */}
+      <Modal
+        visible={editModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setEditModalVisible(false)}
+      >
+        <View style={styles.editModalOverlay}>
+          <View style={styles.editModalContent}>
+            <View style={styles.editModalHeader}>
+              <Text style={styles.editModalTitle}>
+                Edit Stone {editingStoneIndex !== null ? editingStoneIndex + 1 : ''}
+              </Text>
+              <TouchableOpacity onPress={() => setEditModalVisible(false)}>
+                <Icon name="close" size={22} color={colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView>
+              {editingStoneIndex !== null && (() => {
+                const stone = editableStones[editingStoneIndex];
+                if (!stone) return null;
+                return (
+                  <View style={styles.editModalFields}>
+                    <View style={styles.editFieldRow}>
+                      <View style={styles.editFieldHalf}>
+                        <Text style={styles.editFieldLabel}>MM</Text>
+                        <TextInput style={styles.editFieldInput} value={stone.MmSize} onChangeText={v => updateStone(editingStoneIndex, 'MmSize', v)} />
+                      </View>
+                      <View style={styles.editFieldHalf}>
+                        <Text style={styles.editFieldLabel}>Color</Text>
+                        <TextInput style={styles.editFieldInput} value={stone.Color} onChangeText={v => updateStone(editingStoneIndex, 'Color', v)} />
+                      </View>
+                    </View>
+                    <View style={styles.editFieldRow}>
+                      <View style={styles.editFieldHalf}>
+                        <Text style={styles.editFieldLabel}>Shape</Text>
+                        <TextInput style={styles.editFieldInput} value={stone.Shape} onChangeText={v => updateStone(editingStoneIndex, 'Shape', v)} />
+                      </View>
+                      <View style={styles.editFieldHalf}>
+                        <Text style={styles.editFieldLabel}>Sieve</Text>
+                        <TextInput style={styles.editFieldInput} value={stone.SieveSize} onChangeText={v => updateStone(editingStoneIndex, 'SieveSize', v)} />
+                      </View>
+                    </View>
+                    <View style={styles.editFieldRow}>
+                      <View style={styles.editFieldHalf}>
+                        <Text style={styles.editFieldLabel}>Avg Wt</Text>
+                        <TextInput style={styles.editFieldInput} keyboardType="decimal-pad" value={String(stone.Weight ?? 0)} onChangeText={v => updateStone(editingStoneIndex, 'Weight', v)} />
+                      </View>
+                      <View style={styles.editFieldHalf}>
+                        <Text style={styles.editFieldLabel}>Pcs</Text>
+                        <TextInput style={styles.editFieldInput} keyboardType="number-pad" value={String(stone.Pcs ?? 0)} onChangeText={v => updateStone(editingStoneIndex, 'Pcs', v)} />
+                      </View>
+                    </View>
+                    <View style={styles.editFieldRow}>
+                      <View style={styles.editFieldHalf}>
+                        <Text style={styles.editFieldLabel}>Ct Wt</Text>
+                        <TextInput style={styles.editFieldInput} keyboardType="decimal-pad" value={String(stone.CtWeight ?? 0)} onChangeText={v => updateStone(editingStoneIndex, 'CtWeight', v)} />
+                      </View>
+                      <View style={styles.editFieldHalf}>
+                        <Text style={styles.editFieldLabel}>Markup</Text>
+                        <TextInput style={styles.editFieldInput} keyboardType="decimal-pad" value={String(stone.Markup ?? 0)} onChangeText={v => updateStone(editingStoneIndex, 'Markup', v)} />
+                      </View>
+                    </View>
+                    <View style={styles.editFieldRow}>
+                      <View style={styles.editFieldFull}>
+                        <Text style={styles.editFieldLabel}>$/Ct</Text>
+                        <TextInput style={styles.editFieldInput} keyboardType="decimal-pad" value={String(stone.Price ?? 0)} onChangeText={v => updateStone(editingStoneIndex, 'Price', v)} />
+                      </View>
+                    </View>
+                  </View>
+                );
+              })()}
+            </ScrollView>
+            <TouchableOpacity style={styles.editModalSaveButton} onPress={() => setEditModalVisible(false)}>
+              <Text style={styles.editModalSaveText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
     </View>
   );
@@ -624,9 +1417,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 14,
     borderRadius: 12,
     gap: 8,
+    height: 50,
   },
   calculateButtonDisabled: {
     opacity: 0.6,
@@ -689,6 +1482,382 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   closePricesButtonText: {
+    color: colors.textWhite,
+    fontFamily: fonts.bold,
+    fontSize: fonts.md,
+  },
+  footerActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  footerRecalcBtn: {
+    flex: 1,
+    backgroundColor: colors.accent,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    gap: 6,
+    paddingVertical:10,
+    paddingHorizontal:20
+  },
+  footerShareBtn: {
+    
+    backgroundColor: colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    gap: 6,
+     paddingVertical:10,
+    paddingHorizontal:20
+  },
+  footerExportBtn: {
+    
+    backgroundColor: colors.secondary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    gap: 6,
+     paddingVertical:10,
+    paddingHorizontal:20
+  },
+
+  // ---- Results Form Styles ----
+  sectionTitle: {
+    fontSize: fonts.lg,
+    fontFamily: fonts.bold,
+    color: colors.textPrimary,
+    marginBottom: 16,
+  },
+  subSectionTitle: {
+    fontSize: fonts.md,
+    fontFamily: fonts.bold,
+    color: colors.textPrimary,
+    marginTop: 16,
+    marginBottom: 10,
+  },
+  stoneRow: {
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 10,
+  },
+  stoneRowHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  stoneRowLabel: {
+    fontSize: fonts.sm,
+    fontFamily: fonts.bold,
+    color: colors.primary,
+  },
+  stoneFieldsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  stoneField: {
+    width: '30%',
+    marginBottom: 6,
+  },
+  fieldLabel: {
+    fontSize: fonts.xs,
+    fontFamily: fonts.medium,
+    color: colors.textSecondary,
+    marginBottom: 2,
+  },
+  fieldInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    fontSize: fonts.sm,
+    fontFamily: fonts.regular,
+    color: colors.textPrimary,
+    backgroundColor: colors.background,
+  },
+  addStoneButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+    paddingVertical: 10,
+    borderRadius: 8,
+    gap: 6,
+    marginTop: 4,
+  },
+  addStoneButtonText: {
+    color: colors.textWhite,
+    fontFamily: fonts.medium,
+    fontSize: fonts.sm,
+  },
+  chargesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  chargeField: {
+    width: '46%',
+    marginBottom: 10,
+  },
+  summaryContainer: {
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderLight || colors.border,
+  },
+  summaryLabel: {
+    fontSize: fonts.sm,
+    fontFamily: fonts.medium,
+    color: colors.textSecondary,
+  },
+  summaryValue: {
+    fontSize: fonts.sm,
+    fontFamily: fonts.bold,
+    color: colors.textPrimary,
+  },
+  totalRow: {
+    borderBottomWidth: 0,
+    marginTop: 4,
+    paddingVertical: 10,
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+  },
+  totalLabel: {
+    fontSize: fonts.md,
+    fontFamily: fonts.bold,
+    color: colors.textPrimary,
+  },
+  totalValue: {
+    fontSize: fonts.md,
+    fontFamily: fonts.bold,
+    color: colors.primary,
+  },
+  actionButtonRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 16,
+  },
+  recalcButton: {
+    flex: 1,
+    backgroundColor: colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 8,
+    gap: 6,
+  },
+  whatsappButton: {
+    flex: 1,
+    backgroundColor: '#25D366',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 8,
+    gap: 6,
+  },
+  pdfButton: {
+    flex: 1,
+    backgroundColor: '#E74C3C',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 8,
+    gap: 6,
+  },
+  actionButtonText: {
+    color: colors.textWhite,
+    fontFamily: fonts.bold,
+    fontSize: fonts.sm,
+  },
+
+  // ---- Compact Table Styles (No Horizontal Scroll) ----
+  compactTableWrapper: {
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+    backgroundColor: colors.background,
+    marginHorizontal: -20,
+    marginVertical: 10,
+  },
+  compactTableHeader: {
+    flexDirection: 'row',
+    backgroundColor: colors.primary,
+    paddingVertical: 10,
+  },
+  compactTableHeaderText: {
+    fontSize: 10,
+    fontFamily: fonts.bold,
+    color: colors.textWhite,
+    textAlign: 'center',
+  },
+  compactTableBody: {
+    maxHeight: 300,
+  },
+  compactTableRowWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderLight || colors.border,
+    backgroundColor: colors.background,
+  },
+  compactTableRow: {
+    flex: 1,
+    flexDirection: 'row',
+    paddingVertical: 8,
+  },
+  deleteIconButton: {
+    width: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  compactTableCell: {
+    fontSize: 10,
+    fontFamily: fonts.regular,
+    color: colors.textPrimary,
+    textAlign: 'center',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  dutiesContainer: {
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: 8,
+    padding: 12,
+    marginVertical: 8,
+  },
+  dutiesTitle: {
+    fontSize: fonts.sm,
+    fontFamily: fonts.bold,
+    color: colors.textPrimary,
+    marginBottom: 8,
+  },
+  dutyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    gap: 8,
+  },
+  dutyText: {
+    fontSize: fonts.xs,
+    fontFamily: fonts.regular,
+    color: colors.textSecondary,
+  },
+  clientChargesContainer: {
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: 8,
+    padding: 12,
+    marginVertical: 8,
+  },
+  clientChargesTitle: {
+    fontSize: fonts.sm,
+    fontFamily: fonts.bold,
+    color: colors.textPrimary,
+    marginBottom: 8,
+  },
+  chargeDetailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  chargeDetailLabel: {
+    fontSize: fonts.xs,
+    fontFamily: fonts.medium,
+    color: colors.textSecondary,
+  },
+  chargeDetailValue: {
+    fontSize: fonts.xs,
+    fontFamily: fonts.bold,
+    color: colors.textPrimary,
+  },
+
+  // ---- Edit Modal Styles ----
+  editModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  editModalContent: {
+    backgroundColor: colors.background,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    maxHeight: '80%',
+    paddingBottom: 24,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  editModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  editModalTitle: {
+    fontSize: fonts.md,
+    fontFamily: fonts.bold,
+    color: colors.textPrimary,
+  },
+  editModalFields: {
+    padding: 16,
+  },
+  editFieldRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 12,
+  },
+  editFieldHalf: {
+    flex: 1,
+  },
+  editFieldFull: {
+    flex: 1,
+  },
+  editFieldLabel: {
+    fontSize: fonts.xs,
+    fontFamily: fonts.medium,
+    color: colors.textSecondary,
+    marginBottom: 4,
+  },
+  editFieldInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: fonts.sm,
+    fontFamily: fonts.regular,
+    color: colors.textPrimary,
+    backgroundColor: colors.backgroundSecondary,
+  },
+  editModalSaveButton: {
+    marginHorizontal: 16,
+    backgroundColor: colors.primary,
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  editModalSaveText: {
     color: colors.textWhite,
     fontFamily: fonts.bold,
     fontSize: fonts.md,

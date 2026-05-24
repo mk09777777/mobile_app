@@ -42,6 +42,8 @@ export default function AllStatus({
   const user = propUser || authUser;
 
   const [page, setPage] = useState(1);
+  const pageRef = useRef(page);
+  pageRef.current = page;
   const [allItems, setAllItems] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const onEndReachedDuringMomentum = useRef(false);
@@ -49,7 +51,6 @@ export default function AllStatus({
 
   useEffect(() => {
     setPage(1);
-    setAllItems([]);
   }, [currentTab]);
 
   const queryParams = useMemo(() => {
@@ -130,13 +131,46 @@ export default function AllStatus({
     });
   }, [data, page, statusValues, currentTab, user]);
 
-  const handleRefresh = useCallback(async () => {
+  const refreshFetchSeenRef = useRef(false);
+  const refreshTimerRef = useRef(null);
+
+  const handleRefresh = useCallback(() => {
     setRefreshing(true);
+    refreshFetchSeenRef.current = false;
+    if (pageRef.current === 1) {
+      refetch();
+    }
     setPage(1);
-    setAllItems([]);
-    await refetch();
-    setRefreshing(false);
+    // Safety: force spinner off after 8 seconds to prevent permanent loader
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = setTimeout(() => {
+      setRefreshing(false);
+      refreshFetchSeenRef.current = false;
+    }, 8000);
   }, [refetch]);
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    };
+  }, []);
+
+  // Track when a fetch actually starts after a refresh request
+  useEffect(() => {
+    if (refreshing && isFetching) {
+      refreshFetchSeenRef.current = true;
+    }
+  }, [refreshing, isFetching]);
+
+  // Stop refreshing only after a fetch started AND completed with data
+  useEffect(() => {
+    if (refreshing && refreshFetchSeenRef.current && !isFetching && Array.isArray(data?.data)) {
+      refreshFetchSeenRef.current = false;
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+      setRefreshing(false);
+    }
+  }, [refreshing, isFetching, data]);
 
   const handleLoadMore = useCallback(() => {
     if (
@@ -159,7 +193,8 @@ export default function AllStatus({
     return null;
   }, [isFetching, page]);
 
-  if (isLoading && page === 1) {
+  const showLoader = (isLoading && page === 1) || (refreshing && isFetching);
+  if (showLoader) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" color={colors.primary} />

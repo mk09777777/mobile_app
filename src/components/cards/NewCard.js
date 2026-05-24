@@ -113,6 +113,22 @@ export default function NewEnquiryCard({
   const isPlacementStage = status === 'order placement';
   const isProduction = status === 'production';
 
+  const createdDate = item?.CreatedDate || item?.createdAt;
+  const daysSinceCreation = createdDate
+    ? Math.floor((new Date() - new Date(createdDate)) / (1000 * 60 * 60 * 24))
+    : 0;
+  const isPendingStatus = isCoralPending || isCadPending;
+  const ageShadeIndex = Math.min(Math.max(daysSinceCreation, 0), 4);
+  const shadeColors = ['transparent', '#FFE4E2', '#FFB8B0', '#FF7A70', '#EF4444'];
+  const pendingShadeColor = isPendingStatus ? shadeColors[ageShadeIndex] : 'transparent';
+
+  // Check if item already has an assigned user
+  const raw = item._originalData || item;
+  const assignedVal = item.AssignedTo || item.assignedTo || raw.AssignedTo || raw.assignedTo;
+  const hasAssignedUser = assignedVal
+    ? (typeof assignedVal === 'object' ? !!(assignedVal.id || assignedVal._id || assignedVal.userId) : true)
+    : false;
+
   // Button visibility based on user role and status
   const shouldShowActionButtons = isAdmin && isJustCreated;
   const shouldShowAdminCoralUpload = isAdmin && isCoralPending;
@@ -312,7 +328,7 @@ export default function NewEnquiryCard({
 
  
   return (
-    <View style={styles.mainContainer}>
+    <View style={[styles.mainContainer, { borderLeftWidth: isPendingStatus ? 6 : 0, borderLeftColor: pendingShadeColor }]}>
       <TouchableOpacity onPress={onPress} activeOpacity={0.8}>
         <View style={styles.ImageContainer}>
           {imageLoading ? (
@@ -471,20 +487,22 @@ export default function NewEnquiryCard({
                 color={colors.primaryDark}
               />
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.ActionButton}
-              onPress={() => {
-                if (assignDropDownUsers.length > 0) {
-                  setShowAssignDropdown(true);
-                } else {
-                  console.log('Please select a status first');
-                }
-              }}
-            >
-              <Icon name="person-add" size={16} color={colors.textWhite} />
-              <Text style={styles.ActionButtonText}>Assign To</Text>
-              <Icon name="arrow-drop-down" size={16} color={colors.textWhite} />
-            </TouchableOpacity>
+            {!hasAssignedUser && (
+              <TouchableOpacity
+                style={styles.ActionButton}
+                onPress={() => {
+                  if (assignDropDownUsers.length > 0) {
+                    setShowAssignDropdown(true);
+                  } else {
+                    console.log('Please select a status first');
+                  }
+                }}
+              >
+                <Icon name="person-add" size={16} color={colors.textWhite} />
+                <Text style={styles.ActionButtonText}>Assign To</Text>
+                <Icon name="arrow-drop-down" size={16} color={colors.textWhite} />
+              </TouchableOpacity>
+            )}
           </View>
         ) : shouldShowAdminCoralUpload ? (
           <View style={styles.QuickButtonContainer}>

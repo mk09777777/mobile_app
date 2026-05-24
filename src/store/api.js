@@ -592,7 +592,7 @@ export const api = createApi({
           };
         }
       },
-      invalidatesTags: ['Enquiry', 'Dashboard'],
+      invalidatesTags: ['Enquiry', 'Dashboard', 'StatusStatistics'],
     }),
 
     // ==================== ENQUIRIES ====================
@@ -1383,6 +1383,7 @@ export const api = createApi({
         { type: 'Enquiry', id },
         'Enquiry',
         'Dashboard',
+        'StatusStatistics',
       ],
     }),
 
@@ -1441,9 +1442,9 @@ export const api = createApi({
       invalidatesTags: (result, error, id) => {
         // Only invalidate if mutation failed (optimistic update will handle success)
         if (error) {
-          return [{ type: 'Enquiry', id }, 'Enquiry', 'Dashboard'];
+          return [{ type: 'Enquiry', id }, 'Enquiry', 'Dashboard', 'StatusStatistics'];
         }
-        return ['Dashboard']; // Only refresh dashboard stats
+        return ['Dashboard', 'StatusStatistics']; // Only refresh dashboard stats
       },
     }),
 

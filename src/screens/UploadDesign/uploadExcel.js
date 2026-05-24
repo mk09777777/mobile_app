@@ -27,6 +27,7 @@ const requestStoragePermission = async () => {
 export default function UploadExcelScreen({ route, navigation }) {
   const { enquiryId, designType, version, designCode, images, validationResult } = route.params || {};
   const [selectedExcel, setSelectedExcel] = useState(null);
+  const [uploadType, setUploadType] = useState(null);
   const [uploadDesign, { isLoading: isUploading }] = useUploadDesignMutation();
   const handleSelectExcel = async () => {
     if (!DocumentPicker) {
@@ -168,6 +169,8 @@ export default function UploadExcelScreen({ route, navigation }) {
       return;
     }
 
+    setUploadType(skipExcel ? 'without' : 'excel');
+
     try {
       const result = await uploadDesign({
         enquiryId,
@@ -227,7 +230,7 @@ export default function UploadExcelScreen({ route, navigation }) {
           activeOpacity={0.85}
           disabled={!selectedExcel || isUploading}
         >
-          {isUploading ? (
+          {isUploading && uploadType === 'excel' ? (
             <>
               <Icon name="hourglass-empty" size={18} color={colors.textWhite} />
               <Text style={styles.uploadButtonText}>Uploading...</Text>
@@ -242,11 +245,21 @@ export default function UploadExcelScreen({ route, navigation }) {
 
         <TouchableOpacity
           onPress={handleContinueWithoutExcel}
-          style={styles.continueButton}
+          style={[
+            styles.continueButton,
+            isUploading && uploadType === 'without' && styles.continueButtonUploading
+          ]}
           activeOpacity={0.85}
           disabled={isUploading}
         >
-          <Text style={styles.continueButtonText}>Continue without Excel</Text>
+          {isUploading && uploadType === 'without' ? (
+            <>
+              <Icon name="hourglass-empty" size={18} color={colors.textWhite} />
+              <Text style={[styles.continueButtonText, { color: colors.textWhite, marginLeft: 8 }]}>Uploading...</Text>
+            </>
+          ) : (
+            <Text style={styles.continueButtonText}>Continue without Excel</Text>
+          )}
         </TouchableOpacity>
       </View>
     </View>
@@ -375,6 +388,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.primary,
     marginTop: 12,
+  },
+  continueButtonUploading: {
+    backgroundColor: colors.primary,
+    flexDirection: 'row',
   },
   continueButtonText: {
     color: colors.primary,
