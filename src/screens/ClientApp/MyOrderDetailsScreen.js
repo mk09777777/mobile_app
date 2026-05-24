@@ -357,10 +357,10 @@ const MyOrderDetailsScreen = ({ route, navigation }) => {
           <View style={styles.addressRow}>
             <View style={styles.flexOne}>
               <Text style={styles.shopName}>{order?.clientName || 'Client'}</Text>
-              <Text style={styles.shopAddress}>{order?.shippingAddress || 'Address not available'}</Text>
+              <Text style={styles.shopAddress}>{order?.clientUsername || 'Unknown'}</Text>
             </View>
             <View style={styles.pinChip}>
-              <MaterialIcons name="place" size={16} color="#C05252" />
+              <MaterialIcons name="person" size={16} color="#C05252" />
             </View>
           </View>
         </View>
