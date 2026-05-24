@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import CustomTabBar from '../components/common/CustomTabBar';
 import { CartProvider } from '../context/CartContext';
+import { useAuth } from '../context/AuthContext';
 import HomeScreen from '../screens/ClientApp/HomeScreen';
 import FeaturedCollectionScreen from '../screens/ClientApp/FeaturedCollectionScreen';
 import CategoryDetailsScreen from '../screens/ClientApp/CategoryDetailsScreen';
@@ -17,7 +18,19 @@ import OrderPlacedScreen from '../screens/ClientApp/OrderPlacedScreen';
 import MyOrdersScreen from '../screens/ClientApp/MyOrdersScreen';
 import MyOrderDetailsScreen from '../screens/ClientApp/MyOrderDetailsScreen';
 import MyShipmentTrackingScreen from '../screens/ClientApp/MyShipmentTrackingScreen';
+import OrderInvoicesScreen from '../screens/ClientApp/OrderInvoicesScreen';
+import AdminOrdersListScreen from '../screens/ClientApp/AdminOrdersListScreen';
+import AdminOrderDetailsScreen from '../screens/ClientApp/AdminOrderDetailsScreen';
 import SearchScreen from '../screens/ClientApp/SearchScreen';
+import ProductImageViewerScreen from '../screens/ClientApp/ProductImageViewerScreen';
+
+const isAdminUser = (user) => {
+  if (!user) return false;
+  const role = user.role;
+  if (typeof role === 'string' && role.toLowerCase() === 'admin') return true;
+  const roleNum = user.roleId ?? user.roleNumber;
+  return roleNum === 1 || roleNum === '1';
+};
 const Tab = createBottomTabNavigator();
 const DashboardStack = createStackNavigator();
 const CartStack = createStackNavigator();
@@ -36,6 +49,7 @@ const DashboardStackScreen = () => (
     <DashboardStack.Screen name="ProductMatrix" component={ProductMatrixScreen} />
     <DashboardStack.Screen name="RingMatrixPage" component={RingMatrixPage} />
     <DashboardStack.Screen name="JacketsScreen" component={JacketsScreen} />
+    <DashboardStack.Screen name="ProductImageViewer" component={ProductImageViewerScreen} />
     <DashboardStack.Screen name="BulkOrderParser" component={BulkOrderParserScreen} />
     <DashboardStack.Screen name="OrderReview" component={OrderReviewScreen} />
   </DashboardStack.Navigator>
@@ -51,16 +65,25 @@ const CartStackScreen = () => (
   </CartStack.Navigator>
 );
 
-const OrdersStackScreen = () => (
-  <OrdersStack.Navigator
-    screenOptions={{
-      headerShown: false,
-    }}>
-    <OrdersStack.Screen name="MyOrdersList" component={MyOrdersScreen} />
-    <OrdersStack.Screen name="MyOrderDetails" component={MyOrderDetailsScreen} />
-    <OrdersStack.Screen name="MyShipmentTracking" component={MyShipmentTrackingScreen} />
-  </OrdersStack.Navigator>
-);
+const OrdersStackScreen = () => {
+  const { user } = useAuth();
+  const isAdmin = useMemo(() => isAdminUser(user), [user]);
+
+  return (
+    <OrdersStack.Navigator
+      initialRouteName={isAdmin ? 'AdminOrdersList' : 'MyOrdersList'}
+      screenOptions={{ headerShown: false }}>
+      {/* Admin order screens */}
+      <OrdersStack.Screen name="AdminOrdersList" component={AdminOrdersListScreen} />
+      <OrdersStack.Screen name="AdminOrderDetails" component={AdminOrderDetailsScreen} />
+      {/* Client order screens */}
+      <OrdersStack.Screen name="MyOrdersList" component={MyOrdersScreen} />
+      <OrdersStack.Screen name="MyOrderDetails" component={MyOrderDetailsScreen} />
+      <OrdersStack.Screen name="MyShipmentTracking" component={MyShipmentTrackingScreen} />
+      <OrdersStack.Screen name="OrderInvoices" component={OrderInvoicesScreen} />
+    </OrdersStack.Navigator>
+  );
+};
 
 const CatalogBottomTabs = () => {
   return (

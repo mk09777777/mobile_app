@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Image, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 const colorBadges = {
   W: '#ECEDEF',
@@ -13,6 +13,7 @@ const RingProductMatrixCard = ({
   rows,
   quantitiesByProduct,
   onChangeQuantityValue,
+  onSeeDetails,
 }) => {
   const totalPcs = useMemo(
     () =>
@@ -34,7 +35,13 @@ const RingProductMatrixCard = ({
           )}
           <Text style={styles.shapeTitle}>{shapeName}</Text>
         </View>
-        <Text style={styles.detailsText}>See details</Text>
+        {onSeeDetails ? (
+          <TouchableOpacity activeOpacity={0.7} onPress={onSeeDetails} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={styles.detailsText}>See details</Text>
+          </TouchableOpacity>
+        ) : (
+          <Text style={styles.detailsText}>See details</Text>
+        )}
       </View>
 
       <View style={styles.columnsHead}>

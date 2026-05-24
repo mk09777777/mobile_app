@@ -122,7 +122,7 @@ const OrderCartScreen = ({ navigation }) => {
           productId: String(line?.productId || ''),
           cardHeading,
           description: String(line?.description || '').trim() || 'Description',
-          imageUrl: line?.imageUrl || entry.subcategoryThumbnailImage || '',
+          imageUrl: entry.subcategoryThumbnailImage || '',
           totalQty,
           totalAmount: totalQty > 0 && unitPrice > 0 ? totalQty * unitPrice : 0,
           metaText,
@@ -149,7 +149,7 @@ const OrderCartScreen = ({ navigation }) => {
           productId: line?.productId ? String(line.productId) : undefined,
           styleNo: line?.styleNo ? String(line.styleNo) : undefined,
           title: line?.title || line?.description || buildCardHeading(entry),
-          imageUrl: line?.imageUrl || entry?.subcategoryThumbnailImage || '',
+          imageUrl: entry?.subcategoryThumbnailImage || '',
           quantity: totalQty,
           unitPrice: Number.isFinite(unitPrice) && unitPrice > 0 ? unitPrice : undefined,
           lineTotal:
