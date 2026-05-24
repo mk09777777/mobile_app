@@ -24,6 +24,9 @@ import NotificationsScreen from '../screens/Notifications/NotificationsScreen';
 import DesignViewerScreen from '../screens/DesignViewer/DesignViewerScreen';
 import PricingScreen from '../screens/Pricing/PricingScreen';
 import UploadDesignScreen from '../screens/UploadDesign/UploadDesignScreen';
+import UploadExcelScreen from '../screens/UploadDesign/uploadExcel';
+import PdfViewerTestScreen from '../screens/Test/PdfViewerTestScreen';
+import PricingCalci from '../screens/Pricing/PricingCalci';
 // TEST SCREENS - Commented out for production
 // Uncomment these lines if you need to test notifications in the future
 // import FontTest from '../components/FontTest';
@@ -173,11 +176,27 @@ const StackNavigator = ({ isAuthenticated, showOnboarding, onOnboardingComplete 
             })}
           />
           <Stack.Screen
+          name="PricingCalci"
+          component={PricingCalci}/>
+
+          <Stack.Screen
             name="UploadDesign"
             component={UploadDesignScreen}
             options={({ route }) => ({
               title: `Add ${route.params?.designType === 'coral' ? 'Coral' : 'CAD'}`,
             })}
+          />
+      <Stack.Screen
+        name="PdfViewerTest"
+        component={PdfViewerTestScreen}
+        options={{
+          title: 'PDF Viewer Test',
+        }}
+      />
+          {/*New screen Upload excel*/}
+          <Stack.Screen
+            name="UploadExcel"
+            component={UploadExcelScreen}
           />
           <Stack.Screen
             name="Notifications"

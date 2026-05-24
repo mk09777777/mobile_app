@@ -25,88 +25,91 @@ import Icon from '../../components/common/Icon';
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
 import { CustomText } from '../../components/common/Text';
-import { useUploadDesignMutation } from '../../store/api';
+import { useValidateImageUploadMutation } from '../../store/api';
 import { useAuth } from '../../context/AuthContext';
 
 const UploadDesignScreen = ({ route, navigation }) => {
-  const { designType, enquiry } = route.params || {}; // designType: 'coral' or 'cad'
+  const { designType, enquiry,enquiryId } = route.params || {};  // designType: 'coral' or 'cad'
+    console.log("recived enquiry id is:",enquiryId)
+
   const { user } = useAuth();
-  
+
   const originalData = enquiry?._originalData || enquiry;
-  
+
   // Get the code for Coral or CAD (initial value)
-  const initialDesignCode = designType === 'coral'
-    ? (originalData?.CoralCode || enquiry?.CoralCode || enquiry?.coralCode || '')
-    : (originalData?.CadCode || enquiry?.CadCode || enquiry?.cadCode || '');
-  
+  const initialDesignCode =
+    designType === 'coral'
+      ? originalData?.CoralCode ||
+        enquiry?.CoralCode ||
+        enquiry?.coralCode ||
+        ''
+      : originalData?.CadCode || enquiry?.CadCode || enquiry?.cadCode || '';
+
   // Get existing versions to determine next version
-  const designData = designType === 'coral' 
-    ? (originalData?.Coral || enquiry?.Coral || [])
-    : (originalData?.Cad || enquiry?.Cad || []);
-  
+  const designData =
+    designType === 'coral'
+      ? originalData?.Coral || enquiry?.Coral || []
+      : originalData?.Cad || enquiry?.Cad || [];
+
   const nextVersion = designData.length + 1;
-  
+
   // Generate versions 1 to 50
   const allVersions = Array.from({ length: 50 }, (_, i) => ({
     label: `Version ${i + 1}`,
     value: i + 1,
   }));
-  
+
   const [designCode, setDesignCode] = useState(initialDesignCode);
   const [selectedVersion, setSelectedVersion] = useState(nextVersion);
   const [selectedImages, setSelectedImages] = useState([]);
   const [selectedExcel, setSelectedExcel] = useState(null);
   const [showVersionDropdown, setShowVersionDropdown] = useState(false);
-  
-  const [uploadDesign, { isLoading: isUploading }] = useUploadDesignMutation();
-  
+  const [imageValidated, setImageValidated] = useState(false);
+
+  const [validateImageUpload, { isLoading: isUploading }] =
+    useValidateImageUploadMutation();
+
   // Request storage permission for Android (supports both images and videos)
   const requestStoragePermission = async () => {
     if (Platform.OS === 'android') {
       try {
         const androidVersion = Platform.Version;
-        
+
         // For Android 13+ (API 33+), need both READ_MEDIA_IMAGES and READ_MEDIA_VIDEO for mixed media
         if (androidVersion >= 33) {
           const imagePermission = 'android.permission.READ_MEDIA_IMAGES';
           const videoPermission = 'android.permission.READ_MEDIA_VIDEO';
-          
+
           // Check current permission status first
           const imageStatus = await PermissionsAndroid.check(imagePermission);
           const videoStatus = await PermissionsAndroid.check(videoPermission);
-          
+
           // Request image permission if not granted
           let imageGranted = imageStatus;
           if (!imageStatus) {
-            imageGranted = await PermissionsAndroid.request(
-              imagePermission,
-              {
-                title: 'Media Permission',
-                message: 'App needs access to your photos and videos',
-                buttonNeutral: 'Ask Me Later',
-                buttonNegative: 'Cancel',
-                buttonPositive: 'OK',
-              }
-            );
+            imageGranted = await PermissionsAndroid.request(imagePermission, {
+              title: 'Media Permission',
+              message: 'App needs access to your photos and videos',
+              buttonNeutral: 'Ask Me Later',
+              buttonNegative: 'Cancel',
+              buttonPositive: 'OK',
+            });
             imageGranted = imageGranted === PermissionsAndroid.RESULTS.GRANTED;
           }
-          
+
           // Request video permission if not granted
           let videoGranted = videoStatus;
           if (!videoStatus) {
-            videoGranted = await PermissionsAndroid.request(
-              videoPermission,
-              {
-                title: 'Media Permission',
-                message: 'App needs access to your videos',
-                buttonNeutral: 'Ask Me Later',
-                buttonNegative: 'Cancel',
-                buttonPositive: 'OK',
-              }
-            );
+            videoGranted = await PermissionsAndroid.request(videoPermission, {
+              title: 'Media Permission',
+              message: 'App needs access to your videos',
+              buttonNeutral: 'Ask Me Later',
+              buttonNegative: 'Cancel',
+              buttonPositive: 'OK',
+            });
             videoGranted = videoGranted === PermissionsAndroid.RESULTS.GRANTED;
           }
-          
+
           // For mixed media, we need both permissions
           // Return true only if both are granted
           return imageGranted && videoGranted;
@@ -115,14 +118,15 @@ const UploadDesignScreen = ({ route, navigation }) => {
           const granted = await PermissionsAndroid.request(
             PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
             {
-          title: 'Storage Permission',
-              message: 'App needs access to your storage to select images and videos',
-          buttonNeutral: 'Ask Me Later',
-          buttonNegative: 'Cancel',
-          buttonPositive: 'OK',
-            }
+              title: 'Storage Permission',
+              message:
+                'App needs access to your storage to select images and videos',
+              buttonNeutral: 'Ask Me Later',
+              buttonNegative: 'Cancel',
+              buttonPositive: 'OK',
+            },
           );
-        return granted === PermissionsAndroid.RESULTS.GRANTED;
+          return granted === PermissionsAndroid.RESULTS.GRANTED;
         }
       } catch (err) {
         console.error('Permission error:', err);
@@ -137,11 +141,9 @@ const UploadDesignScreen = ({ route, navigation }) => {
     const hasPermission = await requestStoragePermission();
     if (!hasPermission) {
       Alert.alert(
-        'Permission Denied', 
+        'Permission Denied',
         'Storage permission is required to select images and videos. Please grant both photo and video permissions in app settings.',
-        [
-          { text: 'OK' }
-        ]
+        [{ text: 'OK' }],
       );
       return;
     }
@@ -160,14 +162,19 @@ const UploadDesignScreen = ({ route, navigation }) => {
       }
 
       if (result.errorCode) {
-        const errorMsg = result.errorMessage || `Failed to select media: ${result.errorCode}`;
-        
+        const errorMsg =
+          result.errorMessage || `Failed to select media: ${result.errorCode}`;
+
         // Handle specific error: "For input string" - usually means file metadata issue
         let userMessage = errorMsg;
-        if (errorMsg.includes('For input string') || errorMsg.includes('9223372036854775807')) {
-          userMessage = 'Unable to read file metadata. This may happen with certain video files. Please try:\n\n1. Selecting a different file\n2. Converting the video to a different format\n3. Using a smaller video file';
+        if (
+          errorMsg.includes('For input string') ||
+          errorMsg.includes('9223372036854775807')
+        ) {
+          userMessage =
+            'Unable to read file metadata. This may happen with certain video files. Please try:\n\n1. Selecting a different file\n2. Converting the video to a different format\n3. Using a smaller video file';
         }
-        
+
         if (__DEV__) {
           console.error('❌ [UploadDesign] Image Picker Error:', {
             errorCode: result.errorCode,
@@ -175,7 +182,7 @@ const UploadDesignScreen = ({ route, navigation }) => {
             fullResponse: result,
           });
         }
-        
+
         Alert.alert('Error', userMessage, [{ text: 'OK' }]);
         return;
       }
@@ -185,63 +192,83 @@ const UploadDesignScreen = ({ route, navigation }) => {
         const maxVideoCount = 5; // Max 5 videos per CAD/Coral version per backend spec
         const errors = [];
         const validAssets = [];
-        
+
         // Validate each asset
         result.assets.forEach((asset, index) => {
-          const isVideo = asset.type?.startsWith('video/') || /\.(mp4|mov|avi|mkv|webm|wmv|flv|3gp|m4v)$/i.test(asset.fileName || '');
-          
+          const isVideo =
+            asset.type?.startsWith('video/') ||
+            /\.(mp4|mov|avi|mkv|webm|wmv|flv|3gp|m4v)$/i.test(
+              asset.fileName || '',
+            );
+
           // Validate video file size
           if (isVideo && asset.fileSize) {
             if (asset.fileSize > maxVideoSize) {
               const sizeMB = (asset.fileSize / (1024 * 1024)).toFixed(2);
-              errors.push(`${asset.fileName || `Video ${index + 1}`}: ${sizeMB}MB exceeds 100MB limit`);
+              errors.push(
+                `${
+                  asset.fileName || `Video ${index + 1}`
+                }: ${sizeMB}MB exceeds 100MB limit`,
+              );
               return;
             }
           }
-          
+
           validAssets.push(asset);
         });
-        
+
         // Check video count limit
         const videoCount = validAssets.filter(asset => {
-          const isVideo = asset.type?.startsWith('video/') || /\.(mp4|mov|avi|mkv|webm|wmv|flv|3gp|m4v)$/i.test(asset.fileName || '');
+          const isVideo =
+            asset.type?.startsWith('video/') ||
+            /\.(mp4|mov|avi|mkv|webm|wmv|flv|3gp|m4v)$/i.test(
+              asset.fileName || '',
+            );
           return isVideo;
         }).length;
-        
-        const existingVideoCount = selectedImages.filter(img => img.isVideo).length;
-        
+
+        const existingVideoCount = selectedImages.filter(
+          img => img.isVideo,
+        ).length;
+
         if (videoCount + existingVideoCount > maxVideoCount) {
           Alert.alert(
             'Video Limit Exceeded',
-            `Maximum ${maxVideoCount} videos allowed per ${designType === 'coral' ? 'Coral' : 'CAD'} version. You already have ${existingVideoCount} video(s) selected.`,
-            [{ text: 'OK' }]
+            `Maximum ${maxVideoCount} videos allowed per ${
+              designType === 'coral' ? 'Coral' : 'CAD'
+            } version. You already have ${existingVideoCount} video(s) selected.`,
+            [{ text: 'OK' }],
           );
           return;
         }
-        
+
         // Show errors if any
         if (errors.length > 0) {
-          Alert.alert(
-            'File Validation Error',
-            errors.join('\n'),
-            [{ text: 'OK' }]
-          );
+          Alert.alert('File Validation Error', errors.join('\n'), [
+            { text: 'OK' },
+          ]);
           // Still add valid files if any
           if (validAssets.length === 0) {
             return;
           }
         }
-        
+
         const newImages = validAssets.map((asset, index) => {
           // Determine file extension based on type or file name
-          const isVideo = asset.type?.startsWith('video/') || /\.(mp4|mov|avi|mkv|webm|wmv|flv|3gp|m4v)$/i.test(asset.fileName || '');
+          const isVideo =
+            asset.type?.startsWith('video/') ||
+            /\.(mp4|mov|avi|mkv|webm|wmv|flv|3gp|m4v)$/i.test(
+              asset.fileName || '',
+            );
           const defaultExtension = isVideo ? 'mp4' : 'jpg';
-          const defaultName = asset.fileName || `design_${Date.now()}_${index}.${defaultExtension}`;
-          
+          const defaultName =
+            asset.fileName ||
+            `design_${Date.now()}_${index}.${defaultExtension}`;
+
           // Only include required fields - exclude width, height, fileSize, etc.
           // to prevent backend parsing errors
           return {
-          uri: asset.uri,
+            uri: asset.uri,
             type: asset.type || (isVideo ? 'video/mp4' : 'image/jpeg'),
             name: defaultName,
             isVideo: isVideo, // Add flag for UI display only
@@ -254,9 +281,9 @@ const UploadDesignScreen = ({ route, navigation }) => {
     } catch (error) {
       console.error('Error selecting media:', error);
       Alert.alert(
-        'Error', 
+        'Error',
         error.message || 'Failed to select media files. Please try again.',
-        [{ text: 'OK' }]
+        [{ text: 'OK' }],
       );
     }
   };
@@ -266,20 +293,27 @@ const UploadDesignScreen = ({ route, navigation }) => {
       Alert.alert(
         'Feature Not Available',
         'Document picker is not installed. Please install react-native-document-picker to use this feature.',
-        [{ text: 'OK' }]
+        [{ text: 'OK' }],
       );
       return;
     }
 
     const hasPermission = await requestStoragePermission();
     if (!hasPermission) {
-      Alert.alert('Permission Denied', 'Storage permission is required to select files');
+      Alert.alert(
+        'Permission Denied',
+        'Storage permission is required to select files',
+      );
       return;
     }
 
     try {
       const result = await DocumentPicker.pick({
-        type: [DocumentPicker.types.xls, DocumentPicker.types.xlsx, DocumentPicker.types.csv],
+        type: [
+          DocumentPicker.types.xls,
+          DocumentPicker.types.xlsx,
+          DocumentPicker.types.csv,
+        ],
         allowMultiSelection: false,
       });
 
@@ -293,14 +327,18 @@ const UploadDesignScreen = ({ route, navigation }) => {
         });
       }
     } catch (error) {
-      if (DocumentPicker && DocumentPicker.isCancel && DocumentPicker.isCancel(error)) {
+      if (
+        DocumentPicker &&
+        DocumentPicker.isCancel &&
+        DocumentPicker.isCancel(error)
+      ) {
         return;
       }
       Alert.alert('Error', 'Failed to select Excel file');
     }
   };
 
-  const handleRemoveImage = (index) => {
+  const handleRemoveImage = index => {
     setSelectedImages(prev => prev.filter((_, i) => i !== index));
   };
 
@@ -308,53 +346,101 @@ const UploadDesignScreen = ({ route, navigation }) => {
     setSelectedExcel(null);
   };
 
-  const handleUploadAll = async () => {
+  const handleValidateImages = async () => {
     if (!designCode || designCode.trim() === '') {
-      Alert.alert('Validation Error', `Please enter ${designType === 'coral' ? 'Coral' : 'CAD'} Code`);
+      Alert.alert(
+        'Validation Error',
+        `Please enter ${designType === 'coral' ? 'Coral' : 'CAD'} Code`,
+      );
       return;
     }
 
-    if (selectedImages.length === 0 && !selectedExcel) {
-      Alert.alert('Warning', 'Please select at least one image/video or Excel file to upload');
+    if (selectedImages.length === 0) {
+      Alert.alert(
+        'Warning',
+        'Please select at least one image to validate',
+      );
       return;
     }
 
-    if (!enquiry?.id && !enquiry?._id) {
+    if (!enquiry?.id && !enquiry?._id && !enquiryId) {
       Alert.alert('Error', 'Enquiry ID is missing');
       return;
     }
 
     try {
-      const enquiryId = enquiry.id || enquiry._id;
+      const enquiryId2 = enquiry?.id || enquiry?._id || enquiryId;
+    
+
+      // Validate only the first image (API accepts single image)
+      const firstImage = selectedImages[0];
       
-      const result = await uploadDesign({
-        enquiryId,
-        designType: designType, // 'coral' or 'cad'
-        version: selectedVersion.toString(),
-        images: selectedImages,
-        excel: selectedExcel || null,
-        designCode: designCode.trim(), // Pass the Coral/CAD code to save it
+      if (__DEV__) {
+        console.log('🔍 [UploadDesign] Validating image:', {
+          enquiryId2,
+          imageUri: firstImage.uri?.substring(0, 50) + '...',
+          imageType: firstImage.type,
+          imageName: firstImage.name,
+        });
+      }
+
+      const result = await validateImageUpload({
+        image: firstImage,
+        enquiryId: enquiryId2,
       }).unwrap();
 
+      if (__DEV__) {
+        console.log('✅ [UploadDesign] Image validation successful:', result);
+      }
+
+      // Display validation results
+      const summary = result?.summary || 'Validation completed';
+      const issues = result?.issues;
+      
+      let message = `${summary}`;
+      if (issues && Array.isArray(issues) && issues.length > 0) {
+        message += `\n\nIssues found:\n${issues.map((issue, i) => `${i + 1}. ${issue}`).join('\n')}`;
+      }
+
       Alert.alert(
-        'Success',
-        `Successfully uploaded ${designType === 'coral' ? 'Coral' : 'CAD'} design${selectedImages.length > 0 ? ` with ${selectedImages.length} file(s)` : ''}${selectedExcel ? ' and Excel file' : ''}`,
+        'Validation Result',
+        message,
         [
           {
-            text: 'OK',
+            text: 'Continue',
             onPress: () => {
-              // Clear selections
-              setSelectedImages([]);
-              setSelectedExcel(null);
-              // Navigate back
-              navigation.goBack();
+              // Navigate to upload excel screen
+              navigation.navigate('UploadExcel', {
+                enquiryId: enquiryId2,
+                designType,
+                version: selectedVersion.toString(),
+                designCode: designCode.trim(),
+                images: selectedImages,
+                validationResult: result,
+              });
             },
           },
-        ]
+          {
+            text: 'Re-Upload',
+            onPress: () => {
+              // Clear selected images to allow re-upload
+              setSelectedImages([]);
+            },
+            style: 'cancel',
+          },
+        ],
       );
     } catch (error) {
-      const errorMessage = error?.data?.message || error?.data || error?.message || 'Failed to upload design. Please try again.';
-      Alert.alert('Upload Failed', errorMessage);
+      if (__DEV__) {
+        console.error('❌ [UploadDesign] Validation error:', error);
+      }
+      
+      const errorMessage =
+        error?.data?.message ||
+        error?.data ||
+        error?.message ||
+        'Failed to validate image. Please try again.';
+      Alert.alert('Validation Failed', errorMessage);
     }
   };
 
@@ -366,16 +452,10 @@ const UploadDesignScreen = ({ route, navigation }) => {
           onPress={() => setShowVersionDropdown(!showVersionDropdown)}
           activeOpacity={0.7}
         >
-          <Text style={styles.dropdownText}>
-            Version {selectedVersion}
-          </Text>
-          <Icon
-            name="arrow-drop-down"
-            size={24}
-            color={colors.textSecondary}
-          />
+          <Text style={styles.dropdownText}>Version {selectedVersion}</Text>
+          <Icon name="arrow-drop-down" size={24} color={colors.textSecondary} />
         </TouchableOpacity>
-        
+
         <Modal
           visible={showVersionDropdown}
           transparent={true}
@@ -388,27 +468,31 @@ const UploadDesignScreen = ({ route, navigation }) => {
             onPress={() => setShowVersionDropdown(false)}
           >
             <View style={styles.dropdownModal}>
-              <ScrollView 
+              <ScrollView
                 style={styles.dropdownScrollView}
                 nestedScrollEnabled={true}
                 showsVerticalScrollIndicator={true}
               >
-                {allVersions.map((version) => (
+                {allVersions.map(version => (
                   <TouchableOpacity
                     key={version.value}
                     style={[
                       styles.dropdownOption,
-                      selectedVersion === version.value && styles.dropdownOptionSelected
+                      selectedVersion === version.value &&
+                        styles.dropdownOptionSelected,
                     ]}
                     onPress={() => {
                       setSelectedVersion(version.value);
                       setShowVersionDropdown(false);
                     }}
                   >
-                    <Text style={[
-                      styles.dropdownOptionText,
-                      selectedVersion === version.value && styles.dropdownOptionTextSelected
-                    ]}>
+                    <Text
+                      style={[
+                        styles.dropdownOptionText,
+                        selectedVersion === version.value &&
+                          styles.dropdownOptionTextSelected,
+                      ]}
+                    >
                       {version.label}
                     </Text>
                     {selectedVersion === version.value && (
@@ -424,7 +508,13 @@ const UploadDesignScreen = ({ route, navigation }) => {
     );
   };
 
-  const renderUploadArea = (title, onPress, files, onRemove, isMultiple = false) => (
+  const renderUploadArea = (
+    title,
+    onPress,
+    files,
+    onRemove,
+    isMultiple = false,
+  ) => (
     <View style={styles.uploadSection}>
       <Text style={styles.uploadLabel}>{title}</Text>
       <TouchableOpacity
@@ -434,38 +524,46 @@ const UploadDesignScreen = ({ route, navigation }) => {
       >
         <Icon name="cloud-upload" size={40} color={colors.primary} />
         <Text style={styles.uploadText}>Drag and Drop Here or</Text>
-        <Text style={styles.uploadLink}>Upload {isMultiple ? 'Files' : 'File'}</Text>
+        <Text style={styles.uploadLink}>
+          Upload {isMultiple ? 'Files' : 'File'}
+        </Text>
       </TouchableOpacity>
-      
+
       {/* Show selected files */}
       {isMultiple && files.length > 0 && (
         <View style={styles.selectedFilesContainer}>
           {files.map((file, index) => {
-            const isVideo = file.isVideo || file.type?.startsWith('video/') || /\.(mp4|mov|avi|mkv|webm|wmv|flv|3gp)$/i.test(file.name || '');
+            const isVideo =
+              file.isVideo ||
+              file.type?.startsWith('video/') ||
+              /\.(mp4|mov|avi|mkv|webm|wmv|flv|3gp)$/i.test(file.name || '');
             return (
-            <View key={index} style={styles.selectedFileItem}>
+              <View key={index} style={styles.selectedFileItem}>
                 {isVideo ? (
                   <View style={styles.videoPreviewContainer}>
                     <Icon name="videocam" size={24} color={colors.primary} />
                   </View>
                 ) : (
-              <Image source={{ uri: file.uri }} style={styles.previewImage} />
+                  <Image
+                    source={{ uri: file.uri }}
+                    style={styles.previewImage}
+                  />
                 )}
-              <Text style={styles.fileName} numberOfLines={1}>
-                {file.name}
-              </Text>
-              <TouchableOpacity
-                onPress={() => onRemove(index)}
-                style={styles.removeButton}
-              >
-                <Icon name="close" size={20} color={colors.error} />
-              </TouchableOpacity>
-            </View>
+                <Text style={styles.fileName} numberOfLines={1}>
+                  {file.name}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => onRemove(index)}
+                  style={styles.removeButton}
+                >
+                  <Icon name="close" size={20} color={colors.error} />
+                </TouchableOpacity>
+              </View>
             );
           })}
         </View>
       )}
-      
+
       {!isMultiple && files && (
         <View style={styles.selectedFilesContainer}>
           <View style={styles.selectedFileItem}>
@@ -473,10 +571,7 @@ const UploadDesignScreen = ({ route, navigation }) => {
             <Text style={styles.fileName} numberOfLines={1}>
               {files.name}
             </Text>
-            <TouchableOpacity
-              onPress={onRemove}
-              style={styles.removeButton}
-            >
+            <TouchableOpacity onPress={onRemove} style={styles.removeButton}>
               <Icon name="close" size={20} color={colors.error} />
             </TouchableOpacity>
           </View>
@@ -487,12 +582,15 @@ const UploadDesignScreen = ({ route, navigation }) => {
 
   return (
     <View style={styles.container}>
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+      >
         <Card style={styles.card}>
           <Text style={styles.title}>
             Add {designType === 'coral' ? 'Coral' : 'CAD'}
           </Text>
-          
+
           {/* Code Field */}
           <View style={styles.codeContainer}>
             <Text style={styles.label}>
@@ -503,7 +601,9 @@ const UploadDesignScreen = ({ route, navigation }) => {
                 value={designCode}
                 onChangeText={setDesignCode}
                 editable={true}
-                placeholder={`Enter ${designType === 'coral' ? 'Coral' : 'CAD'} Code`}
+                placeholder={`Enter ${
+                  designType === 'coral' ? 'Coral' : 'CAD'
+                } Code`}
                 style={styles.codeInput}
               />
               <TouchableOpacity
@@ -530,26 +630,30 @@ const UploadDesignScreen = ({ route, navigation }) => {
             handleSelectImages,
             selectedImages,
             handleRemoveImage,
-            true
+            true,
           )}
 
           {/* Upload Excel */}
-          {renderUploadArea(
+          {/* {renderUploadArea(
             'Upload Excel:',
             handleSelectExcel,
             selectedExcel,
             handleRemoveExcel,
             false
-          )}
+          )} */}
         </Card>
       </ScrollView>
 
       {/* Upload All Button */}
       <View style={styles.buttonContainer}>
         <TouchableOpacity
-          onPress={handleUploadAll}
+          onPress={handleValidateImages}
           disabled={isUploading}
-          style={[styles.adminActionButton, styles.adminActionButtonPrimary, isUploading && styles.btnDisabled]}
+          style={[
+            styles.adminActionButton,
+            styles.adminActionButtonPrimary,
+            isUploading && styles.btnDisabled,
+          ]}
           activeOpacity={0.85}
         >
           {isUploading ? (
@@ -560,7 +664,7 @@ const UploadDesignScreen = ({ route, navigation }) => {
           ) : (
             <>
               <Icon name="cloud-upload" size={18} color={colors.textWhite} />
-              <Text style={styles.adminActionText}>Upload All</Text>
+              <Text style={styles.adminActionText}>Validate Image</Text>
             </>
           )}
         </TouchableOpacity>
@@ -780,4 +884,3 @@ const styles = StyleSheet.create({
 });
 
 export default UploadDesignScreen;
-

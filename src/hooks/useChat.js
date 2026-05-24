@@ -1702,9 +1702,10 @@ export const useChat = (enquiryId, chatType, chatId = null, initialChat = null) 
       return false;
     }
     
-    if (!chat) {
+    // Allow sending if we have either chat OR enquiryId (will create chat if needed)
+    if (!chat && !enquiryId) {
       if (__DEV__) {
-        console.error('❌ [useChat] Cannot send message: Chat is null/undefined', {
+        console.error('❌ [useChat] Cannot send message: Chat and EnquiryId are both null/undefined', {
           chat,
           chatIdForQuery,
           enquiryId,

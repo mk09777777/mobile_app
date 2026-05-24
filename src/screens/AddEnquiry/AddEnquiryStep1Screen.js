@@ -734,16 +734,87 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
           referenceImages: referenceImages,
         }).unwrap();
 
-        if (__DEV__) {
-          console.log('✅ AI PARSING FLOW - Enquiry submitted successfully!');
-          console.log('✅ Response:', JSON.stringify(result, null, 2));
+        console.log('✅ [AI PARSING FLOW] Enquiry submitted successfully!');
+        console.log('✅ Full Response Structure:', JSON.stringify(result, null, 2));
+        console.log('✅ Response Type:', typeof result);
+        
+        // Try multiple ways to extract enquiry ID
+        let enquiryId = null;
+        let enquiryPayload = null;
+        
+        // Method 0: Check if result is directly a string (the ID itself)
+        if (typeof result === 'string' && result.length === 24) {
+          // MongoDB ObjectId is 24 characters
+          enquiryId = result;
+          console.log('🔍 Method 0 (Direct String ID): result =', result);
         }
-
-        // Get enquiry ID from response
-        const enquiryId = result?.id || result?._id || result?.data?.id || result?.data?._id;
-        const enquiryPayload = result?.data || result || { id: enquiryId, _id: enquiryId };
+        
+        // Method 1: Direct ID fields
+        if (!enquiryId) {
+          enquiryId = result?.id || result?._id;
+          console.log('🔍 Method 1 (Direct): result.id =', result?.id, ', result._id =', result?._id);
+        }
+        
+        // Method 2: Nested in data
+        if (!enquiryId) {
+          enquiryId = result?.data?.id || result?.data?._id;
+          console.log('🔍 Method 2 (Nested data): result.data.id =', result?.data?.id, ', result.data._id =', result?.data?._id);
+        }
+        
+        // Method 3: Nested in enquiry field
+        if (!enquiryId) {
+          enquiryId = result?.enquiry?.id || result?.enquiry?._id;
+          console.log('🔍 Method 3 (Nested enquiry): result.enquiry.id =', result?.enquiry?.id, ', result.enquiry._id =', result?.enquiry?._id);
+        }
+        
+        // Method 4: Check if result itself is the enquiry object with nested _id
+        if (!enquiryId && result?.insertedId) {
+          enquiryId = result.insertedId;
+          console.log('🔍 Method 4 (insertedId): result.insertedId =', result.insertedId);
+        }
+        
+        // Method 5: Check for MongoDB insertedId in nested objects
+        if (!enquiryId && result?.data?.insertedId) {
+          enquiryId = result.data.insertedId;
+          console.log('🔍 Method 5 (data.insertedId): result.data.insertedId =', result.data.insertedId);
+        }
+        
+        console.log('🔍 [ENQUIRY ID EXTRACTION] Final enquiryId:', enquiryId);
+        
+        // Build enquiry payload - if result is just a string ID, create a minimal object
+        if (typeof result === 'string') {
+          enquiryPayload = { 
+            id: enquiryId, 
+            _id: enquiryId,
+            ...finalData // Include the data we sent
+          };
+        } else {
+          enquiryPayload = result?.data || result?.enquiry || result || { id: enquiryId, _id: enquiryId };
+        }
+        console.log('🔍 Final enquiryPayload keys:', Object.keys(enquiryPayload || {}));
+        
+        if (!enquiryId) {
+          console.error('❌ Failed to extract enquiry ID from response!');
+          console.error('❌ Full response:', JSON.stringify(result, null, 2));
+          console.error('❌ Please check API response structure');
+          Alert.alert(
+            'Warning', 
+            'Enquiry created but ID not found. Redirecting to enquiries list.',
+            [
+              {
+                text: 'OK',
+                onPress: () => navigation.navigate('MainTabs', { screen: 'Enquiries' })
+              }
+            ]
+          );
+          return;
+        }
         
         // Navigate to chat prompt screen
+        console.log('🎉 [AI PARSING FLOW] Enquiry created successfully!');
+        console.log('🎉 Enquiry ID:', enquiryId);
+        console.log('🎉 Enquiry Payload:', JSON.stringify(enquiryPayload, null, 2));
+        
         Alert.alert(
           'Enquiry Created!',
           'Have more instructions or forgot to mention something?',
@@ -751,17 +822,34 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
             {
               text: 'Done',
               style: 'cancel',
-              onPress: () => navigation.navigate('MainTabs', { screen: 'Enquiries' }),
+              onPress: () => {
+                console.log('✅ User clicked "Done" - navigating to Enquiries tab');
+                navigation.navigate('MainTabs', { screen: 'Enquiries' });
+              },
             },
             {
               text: 'Chat with us',
               onPress: () => {
+                console.log('💬 User clicked "Chat with us"');
+                console.log('💬 Enquiry ID:', enquiryId);
+                console.log('💬 Enquiry Payload:', enquiryPayload);
+                
                 if (enquiryId) {
-                  navigation.navigate('ChatGroups', {
+                  console.log('✅ Enquiry ID exists - navigating to ChatDetail');
+                  console.log('✅ Navigation params:', {
+                    screen: 'ChatDetail',
                     enquiryId,
                     enquiry: enquiryPayload,
                   });
+                  
+                  navigation.navigate('ChatDetail', {
+                    enquiryId,
+                    enquiry: enquiryPayload,
+                  });
+                  
+                  console.log('✅ Navigation.navigate() called successfully');
                 } else {
+                  console.log('❌ No enquiry ID - navigating to Enquiries tab instead');
                   navigation.navigate('MainTabs', { screen: 'Enquiries' });
                 }
               },
@@ -845,18 +933,62 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
           referenceImages: [], // No images in manual flow
         }).unwrap();
         
-        // Get enquiry ID from response (OLD CODE)
-        const enquiryId = result?.id || result?._id || result?.data?.id || result?.data?._id;
+        console.log('✅ [MANUAL FLOW] Enquiry submitted successfully!');
+        console.log('✅ Full Response Structure:', JSON.stringify(result, null, 2));
+        console.log('✅ Response Type:', typeof result);
+        
+        // Try multiple ways to extract enquiry ID (same as AI flow)
+        let enquiryId = null;
+        
+        // Method 0: Check if result is directly a string (the ID itself)
+        if (typeof result === 'string' && result.length === 24) {
+          // MongoDB ObjectId is 24 characters
+          enquiryId = result;
+          console.log('🔍 Method 0 (Direct String ID): result =', result);
+        }
+        
+        // Method 1: Direct ID fields
+        if (!enquiryId) {
+          enquiryId = result?.id || result?._id;
+          console.log('🔍 Method 1 (Direct): result.id =', result?.id, ', result._id =', result?._id);
+        }
+        
+        // Method 2: Nested in data
+        if (!enquiryId) {
+          enquiryId = result?.data?.id || result?.data?._id;
+          console.log('🔍 Method 2 (Nested data): result.data.id =', result?.data?.id, ', result.data._id =', result?.data?._id);
+        }
+        
+        // Method 3: Nested in enquiry field
+        if (!enquiryId) {
+          enquiryId = result?.enquiry?.id || result?.enquiry?._id;
+          console.log('🔍 Method 3 (Nested enquiry): result.enquiry.id =', result?.enquiry?.id, ', result.enquiry._id =', result?.enquiry?._id);
+        }
+        
+        // Method 4: Check if result itself is the enquiry object with nested _id
+        if (!enquiryId && result?.insertedId) {
+          enquiryId = result.insertedId;
+          console.log('🔍 Method 4 (insertedId): result.insertedId =', result.insertedId);
+        }
+        
+        // Method 5: Check for MongoDB insertedId in nested objects
+        if (!enquiryId && result?.data?.insertedId) {
+          enquiryId = result.data.insertedId;
+          console.log('🔍 Method 5 (data.insertedId): result.data.insertedId =', result.data.insertedId);
+        }
+        
+        console.log('🔍 [MANUAL FLOW] Final enquiryId:', enquiryId);
         
         if (!enquiryId) {
-          console.error('❌ Failed to extract enquiry ID from response:', result);
+          console.error('❌ Failed to extract enquiry ID from response!');
+          console.error('❌ Full response:', JSON.stringify(result, null, 2));
           Alert.alert('Error', 'Failed to create enquiry. Enquiry ID not returned.');
           return;
         }
 
         console.log('✅ Enquiry created successfully (OLD CODE):', {
           'Enquiry ID': enquiryId,
-          'Name': result?.Name || result?.name || enquiryData.Name,
+          'Name': enquiryData.Name,
         });
 
         const formDataForUpload = {

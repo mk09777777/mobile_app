@@ -432,8 +432,8 @@ const ChatsScreen = ({ navigation }) => {
       lastMessageSenderId: lastMessageSenderId,
       status: chat.Status || chat.status || 'active',
       isClient: chat.IsClient || chat.isClient || false,
-      type: chat.Type || chat.type || null,
-      Type: chat.Type || chat.type || null,
+      type: chat.Type || chat.type || chat.chatType || chat.ChatType || null,
+      Type: chat.Type || chat.type || chat.chatType || chat.ChatType || null,
     };
   }, []);
 
@@ -769,7 +769,8 @@ const ChatsScreen = ({ navigation }) => {
     // Role ID 4 (Client) → filter to only admin-client
     if (userRoleId === 4) {
       return chats.filter(chat => {
-        const chatType = (chat.type || chat.Type || '').toLowerCase();
+        const chatType = (chat.type || chat.Type || chat.chatType || chat.ChatType || chat._originalData?.Type || chat._originalData?.type || '').toLowerCase();
+        if (!chatType) return true; // Accept if backend omitted type
         return chatType === 'admin-client';
       });
     }
@@ -777,7 +778,8 @@ const ChatsScreen = ({ navigation }) => {
     // Role ID 2 or 3 (Worker/Designer) → filter to only admin-designer
     if (userRoleId === 2 || userRoleId === 3) {
       return chats.filter(chat => {
-        const chatType = (chat.type || chat.Type || '').toLowerCase();
+        const chatType = (chat.type || chat.Type || chat.chatType || chat.ChatType || chat._originalData?.Type || chat._originalData?.type || '').toLowerCase();
+        if (!chatType) return true; // Accept if backend omitted type
         return chatType === 'admin-designer';
       });
     }
@@ -841,8 +843,9 @@ const ChatsScreen = ({ navigation }) => {
 
     if (!isAdmin && chats.length > 0) {
       const filteredChats = chats.filter(chat => {
-        if (chat.type || chat.Type) {
-          const chatType = (chat.type || chat.Type).toLowerCase();
+        const cType = chat.type || chat.Type || chat.chatType || chat.ChatType || chat._originalData?.Type || chat._originalData?.type;
+        if (cType) {
+          const chatType = cType.toLowerCase();
           return chatType === chatType1.toLowerCase();
         }
         return true;
@@ -1050,6 +1053,7 @@ const ChatsScreen = ({ navigation }) => {
               isClient: false,
               // Add chat type to help with filtering
               chatType: chatType1, // Mark which type this chat belongs to
+              isFallback: true, // Identify this as a fallback chat summary
             }))
             .sort((a, b) => {
               // Sort by last message time (newest first)
@@ -1471,14 +1475,26 @@ const ChatsScreen = ({ navigation }) => {
           key={chat.id}
           style={styles.chatItem}
           onPress={() => {
-            
-            if (navigation && navigation.navigate) {
-              navigation.navigate('ChatDetail', {
-                chatId: chat._id || chat.id, // Pass the specific chat ID
-                chat: chat, // Pass the full chat object
-                enquiryId: chat.enquiryId || chat.EnquiryId,
-                chatType: chat.type || chat.Type
-              });
+            console.log('👆 [ChatsScreen] Chat item pressed:', {
+              chatId: chat.isFallback ? null : (chat._id || chat.id),
+              enquiryId: chat.enquiryId || chat.EnquiryId,
+              chatType: chat.type || chat.Type || chat.chatType || chatType1,
+              hasNavigation: !!navigation,
+              canNavigate: !!(navigation && navigation.navigate)
+            });
+            try {
+              if (navigation && navigation.navigate) {
+                navigation.navigate('ChatDetail', {
+                  chatId: chat.isFallback ? null : (chat._id || chat.id), // Don't pass enquiryId as chatId!
+                  chat: chat.isFallback ? null : chat, 
+                  enquiryId: chat.enquiryId || chat.EnquiryId,
+                  chatType: chat.type || chat.Type || chat.chatType || chatType1
+                });
+              } else {
+                console.error('❌ [ChatsScreen] Navigation object is missing or invalid');
+              }
+            } catch (navError) {
+              console.error('❌ [ChatsScreen] Navigation error:', navError);
             }
           }}>
           

@@ -397,6 +397,7 @@ const ClientPricingScreen = ({ route, navigation }) => {
 
       const pricingData = {
         Name: clientData?.Name || clientData?.name || clientName || '',
+        PricingMessageFormat: pricingMessageFormat || '',
         Pricing: {
           Loss: parseFloat(loss) || 0,
           Labour: parseFloat(labour) || 0,

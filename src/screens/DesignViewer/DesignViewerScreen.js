@@ -2280,7 +2280,7 @@ const DesignViewerScreen = ({ route, navigation }) => {
         <Card style={styles.actionsCard}>
           {/* Comment Field - Show for all users */}
           <View style={styles.commentSection}>
-            {isDesigner || isClient ? (
+            {/* {isDesigner || isClient ? (
               // Designer/Client view: Read-only comment display
               <>
                 <View style={styles.commentHeader}>
@@ -2330,7 +2330,7 @@ const DesignViewerScreen = ({ route, navigation }) => {
                   </Text>
                 </TouchableOpacity>
               </>
-            )}
+            )} */}
           </View>
 
           {/* Client Pricing Message - Read-only for clients */}
