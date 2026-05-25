@@ -105,6 +105,9 @@ const catalogApi = {
   /** PUT  /path  body: object */
   put: (path, body) => request('PUT', path, body),
 
+  /** PATCH /path  body: object */
+  patch: (path, body) => request('PATCH', path, body),
+
   /** DELETE /path */
   delete: (path) => request('DELETE', path),
 };

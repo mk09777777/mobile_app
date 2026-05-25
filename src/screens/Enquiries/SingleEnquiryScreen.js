@@ -1622,6 +1622,7 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
     navigation.navigate('UploadDesign', {
       designType: 'coral',
       enquiry: enquiry,
+      enquiryId: enquiryId,
     });
   };
 
@@ -1629,6 +1630,7 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
     navigation.navigate('UploadDesign', {
       designType: 'cad',
       enquiry: enquiry,
+      enquiryId: enquiryId,
     });
   };
 

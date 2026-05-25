@@ -192,13 +192,14 @@ const RingMatrixPage = ({ route, navigation }) => {
     () =>
       selectedStoneShapes
         .map((shapeName) => {
-          const rows = allProducts
+          const matchingProducts = allProducts
             .filter((product) => productHasStoneShape(product, shapeName))
-            .sort((a, b) => Number(a?.pointer || 0) - Number(b?.pointer || 0))
+            .sort((a, b) => Number(a?.pointer || 0) - Number(b?.pointer || 0));
+          const rows = matchingProducts
             .map((product) => ({
               productId: String(product?._id || ''),
               pointerLabel: `${Number(product?.totalDiamondWeightCt || 0)} ct`,
-              priceLabel: `$${ 
+              priceLabel: `$${
                 (pricingContext ? computeUnitPriceFromSource(product, selectedFilters, pricingContext) : 0) || 0
               }`,
             }))
@@ -207,10 +208,18 @@ const RingMatrixPage = ({ route, navigation }) => {
           const shapeMeta = stoneShapes.find(
             (shape) => normalizeToken(shape?.name) === normalizeToken(shapeName),
           );
+          const productImages = [
+            ...new Set(
+              matchingProducts.flatMap((product) =>
+                Array.isArray(product?.images) ? product.images.filter(Boolean) : [],
+              ),
+            ),
+          ];
           return {
             shapeName,
             shapeImageUrl: shapeMeta?.thumbnailImage || '',
             rows,
+            productImages,
           };
         })
         .filter((card) => Boolean(card && card.rows && card.rows.length)),
@@ -409,6 +418,15 @@ const RingMatrixPage = ({ route, navigation }) => {
                     rows={card.rows}
                     quantitiesByProduct={quantitiesByProduct}
                     onChangeQuantityValue={onCardQuantityValueChange}
+                    onSeeDetails={
+                      card.productImages.length > 0
+                        ? () =>
+                            navigation.navigate('ProductImageViewer', {
+                              images: card.productImages,
+                              title: card.shapeName,
+                            })
+                        : undefined
+                    }
                   />
                 </View>
               );

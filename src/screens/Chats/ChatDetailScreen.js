@@ -1227,9 +1227,9 @@ const ChatDetailScreen = ({ route, navigation }) => {
       return;
     }
     
-    if (!chat) {
+    if (!chat && !enquiryId) {
       if (__DEV__) {
-        console.error('❌ [ChatDetailScreen] Cannot send: Chat is null/undefined', {
+        console.error('❌ [ChatDetailScreen] Cannot send: Chat and Enquiry ID are missing', {
           chat,
           hookChat,
           routeChat,
@@ -1293,7 +1293,7 @@ const ChatDetailScreen = ({ route, navigation }) => {
       let errorMessage = 'Failed to send message. ';
       if (!socketService.isConnected()) {
         errorMessage += 'Not connected to server. Please check your internet connection.';
-      } else if (!chat) {
+      } else if (!chat && !enquiryId) {
         errorMessage += 'Chat not loaded. Please wait a moment and try again.';
       } else if (!user) {
         errorMessage += 'User not authenticated. Please log in again.';
@@ -2561,7 +2561,7 @@ const ChatDetailScreen = ({ route, navigation }) => {
     }
 
     const asset = response.assets?.[0];
-    if (!asset || !chat) {
+    if (!asset || (!chat && !enquiryId)) {
       
       return;
     }

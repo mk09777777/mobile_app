@@ -30,6 +30,7 @@ const BottomTabs = () => {
         component={DashboardScreen}
         options={{
           title: 'Dashboard',
+          tabBarIcon: ({ color, size }) => <Icon name="dashboard" size={size || 24} color={color} />,
         }}
       />
       <Tab.Screen
@@ -37,6 +38,7 @@ const BottomTabs = () => {
         component={EnquiryListScreen}
         options={{
           title: 'Enquiries',
+          tabBarIcon: ({ color, size }) => <Icon name="assignment" size={size || 24} color={color} />,
         }}
       />
       <Tab.Screen
@@ -44,6 +46,7 @@ const BottomTabs = () => {
         component={ChatsScreen}
         options={{
           title: 'Chats',
+          tabBarIcon: ({ color, size }) => <Icon name="chat" size={size || 24} color={color} />,
         }}
       />
     </Tab.Navigator>
@@ -64,6 +67,7 @@ const BottomTabs = () => {
         component={EnquiryListScreen}
         options={{
           title: 'Enquiries',
+          tabBarIcon: ({ color, size }) => <Icon name="assignment" size={size || 24} color={color} />,
         }}
       />
       <Tab.Screen
@@ -71,6 +75,7 @@ const BottomTabs = () => {
         component={ChatsScreen}
         options={{
           title: 'Chats',
+          tabBarIcon: ({ color, size }) => <Icon name="chat" size={size || 24} color={color} />,
         }}
       />
     </Tab.Navigator>
@@ -89,6 +94,7 @@ const BottomTabs = () => {
         component={EnquiryListScreen}
         options={{
           title: 'Enquiries',
+          tabBarIcon: ({ color, size }) => <Icon name="assignment" size={size || 24} color={color} />,
         }}
       />
       <Tab.Screen
@@ -96,6 +102,7 @@ const BottomTabs = () => {
         component={ChatsScreen}
         options={{
           title: 'Chats',
+          tabBarIcon: ({ color, size }) => <Icon name="chat" size={size || 24} color={color} />,
         }}
       />
     </Tab.Navigator>
@@ -114,6 +121,7 @@ const BottomTabs = () => {
         component={DashboardScreen}
         options={{
           title: 'Dashboard',
+          tabBarIcon: ({ color, size }) => <Icon name="dashboard" size={size || 24} color={color} />,
         }}
       />
       <Tab.Screen
@@ -121,6 +129,7 @@ const BottomTabs = () => {
         component={EnquiryListScreen}
         options={{
           title: 'Enquiries',
+          tabBarIcon: ({ color, size }) => <Icon name="assignment" size={size || 24} color={color} />,
         }}
       />
       <Tab.Screen
@@ -128,6 +137,7 @@ const BottomTabs = () => {
         component={ChatsScreen}
         options={{
           title: 'Chats',
+          tabBarIcon: ({ color, size }) => <Icon name="chat" size={size || 24} color={color} />,
         }}
       />
     </Tab.Navigator>

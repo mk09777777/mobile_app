@@ -326,6 +326,15 @@ const ProductMatrixScreen = ({ route, navigation }) => {
                     }
                     specialNoteValue={String(notesByProduct[productId] || '')}
                     onChangeSpecialNote={(value) => onCardNoteChange(productId, value)}
+                    onSeeDetails={
+                      Array.isArray(product?.images) && product.images.filter(Boolean).length > 0
+                        ? () =>
+                            navigation.navigate('ProductImageViewer', {
+                              images: product.images.filter(Boolean),
+                              title: `${product?.pointer ?? 0} Pointer`,
+                            })
+                        : undefined
+                    }
                   />
                 </View>
               );

@@ -29,7 +29,9 @@ import { useValidateImageUploadMutation } from '../../store/api';
 import { useAuth } from '../../context/AuthContext';
 
 const UploadDesignScreen = ({ route, navigation }) => {
-  const { designType, enquiry } = route.params || {}; // designType: 'coral' or 'cad'
+  const { designType, enquiry,enquiryId } = route.params || {};  // designType: 'coral' or 'cad'
+    console.log("recived enquiry id is:",enquiryId)
+
   const { user } = useAuth();
 
   const originalData = enquiry?._originalData || enquiry;
@@ -361,20 +363,21 @@ const UploadDesignScreen = ({ route, navigation }) => {
       return;
     }
 
-    if (!enquiry?.id && !enquiry?._id) {
+    if (!enquiry?.id && !enquiry?._id && !enquiryId) {
       Alert.alert('Error', 'Enquiry ID is missing');
       return;
     }
 
     try {
-      const enquiryId = enquiry.id || enquiry._id;
+      const enquiryId2 = enquiry?.id || enquiry?._id || enquiryId;
+    
 
       // Validate only the first image (API accepts single image)
       const firstImage = selectedImages[0];
       
       if (__DEV__) {
         console.log('🔍 [UploadDesign] Validating image:', {
-          enquiryId,
+          enquiryId2,
           imageUri: firstImage.uri?.substring(0, 50) + '...',
           imageType: firstImage.type,
           imageName: firstImage.name,
@@ -383,7 +386,7 @@ const UploadDesignScreen = ({ route, navigation }) => {
 
       const result = await validateImageUpload({
         image: firstImage,
-        enquiryId: enquiryId,
+        enquiryId: enquiryId2,
       }).unwrap();
 
       if (__DEV__) {
@@ -408,7 +411,7 @@ const UploadDesignScreen = ({ route, navigation }) => {
             onPress: () => {
               // Navigate to upload excel screen
               navigation.navigate('UploadExcel', {
-                enquiryId,
+                enquiryId: enquiryId2,
                 designType,
                 version: selectedVersion.toString(),
                 designCode: designCode.trim(),

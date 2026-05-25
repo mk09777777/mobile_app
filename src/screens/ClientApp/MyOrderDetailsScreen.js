@@ -29,10 +29,19 @@ const statusLabel = (status) => {
 const statusVerb = (status) => {
   if (status === 'order_delivered') return 'delivered';
   if (status === 'order_shipped') return 'shipped';
-  if (status === 'order_in_production') return 'in production';
+  if (status === 'order_in_production') return 'moved to production';
   if (status === 'order_confirmed') return 'confirmed';
   if (status === 'order_cancelled') return 'cancelled';
   return 'received';
+};
+
+const statusTitle = (status) => {
+  if (status === 'order_delivered') return 'Your order has been delivered!';
+  if (status === 'order_shipped') return 'Your order has been shipped!';
+  if (status === 'order_in_production') return 'Your order is in production!';
+  if (status === 'order_confirmed') return 'Your order is confirmed!';
+  if (status === 'order_cancelled') return 'Your order has been cancelled!';
+  return 'Your order has been placed!';
 };
 
 const timelineLabel = (status) => {
@@ -332,7 +341,7 @@ const MyOrderDetailsScreen = ({ route, navigation }) => {
 
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.infoBanner}>
-          <Text style={styles.infoBannerTitle}>Your {currentStatusLabel.toLowerCase()}!</Text>
+          <Text style={styles.infoBannerTitle}>{statusTitle(currentStatus)}</Text>
           <Text style={styles.infoBannerText}>
             All {totalPieces} pieces got {currentStatusVerb} at {formatDateTime(currentStatusAt)}. Tap Reorder below
             to reorder it again.
@@ -348,10 +357,10 @@ const MyOrderDetailsScreen = ({ route, navigation }) => {
           <View style={styles.addressRow}>
             <View style={styles.flexOne}>
               <Text style={styles.shopName}>{order?.clientName || 'Client'}</Text>
-              <Text style={styles.shopAddress}>{order?.shippingAddress || 'Address not available'}</Text>
+              <Text style={styles.shopAddress}>{order?.clientUsername || 'Unknown'}</Text>
             </View>
             <View style={styles.pinChip}>
-              <MaterialIcons name="place" size={16} color="#C05252" />
+              <MaterialIcons name="person" size={16} color="#C05252" />
             </View>
           </View>
         </View>
@@ -453,8 +462,11 @@ const MyOrderDetailsScreen = ({ route, navigation }) => {
           }}>
           <Text style={styles.reorderBtnText}>Reorder</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.invoiceBtn} activeOpacity={0.85}>
-          <Text style={styles.invoiceBtnText}>Download Invoice</Text>
+        <TouchableOpacity
+          style={styles.invoiceBtn}
+          activeOpacity={0.85}
+          onPress={() => navigation.navigate('OrderInvoices', { order })}>
+          <Text style={styles.invoiceBtnText}>Invoices</Text>
         </TouchableOpacity>
       </View>
 
