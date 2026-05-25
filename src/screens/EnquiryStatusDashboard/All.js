@@ -7,7 +7,6 @@ import {
 } from 'react-native';
 import { useGetEnquiriesQuery } from '../../store/api';
 import { useAuth } from '../../context/AuthContext';
-import { useClients } from '../../features/clients/clientsHooks';
 import { colors } from '../../constants/colors';
 
 const PAGE_SIZE = 50;
@@ -38,6 +37,7 @@ export default function AllStatus({
   currentTab,
   user: propUser,
   statusValues,
+  displayEnquiries: parentDisplayEnquiries, // Add this prop from parent
 }) {
   const { user: authUser } = useAuth();
   const user = propUser || authUser;
@@ -57,12 +57,19 @@ export default function AllStatus({
   const queryParams = useMemo(() => {
     const params = { role: user?.role, page, limit: PAGE_SIZE };
 
-    if (!currentTab || currentTab === 'all') return params;
+    console.log('🔍 [Query Params] Building params for tab:', currentTab);
+    console.log('🔍 [Query Params] User:', { id: user?.id, _id: user?._id, role: user?.role });
+
+    if (!currentTab || currentTab === 'all') {
+      console.log('🔍 [Query Params] Tab is "all", returning basic params:', params);
+      return params;
+    }
 
     if (currentTab === 'AssignedToYou') {
       params.assignedTo = user?.id || user?._id;
       params.AssignedTo = user?.id || user?._id;
       params.filters = { assignedTo: user?.id || user?._id };
+      console.log('🔍 [Query Params] Tab is "AssignedToYou", params:', params);
     } else if (statusValues) {
       // Send common case variants so backend matches regardless of DB casing
       const expanded = [...new Set(
@@ -74,6 +81,7 @@ export default function AllStatus({
         ]),
       )];
       params.filters = { status: expanded };
+      console.log('🔍 [Query Params] Tab has status filter:', { currentTab, statusValues, expanded });
     }
 
     return params;
@@ -84,38 +92,76 @@ export default function AllStatus({
     { skip: !user },
   );
 
-  // Fetch clients for name resolution (uses RTK Query cache — no extra network calls)
-  const { clients: clientsData = [] } = useClients({ skip: !user });
-  const clients = Array.isArray(clientsData) ? clientsData : [];
-
-  const clientNameMap = useMemo(() => {
-    const map = new Map();
-    clients.forEach(client => {
-      const clientId = client.id || client._id || client.Id;
-      const clientName = client.name || client.Name;
-      if (clientId && clientName && clientName !== 'Unknown Client') {
-        const idStr = String(clientId).trim();
-        map.set(idStr, clientName);
-        map.set(idStr.toLowerCase(), clientName);
-      }
-    });
-    return map;
-  }, [clients]);
-
-  const resolveClientName = useCallback((enquiry) => {
-    const existing = enquiry.clientName || enquiry.ClientName;
-    if (existing && existing !== 'Unknown Client') return existing;
-    const rawId = enquiry.clientId || enquiry.ClientId;
-    if (!rawId) return 'Unknown Client';
-    const idStr = String(rawId).trim();
-    return clientNameMap.get(idStr) || clientNameMap.get(idStr.toLowerCase()) || 'Unknown Client';
-  }, [clientNameMap]);
-
   // Frontend filtering fallback (backend may not filter by multi-word statuses or assignedTo correctly)
   useEffect(() => {
-    if (!data?.data) return;
+    console.log('🔍 [Data Effect] Running with:', {
+      hasData: !!data?.data,
+      dataLength: data?.data?.length || 0,
+      hasParentData: !!parentDisplayEnquiries,
+      parentDataLength: parentDisplayEnquiries?.length || 0,
+      currentTab,
+      statusValues,
+      page,
+    });
+    
+    // For AssignedToYou tab, use parent data if API returns no data
+    if (currentTab === 'AssignedToYou' && (!data?.data || data.data.length === 0) && parentDisplayEnquiries && parentDisplayEnquiries.length > 0) {
+      console.log('⚠️ [Data Effect] API returned no data for AssignedToYou, using parent displayEnquiries');
+      
+      const userId = String(user?.id || user?._id || '').trim();
+      console.log('🔍 [Data Effect] Filtering parent data for userId:', userId);
+      
+      const filtered = parentDisplayEnquiries.filter((item, index) => {
+        const raw = item._originalData || item;
+        let assignedId = raw.AssignedTo || raw.assignedTo || raw.assigned_to || raw.Assigned_To;
+        
+        if (index < 3) {
+          console.log(`🔍 [Data Effect] Parent item ${index}:`, {
+            id: item.id || item._id,
+            name: item.Name || item.name,
+            assignedTo: assignedId,
+          });
+        }
+        
+        if (assignedId && typeof assignedId === 'object') {
+          assignedId = assignedId.id || assignedId._id || '';
+        }
+        
+        const assignedIdStr = String(assignedId || '').trim();
+        const matches = assignedIdStr === userId;
+        
+        if (index < 3) {
+          console.log(`🔍 [Data Effect] Parent item ${index} matches:`, matches);
+        }
+        
+        return matches;
+      });
+      
+      console.log('🔍 [Data Effect] Filtered parent data count:', filtered.length);
+      
+      const normalized = filtered.map(item => ({
+        ...item,
+        id: item.id || item._id || item.Id || item.EnquiryId || item.enquiryId,
+      }));
+      
+      setAllItems(normalized);
+      return;
+    }
+    
+    if (!data?.data) {
+      console.log('⚠️ [Data Effect] No data received from API');
+      return;
+    }
+
+    console.log('🔍 [Data Effect] Raw API data (first 3 items):', data.data.slice(0, 3).map(item => ({
+      id: item.id || item._id || item.Id,
+      name: item.Name || item.name,
+      status: item.CurrentStatus || item.Status || item.status,
+      assignedTo: item.AssignedTo || item.assignedTo,
+    })));
 
     let filtered = data.data.filter(item => item && (item.id || item._id || item.Id));
+    console.log('🔍 [Data Effect] After basic filter:', filtered.length);
 
     // Apply status filter on frontend as safety net
     if (statusValues && Array.isArray(statusValues) && statusValues.length > 0) {
@@ -127,29 +173,63 @@ export default function AllStatus({
           const itemStatus = item.CurrentStatus || item.Status || item.status || '';
           return canonicalFilters.includes(canonicalStatusForFilter(itemStatus));
         });
+        console.log('🔍 [Data Effect] After status filter:', filtered.length);
       }
     }
 
     // Apply assignedTo filter on frontend (API ignores assignedTo for admin users)
     if (currentTab === 'AssignedToYou') {
-      const userId = String(user?.id || user?._id || '').trim().toLowerCase();
+      const userId = String(user?.id || user?._id || '').trim();
+      console.log('🔍 [AssignedToYou Filter] Current User ID:', userId);
+      console.log('🔍 [AssignedToYou Filter] Total items before filter:', filtered.length);
+      
       if (userId) {
-        filtered = filtered.filter(item => {
+        filtered = filtered.filter((item, index) => {
           const raw = item._originalData || item;
-          const assignedId = raw.AssignedTo || raw.assignedTo || raw.assigned_to || raw.Assigned_To;
-          if (assignedId && typeof assignedId === 'object') {
-            return String(assignedId.id || assignedId.Id || assignedId._id || '').trim().toLowerCase() === userId;
+          let assignedId = raw.AssignedTo || raw.assignedTo || raw.assigned_to || raw.Assigned_To;
+          
+          // Log first 5 items for debugging
+          if (index < 5) {
+            console.log(`🔍 [AssignedToYou Filter] Item ${index}:`, {
+              enquiryId: item.id || item._id || item.Id,
+              enquiryName: item.Name || item.name,
+              assignedToRaw: assignedId,
+              assignedToType: typeof assignedId,
+            });
           }
-          return String(assignedId || '').trim().toLowerCase() === userId;
+          
+          if (assignedId && typeof assignedId === 'object') {
+            assignedId = assignedId.id || assignedId._id || '';
+          }
+          
+          const assignedIdStr = String(assignedId || '').trim();
+          const matches = assignedIdStr === userId;
+          
+          // Log first 5 comparisons
+          if (index < 5) {
+            console.log(`🔍 [AssignedToYou Filter] Item ${index} comparison:`, {
+              assignedIdStr,
+              userId,
+              matches,
+            });
+          }
+          
+          return matches;
         });
+        
+        console.log('🔍 [AssignedToYou Filter] Total items after filter:', filtered.length);
+        console.log('🔍 [AssignedToYou Filter] Filtered items:', filtered.map(item => ({
+          id: item.id || item._id || item.Id,
+          name: item.Name || item.name,
+          assignedTo: item.AssignedTo || item.assignedTo,
+        })));
       }
     }
 
-    // Normalize item ids and enrich client names
+    // Normalize item ids
     const normalized = filtered.map(item => ({
       ...item,
       id: item.id || item._id || item.Id || item.EnquiryId || item.enquiryId,
-      clientName: resolveClientName(item),
     }));
 
     setAllItems(prev => {
@@ -158,18 +238,7 @@ export default function AllStatus({
       const newItems = normalized.filter(item => !existingIds.has(item.id));
       return [...prev, ...newItems];
     });
-  }, [data, page, statusValues, currentTab, user, resolveClientName]);
-
-  // Re-enrich client names when the client map loads after enquiries
-  useEffect(() => {
-    if (clientNameMap.size === 0) return;
-    setAllItems(prev =>
-      prev.map(item => ({
-        ...item,
-        clientName: resolveClientName(item),
-      })),
-    );
-  }, [clientNameMap, resolveClientName]);
+  }, [data, page, statusValues, currentTab, user, parentDisplayEnquiries]);
 
   const refreshFetchSeenRef = useRef(false);
   const refreshTimerRef = useRef(null);

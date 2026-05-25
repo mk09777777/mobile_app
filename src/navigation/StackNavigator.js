@@ -27,6 +27,7 @@ import UploadDesignScreen from '../screens/UploadDesign/UploadDesignScreen';
 import UploadExcelScreen from '../screens/UploadDesign/uploadExcel';
 import PdfViewerTestScreen from '../screens/Test/PdfViewerTestScreen';
 import PricingCalci from '../screens/Pricing/PricingCalci';
+import Reports from '../screens/Reports/reports'
 // TEST SCREENS - Commented out for production
 // Uncomment these lines if you need to test notifications in the future
 // import FontTest from '../components/FontTest';
@@ -178,6 +179,10 @@ const StackNavigator = ({ isAuthenticated, showOnboarding, onOnboardingComplete 
           <Stack.Screen
           name="PricingCalci"
           component={PricingCalci}/>
+
+          <Stack.Screen
+            name="Reports"
+            component={Reports}/>
 
           <Stack.Screen
             name="UploadDesign"

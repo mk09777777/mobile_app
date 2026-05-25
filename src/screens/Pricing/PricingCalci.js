@@ -75,9 +75,57 @@ export default function PricingCalci() {
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editingStoneIndex, setEditingStoneIndex] = useState(null);
 
+  // Validation: Check if metal rate and all stone prices are present
+  const validatePricingData = useCallback(() => {
+    const hasMetalRate = editableMetal && parseFloat(editableMetal.Rate) > 0;
+    const allStonesHavePrices = editableStones.length > 0 && editableStones.every(stone => parseFloat(stone.Price || 0) > 0);
+    return hasMetalRate && allStonesHavePrices;
+  }, [editableMetal, editableStones]);
+
+  const canRecalculate = validatePricingData();
+
   useEffect(() => {
-    if (!imageData?.pricing) return;
-    const p = imageData.pricing;
+    if (!imageData) return;
+    
+    // Check if imageData has any valid pricing information
+    const p = imageData.pricing || imageData.extractedData || imageData;
+    const extractedData = imageData.extractedData || {};
+    
+    // Check for valid stones
+    const hasStones = p.Stones && Array.isArray(p.Stones) && p.Stones.length > 0;
+    const hasExtractedStones = extractedData.Stones && Array.isArray(extractedData.Stones) && extractedData.Stones.length > 0;
+    
+    // Check for valid metal data
+    const hasMetal = p.Metal && (parseFloat(p.Metal.Weight) > 0);
+    const hasExtractedMetal = extractedData.Metal && (parseFloat(extractedData.Metal.Weight) > 0);
+    
+    // Check for valid total pieces
+    const hasTotalPieces = (extractedData.TotalPieces && extractedData.TotalPieces > 0) || (p.TotalPieces && p.TotalPieces > 0);
+    
+    // If no valid data at all, show error and clear
+    if (!hasStones && !hasExtractedStones && !hasMetal && !hasExtractedMetal && !hasTotalPieces) {
+      Alert.alert(
+        'No Data Found',
+        'No pricing data was extracted from the image. Please reupload a clear image with visible pricing information.',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              setImageFile(null);
+              setImageData(null);
+              setEditableStones([]);
+              setEditableMetal({ Weight: 0, Quality: '18K', Rate: 0 });
+              setPricingResult(null);
+            }
+          }
+        ]
+      );
+      return;
+    }
+    
+    // Only proceed if we have pricing data
+    if (!imageData.pricing) return;
+    
     setEditableStones(
       (p.Stones || []).map(s => ({ ...s }))
     );
@@ -96,7 +144,7 @@ export default function PricingCalci() {
     
     // Log the full response for debugging
     console.log('📊 Full Image Data:', JSON.stringify(imageData, null, 2));
-  }, [imageData]);
+  }, [imageData, metalKt]);
 
   const updateStone = (index, field, value) => {
     setEditableStones(prev => {
@@ -886,7 +934,7 @@ export default function PricingCalci() {
           </View>
         </Card>
 
-        {imageData && editableStones && editableStones.length > 0 && (
+        {imageData && imageData.pricing && editableStones && editableStones.length > 0 && (
           <Card style={styles.card}>
             <Text style={styles.sectionTitle}>Extracted Details</Text>
 
@@ -944,7 +992,7 @@ export default function PricingCalci() {
                       <Text style={[styles.compactTableCell, { width: 45 }]}>{stone.Weight ?? 0}</Text>
                       <Text style={[styles.compactTableCell, { width: 40 }]}>{stone.Pcs ?? 0}</Text>
                       <Text style={[styles.compactTableCell, { width: 45 }]}>{stone.CtWeight ?? 0}</Text>
-                      <Text style={[styles.compactTableCell, { width: 50 }]}>{stone.Price ?? 0}</Text>
+                      <Text style={[styles.compactTableCell, { width: 50, color: (!stone.Price || parseFloat(stone.Price) <= 0) ? colors.error : colors.textPrimary, fontFamily: (!stone.Price || parseFloat(stone.Price) <= 0) ? fonts.bold : fonts.regular }]}>{stone.Price ?? 0}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity 
                       style={styles.deleteIconButton} 
@@ -975,8 +1023,16 @@ export default function PricingCalci() {
                     <TextInput style={styles.fieldInput} value={editableMetal.Quality || ''} onChangeText={v => setEditableMetal(p => ({ ...p, Quality: v }))} />
                   </View>
                   <View style={styles.chargeField}>
-                    <Text style={styles.fieldLabel}>Rate ($/g)</Text>
-                    <TextInput style={styles.fieldInput} keyboardType="decimal-pad" value={String(editableMetal.Rate || 0)} onChangeText={v => setEditableMetal(p => ({ ...p, Rate: v }))} />
+                    <Text style={[styles.fieldLabel, (!editableMetal.Rate || parseFloat(editableMetal.Rate) <= 0) && styles.fieldLabelError]}>Rate ($/g) *</Text>
+                    <TextInput 
+                      style={[styles.fieldInput, (!editableMetal.Rate || parseFloat(editableMetal.Rate) <= 0) && styles.fieldInputError]} 
+                      keyboardType="decimal-pad" 
+                      value={String(editableMetal.Rate || 0)} 
+                      onChangeText={v => setEditableMetal(p => ({ ...p, Rate: v }))} 
+                    />
+                    {(!editableMetal.Rate || parseFloat(editableMetal.Rate) <= 0) && (
+                      <Text style={styles.errorText}>Required</Text>
+                    )}
                   </View>
                 </View>
               </>
@@ -1070,7 +1126,11 @@ export default function PricingCalci() {
                 )}
                 
                 <View style={styles.actionButtonRow}>
-                  <TouchableOpacity style={styles.recalcButton} onPress={handleRecalculate} disabled={isRecalculating}>
+                  <TouchableOpacity 
+                    style={[styles.recalcButton, !canRecalculate && styles.recalcButtonDisabled]} 
+                    onPress={handleRecalculate} 
+                    disabled={isRecalculating || !canRecalculate}
+                  >
                     {isRecalculating ? (
                       <ActivityIndicator size="small" color={colors.textWhite} />
                     ) : (
@@ -1080,6 +1140,14 @@ export default function PricingCalci() {
                     )}
                   </TouchableOpacity>
                 </View>
+                {!canRecalculate && (
+                  <View style={styles.validationWarning}>
+                    <Icon name="warning" size={16} color={colors.warning} />
+                    <Text style={styles.validationWarningText}>
+                      Please fill metal rate and all stone prices before recalculating
+                    </Text>
+                  </View>
+                )}
               </>
             )}
           </Card>
@@ -1089,7 +1157,7 @@ export default function PricingCalci() {
       <View style={styles.footer}>
         {imageData && pricingResult ? (
           <View style={styles.footerActions}>
-            <TouchableOpacity style={styles.footerRecalcBtn} onPress={handleRecalculate} disabled={isRecalculating}>
+            <TouchableOpacity style={[styles.footerRecalcBtn, !canRecalculate && styles.recalcButtonDisabled]} onPress={handleRecalculate} disabled={isRecalculating || !canRecalculate}>
               {isRecalculating ? (
                 <ActivityIndicator size="small" color={colors.textWhite} />
               ) : (
@@ -1226,8 +1294,16 @@ export default function PricingCalci() {
                     </View>
                     <View style={styles.editFieldRow}>
                       <View style={styles.editFieldFull}>
-                        <Text style={styles.editFieldLabel}>$/Ct</Text>
-                        <TextInput style={styles.editFieldInput} keyboardType="decimal-pad" value={String(stone.Price ?? 0)} onChangeText={v => updateStone(editingStoneIndex, 'Price', v)} />
+                        <Text style={[styles.editFieldLabel, (!stone.Price || parseFloat(stone.Price) <= 0) && styles.fieldLabelError]}>$/Ct *</Text>
+                        <TextInput 
+                          style={[styles.editFieldInput, (!stone.Price || parseFloat(stone.Price) <= 0) && styles.fieldInputError]} 
+                          keyboardType="decimal-pad" 
+                          value={String(stone.Price ?? 0)} 
+                          onChangeText={v => updateStone(editingStoneIndex, 'Price', v)} 
+                        />
+                        {(!stone.Price || parseFloat(stone.Price) <= 0) && (
+                          <Text style={styles.errorText}>Required</Text>
+                        )}
                       </View>
                     </View>
                   </View>
@@ -1655,6 +1731,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     gap: 6,
   },
+  recalcButtonDisabled: {
+    backgroundColor: colors.textSecondary,
+    opacity: 0.5,
+  },
   whatsappButton: {
     flex: 1,
     backgroundColor: '#25D366',
@@ -1855,5 +1935,33 @@ const styles = StyleSheet.create({
     color: colors.textWhite,
     fontFamily: fonts.bold,
     fontSize: fonts.md,
+  },
+  fieldLabelError: {
+    color: colors.error,
+  },
+  fieldInputError: {
+    borderColor: colors.error,
+    borderWidth: 2,
+  },
+  errorText: {
+    fontSize: fonts.xs,
+    fontFamily: fonts.regular,
+    color: colors.error,
+    marginTop: 2,
+  },
+  validationWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF3E0',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 12,
+    gap: 8,
+  },
+  validationWarningText: {
+    flex: 1,
+    fontSize: fonts.xs,
+    fontFamily: fonts.regular,
+    color: '#E65100',
   },
 });

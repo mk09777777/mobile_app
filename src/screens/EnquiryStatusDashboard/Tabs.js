@@ -157,13 +157,49 @@ export default function StatusTabs({
 
   const assignedToYouCount = React.useMemo(() => {
     const userId = String(user?.id || user?._id).trim();
-    return displayEnquiries.filter(enquiry => {
+    console.log('🔢 [Count] Calculating assignedToYouCount for userId:', userId);
+    console.log('🔢 [Count] Total displayEnquiries:', displayEnquiries.length);
+    
+    const filtered = displayEnquiries.filter((enquiry, index) => {
       let assignedToId = enquiry.AssignedTo || enquiry.assignedTo || enquiry._originalData?.AssignedTo || enquiry._originalData?.assignedTo;
+      
+      // Log first 5 items
+      if (index < 5) {
+        console.log(`🔢 [Count] Enquiry ${index}:`, {
+          id: enquiry.id || enquiry._id || enquiry.Id,
+          name: enquiry.Name || enquiry.name,
+          assignedToRaw: assignedToId,
+          assignedToType: typeof assignedToId,
+        });
+      }
+      
       if (assignedToId && typeof assignedToId === 'object') {
         assignedToId = assignedToId.id || assignedToId._id || assignedToId.toString();
       }
-      return String(assignedToId).trim() === userId;
-    }).length;
+      
+      const assignedToIdStr = String(assignedToId).trim();
+      const matches = assignedToIdStr === userId;
+      
+      // Log first 5 comparisons
+      if (index < 5) {
+        console.log(`🔢 [Count] Enquiry ${index} comparison:`, {
+          assignedToIdStr,
+          userId,
+          matches,
+        });
+      }
+      
+      return matches;
+    });
+    
+    console.log('🔢 [Count] Filtered count:', filtered.length);
+    console.log('🔢 [Count] Filtered enquiries:', filtered.map(e => ({
+      id: e.id || e._id || e.Id,
+      name: e.Name || e.name,
+      assignedTo: e.AssignedTo || e.assignedTo,
+    })));
+    
+    return filtered.length;
   }, [displayEnquiries, user]);
   const getCountForTab = React.useCallback((tabKey) => {
     switch (tabKey) {
@@ -362,6 +398,7 @@ export default function StatusTabs({
             currentTab="AssignedToYou"
             user={user}
             statusValues={tabStatusValues[activeTab]}
+            displayEnquiries={displayEnquiries}
           />
         </>
       )}
