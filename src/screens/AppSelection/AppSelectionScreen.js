@@ -40,6 +40,7 @@ const AppSelectionScreen = ({ navigation }) => {
   const headerAnim = useRef(new Animated.Value(0)).current;
   const card1Anim = useRef(new Animated.Value(0)).current;
   const card2Anim = useRef(new Animated.Value(0)).current;
+  const card3Anim = useRef(new Animated.Value(0)).current;
   const horizontalPadding = 20;
 
   useEffect(() => {
@@ -59,8 +60,13 @@ const AppSelectionScreen = ({ navigation }) => {
         duration: 300,
         useNativeDriver: true,
       }),
+      Animated.timing(card3Anim, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
     ]).start();
-  }, [headerAnim, card1Anim, card2Anim]);
+  }, [headerAnim, card1Anim, card2Anim, card3Anim]);
 
   const navigateTo = (screenName) => {
     navigation.replace(screenName);
@@ -95,6 +101,14 @@ const AppSelectionScreen = ({ navigation }) => {
             onPress={() => navigateTo('CatalogApp')}
             animValue={card2Anim}
             delay={8}
+          />
+          <AppCard
+            iconSource={require('../../assets/images/productivity.png')}
+            title="Production"
+            subtitle="production mode"
+            // onPress={() => navigateTo('CustomApp')}
+            animValue={card3Anim}
+            delay={16}
           />
         </View>
       </SafeAreaView>
