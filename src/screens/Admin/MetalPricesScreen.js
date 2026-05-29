@@ -5,7 +5,6 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
-  Alert,
   Text,
   Modal,
 } from 'react-native';
@@ -21,6 +20,7 @@ import { formatCurrency, formatDate } from '../../utils/helpers';
 import { API_BASE_URL } from '../../config/apiConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import MetalPriceHistoryChart from '../../components/charts/MetalPriceHistoryChart';
+import BrandedAlert from '../../components/common/BrandedAlert';
 
 const MetalPricesScreen = () => {
   const isMountedRef = useRef(true);
@@ -31,6 +31,10 @@ const MetalPricesScreen = () => {
   const [isAdding, setIsAdding] = useState(false);
   const [showMetalTypeDropdown, setShowMetalTypeDropdown] = useState(false);
   const [selectedMetalForChart, setSelectedMetalForChart] = useState('gold');
+  const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
+  const showAlert = (title, message, type = 'info', buttons = []) =>
+    setAlertConfig({ visible: true, title, message, type, buttons });
+  const hideAlert = () => setAlertConfig(prev => ({ ...prev, visible: false }));
   
   // Track component mount state and cleanup timeouts
   const timeoutRefs = useRef([]);
@@ -250,7 +254,7 @@ const MetalPricesScreen = () => {
         // Update editing prices to reflect changes
         setEditingPrices({ ...updatedPrices });
         
-        Alert.alert('Success', 'Metal prices updated successfully');
+        showAlert('Success', 'Metal prices updated successfully', 'success');
         
         // Redux will automatically refetch and update the cache
         // Also reload from API in the background to ensure sync
@@ -312,12 +316,13 @@ const MetalPricesScreen = () => {
               }
               
               // Show alert to user
-              Alert.alert(
+              showAlert(
                 'Update Warning',
                 errorMessage + '\n\n' +
                 updateVerification.map(v => 
                   `${v.metal}: Expected ${v.expected}, but got ${v.actual || 'N/A'}`
                 ).join('\n'),
+                'info',
                 [{ text: 'OK' }]
               );
             }
@@ -330,22 +335,24 @@ const MetalPricesScreen = () => {
         // Store timeout ID for cleanup
         timeoutRefs.current.push(timeoutId);
       } else {
-        Alert.alert('Info', 'No changes to save');
+        showAlert('Info', 'No changes to save', 'info');
       }
       
       setIsEditing(false);
     } catch (error) {
-      Alert.alert(
+      showAlert(
         'Error',
-        error.message || 'Failed to update metal prices. Please try again.'
+        error.message || 'Failed to update metal prices. Please try again.',
+        'error'
       );
     }
   };
 
   const handleDeletePrice = (metal) => {
-    Alert.alert(
+    showAlert(
       'Delete Metal Price',
       `Are you sure you want to delete the price for ${metal.charAt(0).toUpperCase() + metal.slice(1)}?`,
+      'info',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -355,7 +362,7 @@ const MetalPricesScreen = () => {
             try {
               const date = editingDates[metal] || new Date().toISOString().split('T')[0];
               await deleteMetalPrice({ metal, date }).unwrap();
-              Alert.alert('Success', 'Metal price deleted successfully');
+              showAlert('Success', 'Metal price deleted successfully', 'success');
               
               // Wait a moment for the API to process
               await new Promise(resolve => setTimeout(resolve, 500));
@@ -363,9 +370,10 @@ const MetalPricesScreen = () => {
               // Reload prices to get updated data (Redux will refetch automatically)
               await Promise.all([refetch(), refetchHistory()]);
             } catch (error) {
-              Alert.alert(
+              showAlert(
                 'Error',
-                error.message || 'Failed to delete metal price. Please try again.'
+                error.message || 'Failed to delete metal price. Please try again.',
+                'error'
               );
             }
           },
@@ -415,12 +423,12 @@ const MetalPricesScreen = () => {
 
   const handleAddMetalPrice = async () => {
     if (!newMetalPrice.price || parseFloat(newMetalPrice.price) <= 0) {
-      Alert.alert('Error', 'Please enter a valid price');
+      showAlert('Error', 'Please enter a valid price', 'error');
       return;
     }
 
     if (!newMetalPrice.metalType) {
-      Alert.alert('Error', 'Please select a metal type');
+      showAlert('Error', 'Please select a metal type', 'error');
       return;
     }
 
@@ -432,7 +440,7 @@ const MetalPricesScreen = () => {
         date: newMetalPrice.date, // Use the date from form
       }).unwrap();
 
-      Alert.alert('Success', 'Metal price added successfully');
+      showAlert('Success', 'Metal price added successfully', 'success');
       setIsAdding(false);
       setNewMetalPrice({ 
         metalType: 'gold', 
@@ -443,9 +451,10 @@ const MetalPricesScreen = () => {
       // Reload prices to get the new data (Redux will refetch automatically)
       await Promise.all([refetch(), refetchHistory()]);
     } catch (error) {
-      Alert.alert(
+      showAlert(
         'Error',
-        error.message || 'Failed to add metal price. Please try again.'
+        error.message || 'Failed to add metal price. Please try again.',
+        'error'
       );
     }
   };
@@ -780,6 +789,14 @@ const MetalPricesScreen = () => {
         {renderActionButtons()}
         {renderPriceHistory()}
       </ScrollView>
+      <BrandedAlert
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        buttons={alertConfig.buttons}
+        onClose={hideAlert}
+      />
     </SafeAreaView>
   );
 };

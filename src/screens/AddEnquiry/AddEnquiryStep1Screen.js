@@ -4,7 +4,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
   Modal,
   Text,
   Image,
@@ -24,6 +23,7 @@ import {
 import { useClients } from '../../features/clients/clientsHooks';
 import { useAuth } from '../../context/AuthContext';
 import { launchImageLibrary, launchCamera } from 'react-native-image-picker';
+import BrandedAlert from '../../components/common/BrandedAlert';
 
 
 
@@ -90,6 +90,10 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
   const [enquiryDescription, setEnquiryDescription] = useState('');
   const [parsedData, setParsedData] = useState(null);
   const [dynamicMissingFields, setDynamicMissingFields] = useState([]);
+  const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
+  const showAlert = (title, message, type = 'info', buttons = []) =>
+    setAlertConfig({ visible: true, title, message, type, buttons });
+  const hideAlert = () => setAlertConfig(prev => ({ ...prev, visible: false }));
 
   // Fetch clients for dropdown (using cached hook)
   const { clients: clientsData = [] } = useClients({
@@ -246,9 +250,10 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
       console.error('❌ Error parsing enquiry:', error);
       
       // Show error alert with option to continue manually
-      Alert.alert(
+      showAlert(
         'Parsing Failed',
         'AI parsing failed. Would you like to fill the form manually?',
+        'warning',
         [
           {
             text: 'Cancel',
@@ -306,7 +311,7 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
   };
 
   const handleImagePicker = () => {
-    Alert.alert('Select Media', 'Choose source', [
+    showAlert('Select Media', 'Choose source', 'info', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Camera', onPress: handleCamera },
       { text: 'Gallery', onPress: handleGallery },
@@ -644,7 +649,7 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
 
     if (!user?.id) {
       console.log('❌ [handleSubmit] User ID not found!');
-      Alert.alert('Error', 'User not found. Please login again.');
+      showAlert('Error', 'User not found. Please login again.', 'error');
       return;
     }
     
@@ -797,9 +802,10 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
           console.error('❌ Failed to extract enquiry ID from response!');
           console.error('❌ Full response:', JSON.stringify(result, null, 2));
           console.error('❌ Please check API response structure');
-          Alert.alert(
+          showAlert(
             'Warning', 
             'Enquiry created but ID not found. Redirecting to enquiries list.',
+            'warning',
             [
               {
                 text: 'OK',
@@ -815,9 +821,10 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
         console.log('🎉 Enquiry ID:', enquiryId);
         console.log('🎉 Enquiry Payload:', JSON.stringify(enquiryPayload, null, 2));
         
-        Alert.alert(
+        showAlert(
           'Enquiry Created!',
           'Have more instructions or forgot to mention something?',
+          'info',
           [
             {
               text: 'Done',
@@ -982,7 +989,7 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
         if (!enquiryId) {
           console.error('❌ Failed to extract enquiry ID from response!');
           console.error('❌ Full response:', JSON.stringify(result, null, 2));
-          Alert.alert('Error', 'Failed to create enquiry. Enquiry ID not returned.');
+          showAlert('Error', 'Failed to create enquiry. Enquiry ID not returned.', 'error');
           return;
         }
 
@@ -1005,11 +1012,12 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
       }
     } catch (error) {
       console.error('❌ Error creating/submitting enquiry:', error);
-      Alert.alert(
+      showAlert(
         'Error',
         error?.data?.message ||
           error?.data?.error ||
           'Failed to create enquiry. Please try again.',
+        'error',
       );
     }
   };
@@ -1802,6 +1810,14 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
         )}
       </View>
     </ScrollView>
+      <BrandedAlert
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        buttons={alertConfig.buttons}
+        onClose={hideAlert}
+      />
       </KeyboardAvoidingView>
   );
 };

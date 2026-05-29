@@ -4,6 +4,7 @@ import LoginScreen from '../screens/Auth/LoginScreen';
 import AppSelectionScreen from '../screens/AppSelection/AppSelectionScreen';
 import StackNavigator from './StackNavigator';
 import App2Navigator from './App2Navigator';
+import ProductionNavigator from './ProductionNavigator';
 import { useAuth } from '../context/AuthContext';
 
 const Root = createStackNavigator();
@@ -30,6 +31,9 @@ const RootNavigator = ({ isAuthenticated }) => {
           </Root.Screen>
 
           <Root.Screen name="CatalogApp" component={App2Navigator} />
+
+          {/* Production Intelligence Platform */}
+          <Root.Screen name="ProductionApp" component={ProductionNavigator} />
         </>
       )}
     </Root.Navigator>

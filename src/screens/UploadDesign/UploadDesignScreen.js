@@ -7,7 +7,6 @@ import {
   Text,
   Image,
   Platform,
-  Alert,
   PermissionsAndroid,
   Modal,
 } from 'react-native';
@@ -27,6 +26,7 @@ import { fonts } from '../../constants/fonts';
 import { CustomText } from '../../components/common/Text';
 import { useValidateImageUploadMutation } from '../../store/api';
 import { useAuth } from '../../context/AuthContext';
+import BrandedAlert from '../../components/common/BrandedAlert';
 
 const UploadDesignScreen = ({ route, navigation }) => {
   const { designType, enquiry,enquiryId } = route.params || {};  // designType: 'coral' or 'cad'
@@ -65,6 +65,10 @@ const UploadDesignScreen = ({ route, navigation }) => {
   const [selectedExcel, setSelectedExcel] = useState(null);
   const [showVersionDropdown, setShowVersionDropdown] = useState(false);
   const [imageValidated, setImageValidated] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
+  const showAlert = (title, message, type = 'info', buttons = []) =>
+    setAlertConfig({ visible: true, title, message, type, buttons });
+  const hideAlert = () => setAlertConfig(prev => ({ ...prev, visible: false }));
 
   const [validateImageUpload, { isLoading: isUploading }] =
     useValidateImageUploadMutation();
@@ -140,9 +144,10 @@ const UploadDesignScreen = ({ route, navigation }) => {
   const handleSelectImages = async () => {
     const hasPermission = await requestStoragePermission();
     if (!hasPermission) {
-      Alert.alert(
+      showAlert(
         'Permission Denied',
         'Storage permission is required to select images and videos. Please grant both photo and video permissions in app settings.',
+        'error',
         [{ text: 'OK' }],
       );
       return;
@@ -183,7 +188,7 @@ const UploadDesignScreen = ({ route, navigation }) => {
           });
         }
 
-        Alert.alert('Error', userMessage, [{ text: 'OK' }]);
+        showAlert('Error', userMessage, 'error', [{ text: 'OK' }]);
         return;
       }
 
@@ -232,11 +237,12 @@ const UploadDesignScreen = ({ route, navigation }) => {
         ).length;
 
         if (videoCount + existingVideoCount > maxVideoCount) {
-          Alert.alert(
+          showAlert(
             'Video Limit Exceeded',
             `Maximum ${maxVideoCount} videos allowed per ${
               designType === 'coral' ? 'Coral' : 'CAD'
             } version. You already have ${existingVideoCount} video(s) selected.`,
+            'warning',
             [{ text: 'OK' }],
           );
           return;
@@ -244,7 +250,7 @@ const UploadDesignScreen = ({ route, navigation }) => {
 
         // Show errors if any
         if (errors.length > 0) {
-          Alert.alert('File Validation Error', errors.join('\n'), [
+          showAlert('File Validation Error', errors.join('\n'), 'warning', [
             { text: 'OK' },
           ]);
           // Still add valid files if any
@@ -276,34 +282,23 @@ const UploadDesignScreen = ({ route, navigation }) => {
         });
         setSelectedImages(prev => [...prev, ...newImages]);
       } else {
-        Alert.alert('No Selection', 'No files were selected');
+        showAlert('No Selection', 'No files were selected', 'warning');
       }
     } catch (error) {
       console.error('Error selecting media:', error);
-      Alert.alert(
-        'Error',
-        error.message || 'Failed to select media files. Please try again.',
-        [{ text: 'OK' }],
-      );
+      showAlert('Error', error.message || 'Failed to select media files. Please try again.', 'error', [{ text: 'OK' }]);
     }
   };
 
   const handleSelectExcel = async () => {
     if (!DocumentPicker) {
-      Alert.alert(
-        'Feature Not Available',
-        'Document picker is not installed. Please install react-native-document-picker to use this feature.',
-        [{ text: 'OK' }],
-      );
+      showAlert('Feature Not Available', 'Document picker is not installed. Please install react-native-document-picker to use this feature.', 'warning', [{ text: 'OK' }]);
       return;
     }
 
     const hasPermission = await requestStoragePermission();
     if (!hasPermission) {
-      Alert.alert(
-        'Permission Denied',
-        'Storage permission is required to select files',
-      );
+      showAlert('Permission Denied', 'Storage permission is required to select files', 'error');
       return;
     }
 
@@ -334,7 +329,7 @@ const UploadDesignScreen = ({ route, navigation }) => {
       ) {
         return;
       }
-      Alert.alert('Error', 'Failed to select Excel file');
+      showAlert('Error', 'Failed to select Excel file', 'error');
     }
   };
 
@@ -348,23 +343,17 @@ const UploadDesignScreen = ({ route, navigation }) => {
 
   const handleValidateImages = async () => {
     if (!designCode || designCode.trim() === '') {
-      Alert.alert(
-        'Validation Error',
-        `Please enter ${designType === 'coral' ? 'Coral' : 'CAD'} Code`,
-      );
+      showAlert('Validation Error', `Please enter ${designType === 'coral' ? 'Coral' : 'CAD'} Code`, 'warning');
       return;
     }
 
     if (selectedImages.length === 0) {
-      Alert.alert(
-        'Warning',
-        'Please select at least one image to validate',
-      );
+      showAlert('Warning', 'Please select at least one image to validate', 'warning');
       return;
     }
 
     if (!enquiry?.id && !enquiry?._id && !enquiryId) {
-      Alert.alert('Error', 'Enquiry ID is missing');
+      showAlert('Error', 'Enquiry ID is missing', 'error');
       return;
     }
 
@@ -402,9 +391,10 @@ const UploadDesignScreen = ({ route, navigation }) => {
         message += `\n\nIssues found:\n${issues.map((issue, i) => `${i + 1}. ${issue}`).join('\n')}`;
       }
 
-      Alert.alert(
+      showAlert(
         'Validation Result',
         message,
+        'info',
         [
           {
             text: 'Continue',
@@ -440,7 +430,7 @@ const UploadDesignScreen = ({ route, navigation }) => {
         error?.data ||
         error?.message ||
         'Failed to validate image. Please try again.';
-      Alert.alert('Validation Failed', errorMessage);
+      showAlert('Validation Failed', errorMessage, 'warning');
     }
   };
 
@@ -610,7 +600,7 @@ const UploadDesignScreen = ({ route, navigation }) => {
                 style={styles.copyButton}
                 onPress={() => {
                   // TODO: Copy to clipboard
-                  Alert.alert('Info', 'Code copied to clipboard');
+                  showAlert('Info', 'Code copied to clipboard', 'warning');
                 }}
               >
                 <Icon name="content-copy" size={20} color={colors.primary} />
@@ -669,6 +659,14 @@ const UploadDesignScreen = ({ route, navigation }) => {
           )}
         </TouchableOpacity>
       </View>
+      <BrandedAlert
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        buttons={alertConfig.buttons}
+        onClose={hideAlert}
+      />
     </View>
   );
 };

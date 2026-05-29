@@ -11,23 +11,35 @@ import { Platform } from 'react-native';
 // Set these to true/false to control which URL is used
 
 // Force production URL even in development (useful for testing production API)
+// Set to false to hit the local dev server instead of the deployed Render instance
 export const USE_PRODUCTION_URL = true;
 
 // Use custom URL (set CUSTOM_API_URL below)
 export const USE_CUSTOM_URL = false;
 
 // Use physical device IP instead of emulator localhost
-// Set to true if testing on physica
-// l Android device
+// Set to true if testing on physical Android device
 export const USE_PHYSICAL_DEVICE = false;
 
+// ──────────────────────────────────────────────────────────────────────────────
+// QUICK SWITCH GUIDE:
+//   Test delay against LOCAL server (NODE_ENV not production → test delay works):
+//     USE_PRODUCTION_URL = false
+//     USE_PHYSICAL_DEVICE = true  (if on physical phone)
+//
+//   Test delay against PRODUCTION server (Render):
+//     Deploy backend with ENABLE_WIP_TEST_DELAY=true in Render env vars
+//     Keep USE_PRODUCTION_URL = true
+// ──────────────────────────────────────────────────────────────────────────────
+
 // Custom IP address for physical device (only used if USE_PHYSICAL_DEVICE is true)
-export const PHYSICAL_DEVICE_IP = '192.168.0.109'; // Change to your computer's IP
+export const PHYSICAL_DEVICE_IP = '192.168.51.175'; // Change to your computer's IP
 
 // ==================== URL CONFIGURATION ====================
 
-// Production API URL - Update this when deploying
+// Production API URL — used by the entire main app (auth, enquiries, chats, etc.)
 const PRODUCTION_API_URL = 'https://workflowapi-quhn.onrender.com';
+
 
 // Custom API URL (only used if USE_CUSTOM_URL is true)
 const CUSTOM_API_URL = `http://${PHYSICAL_DEVICE_IP}:3000`; // Change to your custom URL
@@ -43,21 +55,21 @@ const DEV_ANDROID_PHYSICAL_URL = `http://${PHYSICAL_DEVICE_IP}:3000`;
  */
 export const getApiBaseUrl = () => {
   // Priority 1: Environment variable override (highest priority)
-  if (process.env.API_URL) {
-    return process.env.API_URL;
-  }
+  // if (process.env.API_URL) {
+  //   return process.env.API_URL;
+  // }
 
   // Priority 2: Check if local/development first
   // In development mode, use local URLs by default
-  if (__DEV__) {
-    // Check for override flags first (within dev mode)
+  // if (__DEV__) {
+  //   // Check for override flags first (within dev mode)
     if (USE_PRODUCTION_URL) {
       return PRODUCTION_API_URL;
     }
     
-    if (USE_CUSTOM_URL) {
-      return CUSTOM_API_URL;
-    }
+  //   if (USE_CUSTOM_URL) {
+  //     return CUSTOM_API_URL;
+  //   }
 
     // Default to local development URLs
     if (Platform.OS === 'android') {
@@ -71,10 +83,10 @@ export const getApiBaseUrl = () => {
       // iOS simulator
       return DEV_IOS_SIMULATOR_URL;
     }
-  }
+  
 
-  // Priority 3: Production (default for non-dev builds)
-  return PRODUCTION_API_URL;
+  // // Priority 3: Production (default for non-dev builds)
+  // return PRODUCTION_API_URL;
 };
 
 // ==================== WEBSOCKET CONFIGURATION ====================

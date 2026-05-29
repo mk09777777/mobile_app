@@ -4,13 +4,13 @@ import {
   StyleSheet,
   TouchableOpacity,
   Text,
-  Alert,
   ActivityIndicator,
   Platform,
   PermissionsAndroid,
   FlatList,
 } from 'react-native';
 import { Input } from '../../components/common';
+import BrandedAlert from '../../components/common/BrandedAlert';
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -51,6 +51,10 @@ const ClientPricingScreen = ({ route, navigation }) => {
   const [selectedDiamondIndex, setSelectedDiamondIndex] = useState(null);
   const [selectedDiamondData, setSelectedDiamondData] = useState({});
   const { isTablet } = useDeviceLayout();
+  const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
+  const showAlert = (title, message, type = 'info', buttons = []) =>
+    setAlertConfig({ visible: true, title, message, type, buttons });
+  const hideAlert = () => setAlertConfig(prev => ({ ...prev, visible: false }));
 
   // Fetch client data - refetch when screen comes into focus to get latest pricing
   const { data: clientData, isLoading: isLoadingClient, refetch } = useGetClientByIdQuery(clientId, {
@@ -150,9 +154,10 @@ const ClientPricingScreen = ({ route, navigation }) => {
   }, [createDiamondEntry]);
 
   const handleDeleteDiamond = useCallback((index) => {
-    Alert.alert(
+    showAlert(
       'Delete Diamond',
       'Are you sure you want to delete this diamond entry?',
+      'info',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -263,14 +268,15 @@ const ClientPricingScreen = ({ route, navigation }) => {
 
       await RNFS.writeFile(downloadPath, base64, 'base64');
 
-      Alert.alert(
+      showAlert(
         'Success',
         `Excel format downloaded successfully!\n\nSaved to: Downloads/${excelFilename}`,
+        'success',
         [{ text: 'OK' }]
       );
     } catch (error) {
       console.error('Error downloading Excel format:', error);
-      Alert.alert('Error', `Failed to download Excel format: ${error.message}`);
+      showAlert('Error', `Failed to download Excel format: ${error.message}`, 'error');
     } finally {
       setIsDownloadingExcel(false);
     }
@@ -304,9 +310,10 @@ const ClientPricingScreen = ({ route, navigation }) => {
 
   const handleImportDiamondsFromExcel = async () => {
     if (!DocumentPicker) {
-      Alert.alert(
+      showAlert(
         'Feature Not Available',
         'Document picker is not installed. Please install react-native-document-picker to use this feature.',
+        'info',
         [{ text: 'OK' }]
       );
       return;
@@ -314,7 +321,7 @@ const ClientPricingScreen = ({ route, navigation }) => {
 
     const hasPermission = await requestStoragePermission();
     if (!hasPermission && Platform.OS === 'android' && Platform.Version < 33) {
-      Alert.alert('Permission Denied', 'Storage permission is required to import Excel files.');
+      showAlert('Permission Denied', 'Storage permission is required to import Excel files.', 'warning');
       return;
     }
 
@@ -330,7 +337,7 @@ const ClientPricingScreen = ({ route, navigation }) => {
       if (result) {
         const fileUri = result.copyUri || result.uri;
         if (!fileUri) {
-          Alert.alert('Error', 'Could not access the selected file');
+          showAlert('Error', 'Could not access the selected file', 'error');
           return;
         }
 
@@ -341,7 +348,7 @@ const ClientPricingScreen = ({ route, navigation }) => {
         const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
         if (jsonData.length < 2) {
-          Alert.alert('Error', 'Excel file must have at least a header row and one data row');
+          showAlert('Error', 'Excel file must have at least a header row and one data row', 'error');
           return;
         }
 
@@ -363,15 +370,16 @@ const ClientPricingScreen = ({ route, navigation }) => {
         }
 
         if (importedDiamonds.length === 0) {
-          Alert.alert('Error', 'No valid diamond data found in Excel file');
+          showAlert('Error', 'No valid diamond data found in Excel file', 'error');
           return;
         }
 
         setDiamonds(importedDiamonds);
 
-        Alert.alert(
+        showAlert(
           'Success',
           `Imported ${importedDiamonds.length} diamond(s) from Excel.\n\nPlease click on Save after importing.`,
+          'success',
           [{ text: 'OK' }]
         );
       }
@@ -380,7 +388,7 @@ const ClientPricingScreen = ({ route, navigation }) => {
         return;
       }
       console.error('Error importing Excel:', error);
-      Alert.alert('Error', `Failed to import Excel file: ${error.message}`);
+      showAlert('Error', `Failed to import Excel file: ${error.message}`, 'error');
     } finally {
       setIsImportingExcel(false);
     }
@@ -388,7 +396,7 @@ const ClientPricingScreen = ({ route, navigation }) => {
 
   const handleSave = async () => {
     if (!clientId) {
-      Alert.alert('Error', 'Client ID is missing');
+      showAlert('Error', 'Client ID is missing', 'error');
       return;
     }
 
@@ -425,7 +433,7 @@ const ClientPricingScreen = ({ route, navigation }) => {
         ...pricingData,
       }).unwrap();
 
-      Alert.alert('Success', 'Client pricing updated successfully', [
+      showAlert('Success', 'Client pricing updated successfully', 'success', [
         {
           text: 'OK',
           onPress: () => {
@@ -435,9 +443,10 @@ const ClientPricingScreen = ({ route, navigation }) => {
       ]);
     } catch (error) {
       console.error('Error updating client pricing:', error);
-      Alert.alert(
+      showAlert(
         'Error',
-        error?.data?.message || error?.data?.error || 'Failed to update client pricing'
+        error?.data?.message || error?.data?.error || 'Failed to update client pricing',
+        'error'
       );
     } finally {
       setLoading(false);
@@ -661,6 +670,14 @@ const ClientPricingScreen = ({ route, navigation }) => {
         diamond={selectedDiamondData}
         onClose={closeEditModal}
         onSave={handleDiamondSave}
+      />
+      <BrandedAlert
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        buttons={alertConfig.buttons}
+        onClose={hideAlert}
       />
     </>
   );

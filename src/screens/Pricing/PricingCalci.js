@@ -7,11 +7,11 @@ import {
   TouchableOpacity,
   Modal,
   Image,
-  Alert,
   TextInput,
   ActivityIndicator,
   Platform,
 } from 'react-native';
+import BrandedAlert from '../../components/common/BrandedAlert';
 import RNFS from 'react-native-fs';
 import Share from 'react-native-share';
 import { launchImageLibrary } from 'react-native-image-picker';
@@ -48,7 +48,10 @@ export default function PricingCalci() {
   const [imageData, setImageData] = useState(null);
   const [isExtracting, setIsExtracting] = useState(false);
 
-
+  const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
+  const showAlert = (title, message, type = 'info', buttons = []) =>
+    setAlertConfig({ visible: true, title, message, type, buttons });
+  const hideAlert = () => setAlertConfig(prev => ({ ...prev, visible: false }));
 
   // Modals Visibility
   const [showClientModal, setShowClientModal] = useState(false);
@@ -120,7 +123,7 @@ export default function PricingCalci() {
 
   const handleRecalculate = async () => {
     if (!clientId) {
-      Alert.alert('Validation Error', 'Client is required for pricing');
+      showAlert('Validation Error', 'Client is required for pricing', 'warning');
       return;
     }
     setIsRecalculating(true);
@@ -150,10 +153,10 @@ export default function PricingCalci() {
       }).unwrap();
 
       setPricingResult(result);
-      Alert.alert('Recalculation Complete', `Total Price: $${result.TotalPrice ?? result.totalPrice ?? 0}`);
+      showAlert('Recalculation Complete', `Total Price: $${result.TotalPrice ?? result.totalPrice ?? 0}`, 'info');
     } catch (error) {
       const msg = error?.data?.message || error?.message || 'Recalculation failed';
-      Alert.alert('Error', msg);
+      showAlert('Error', msg, 'error');
     } finally {
       setIsRecalculating(false);
     }
@@ -373,7 +376,7 @@ export default function PricingCalci() {
 
   const handleSharePDF = useCallback(async () => {
     if (!pricingResult) {
-      Alert.alert('No Data', 'Please calculate pricing first before sharing');
+      showAlert('No Data', 'Please calculate pricing first before sharing', 'info');
       return;
     }
     
@@ -426,14 +429,14 @@ export default function PricingCalci() {
     } catch (e) {
       console.error('Share PDF Error:', e);
       if (e?.message && !e.message.includes('User did not share') && !e.message.includes('cancelled') && !e.message.includes('User cancelled')) {
-        Alert.alert('Share Failed', e.message || 'Failed to share PDF. Please try again.');
+        showAlert('Share Failed', e.message || 'Failed to share PDF. Please try again.', 'error');
       }
     }
   }, [pricingResult, generatePdfFile, clients, clientId]);
 
   const handleExportDownload = useCallback(async () => {
     if (!pricingResult) {
-      Alert.alert('No Data', 'Please calculate pricing first before exporting');
+      showAlert('No Data', 'Please calculate pricing first before exporting', 'info');
       return;
     }
     
@@ -458,7 +461,7 @@ export default function PricingCalci() {
           );
           
           if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-            Alert.alert('Permission Denied', 'Storage permission is required to download files');
+            showAlert('Permission Denied', 'Storage permission is required to download files', 'warning');
             return;
           }
         }
@@ -496,11 +499,7 @@ export default function PricingCalci() {
           // First attempt: copy directly
           await RNFS.copyFile(pdf.filePath, downloadPath);
           
-          Alert.alert(
-            'Export Successful',
-            `PDF saved successfully!\n\nFile: ${fileName}\nLocation: Downloads folder\n\nYou can access it from your File Manager.`,
-            [{ text: 'OK' }]
-          );
+          showAlert('Export Successful', `PDF saved successfully!\n\nFile: ${fileName}\nLocation: Downloads folder\n\nYou can access it from your File Manager.`, 'success', [{ text: 'OK' }]);
         } catch (copyError) {
           console.warn('Direct copy failed, trying base64 write', copyError);
           try {
@@ -508,12 +507,8 @@ export default function PricingCalci() {
             // Helps bypass some scoped storage restrictions on Android 10/11
             const base64data = await RNFS.readFile(pdf.filePath, 'base64');
             await RNFS.writeFile(downloadPath, base64data, 'base64');
-            
-            Alert.alert(
-              'Export Successful',
-              `PDF saved successfully!\n\nFile: ${fileName}\nLocation: Downloads folder\n\nYou can access it from your File Manager.`,
-              [{ text: 'OK' }]
-            );
+
+            showAlert('Export Successful', `PDF saved successfully!\n\nFile: ${fileName}\nLocation: Downloads folder\n\nYou can access it from your File Manager.`, 'success', [{ text: 'OK' }]);
           } catch (writeError) {
             console.warn('Base64 write failed, falling back to Share', writeError);
             // Final fallback: use the Share module so user can save or send it
@@ -529,10 +524,7 @@ export default function PricingCalci() {
       console.error('Export PDF Error:', e);
       // Ignore user cancellation errors
       if (e?.message && !e.message.includes('User did not share') && !e.message.includes('cancelled') && !e.message.includes('User cancelled')) {
-        Alert.alert(
-          'Export Failed',
-          e?.message || 'Failed to export PDF. Please check storage permissions and try again.'
-        );
+        showAlert('Export Failed', e?.message || 'Failed to export PDF. Please check storage permissions and try again.', 'error');
       }
     }
   }, [pricingResult, generatePdfFile, clients, clientId]);
@@ -588,11 +580,11 @@ export default function PricingCalci() {
   const handleImagePick = async () => {
     // Validate required fields before picking image
     if (!clientId) {
-      Alert.alert('Validation Error', 'Please select a client first');
+      showAlert('Validation Error', 'Please select a client first', 'warning');
       return;
     }
     if (!stoneType) {
-      Alert.alert('Validation Error', 'Please select a stone type first');
+      showAlert('Validation Error', 'Please select a stone type first', 'warning');
       return;
     }
 
@@ -603,7 +595,7 @@ export default function PricingCalci() {
         const asset = pickerResult.assets[0];
         // Max 20MB limit validation
         if (asset.fileSize && asset.fileSize > 20 * 1024 * 1024) {
-          Alert.alert('File too large', 'Maximum allowed image size is 20MB.');
+          showAlert('File too large', 'Maximum allowed image size is 20MB.', 'warning');
           return;
         }
         setImageFile({
@@ -631,7 +623,7 @@ export default function PricingCalci() {
         } catch (apiError) {
           console.error('❌ API Error:', apiError);
           const errorMsg = apiError?.data?.message || apiError?.error || 'Failed to extract pricing data. Please ensure the client has pricing configuration set up.';
-          Alert.alert('Extraction Error', errorMsg);
+           showAlert('Extraction Error', errorMsg, 'error');
           // Clear the image on error
           setImageFile(null);
         } finally {
@@ -640,17 +632,14 @@ export default function PricingCalci() {
       }
     } catch (error) {
       console.error('❌ Image Picker Error:', error);
-      Alert.alert('Error', 'Failed to pick image. Please try again.');
+      showAlert('Error', 'Failed to pick image. Please try again.', 'error');
       setIsExtracting(false);
     }
   };
 
   const handleExcelPick = async () => {
     if (!DocumentPicker) {
-      Alert.alert(
-        'Feature Not Available',
-        'Document picker is not available on this device.'
-      );
+      showAlert('Feature Not Available', 'Document picker is not available on this device.', 'warning');
       return;
     }
     try {
@@ -664,7 +653,7 @@ export default function PricingCalci() {
       });
     } catch (err) {
       if (!DocumentPicker.isCancel(err)) {
-        Alert.alert('Error', 'Failed to pick excel file');
+        showAlert('Error', 'Failed to pick excel file', 'error');
       }
     }
   };
@@ -674,7 +663,7 @@ export default function PricingCalci() {
     const detailsData = data?.pricing || data?.extractedData || data?.details || data;
     
     if (!detailsData) {
-      Alert.alert('Validation Error', 'No pricing data available. Please upload an image first.');
+      showAlert('Validation Error', 'No pricing data available. Please upload an image first.', 'warning');
       return;
     }
     
@@ -711,17 +700,13 @@ export default function PricingCalci() {
       }).unwrap();
 
       const finalPrice = result?.TotalPrice !== undefined ? result.TotalPrice : (result?.totalPrice || 'N/A');
-      Alert.alert(
-        'Calculation Complete',
-        `Total Price: $${finalPrice}\n\nPlease check the console for detailed pricing breakdown.`,
-        [{ text: 'OK' }]
-      );
+      showAlert('Calculation Complete', `Total Price: $${finalPrice}\n\nPlease check the console for detailed pricing breakdown.`, 'success', [{ text: 'OK' }]);
       
       console.log('💰 Pricing Result:', result);
     } catch (error) {
       console.error('❌ Pricing calculation error:', error);
       const errorMsg = error?.data?.message || error?.message || 'Failed to calculate pricing. Please ensure the client has pricing configuration set up.';
-      Alert.alert('Calculation Failed', errorMsg);
+      showAlert('Calculation Failed', errorMsg, 'error');
     }
   };
 
@@ -1255,6 +1240,15 @@ export default function PricingCalci() {
           </View>
         </View>
       </Modal>
+
+      <BrandedAlert
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        buttons={alertConfig.buttons}
+        onClose={hideAlert}
+      />
     </View>
   );
 }

@@ -4,7 +4,6 @@
  *
  * @format
  */
-
 import React, { useState } from 'react';
 import { StatusBar, useColorScheme } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
