@@ -9,7 +9,6 @@ import {
   Image,
   Dimensions,
   Platform,
-  Alert,
   Modal,
   StatusBar,
   TextInput,
@@ -29,6 +28,7 @@ import RNFS from 'react-native-fs';
 import Share from 'react-native-share';
 import { API_BASE_URL } from '../../config/apiConfig';
 import { getCachedImage, cacheImage } from '../../utils/imageCache';
+import BrandedAlert from '../../components/common/BrandedAlert';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const IMAGE_CONTAINER_HEIGHT = SCREEN_HEIGHT * 0.5;
@@ -66,6 +66,10 @@ const DesignViewerScreen = ({ route, navigation }) => {
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
   const [currentTime, setCurrentTime] = useState(new Date()); // For periodic delete button state updates
+  const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
+  const showAlert = (title, message, type = 'info', buttons = []) =>
+    setAlertConfig({ visible: true, title, message, type, buttons });
+  const hideAlert = () => setAlertConfig(prev => ({ ...prev, visible: false }));
   
   // API mutation for updating asset description
   const [updateAssetDescription, { isLoading: isUpdatingDescription }] = useUpdateAssetDescriptionMutation();
@@ -1083,13 +1087,13 @@ const DesignViewerScreen = ({ route, navigation }) => {
     }
 
     if (images.length === 0 || currentImageIndex >= images.length) {
-      Alert.alert('Error', 'No image available to download');
+      showAlert('Error', 'No image available to download', 'error');
       return;
     }
 
     const currentImage = images[currentImageIndex];
     if (!currentImage) {
-      Alert.alert('Error', 'Current image not found');
+      showAlert('Error', 'Current image not found', 'error');
       return;
     }
 
@@ -1103,7 +1107,7 @@ const DesignViewerScreen = ({ route, navigation }) => {
     }
 
     if (!imageKey) {
-      Alert.alert('Error', 'Image key not available');
+      showAlert('Error', 'Image key not available', 'error');
       return;
     }
 
@@ -1240,9 +1244,10 @@ const DesignViewerScreen = ({ route, navigation }) => {
           if (shareError.message !== 'User did not share') {
             console.warn('Share dialog error (non-critical):', shareError);
           }
-          Alert.alert(
+          showAlert(
             'Success',
             `Image downloaded successfully!\n\nSaved to: Downloads/${imageFilename}`,
+            'success',
             [{ text: 'OK' }]
           );
         }
@@ -1309,17 +1314,19 @@ const DesignViewerScreen = ({ route, navigation }) => {
           if (shareError.message !== 'User did not share') {
             console.warn('Share dialog error (non-critical):', shareError);
           }
-          Alert.alert(
+          showAlert(
             'Success',
             `Image downloaded successfully!\n\nSaved to: Downloads/${imageFilename}`,
+            'success',
             [{ text: 'OK' }]
           );
         }
       }
     } catch (error) {
-      Alert.alert(
+      showAlert(
         'Download Failed',
-        error?.message || 'Failed to download image. Please try again.'
+        error?.message || 'Failed to download image. Please try again.',
+        'error'
       );
     } finally {
       setIsDownloadingImage(false);
@@ -1327,9 +1334,10 @@ const DesignViewerScreen = ({ route, navigation }) => {
   };
 
   const handleDeleteImage = () => {
-    Alert.alert(
+    showAlert(
       'Delete Image',
       'Are you sure you want to delete this image?',
+      'warning',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -1337,7 +1345,7 @@ const DesignViewerScreen = ({ route, navigation }) => {
           style: 'destructive',
           onPress: () => {
             // TODO: Implement delete functionality
-            Alert.alert('Info', 'Delete functionality will be implemented');
+            showAlert('Info', 'Delete functionality will be implemented', 'info');
           },
         },
       ]
@@ -1350,7 +1358,7 @@ const DesignViewerScreen = ({ route, navigation }) => {
     }
 
     if (images.length === 0) {
-      Alert.alert('Error', 'No images available to share');
+      showAlert('Error', 'No images available to share', 'error');
       return;
     }
 
@@ -1527,17 +1535,19 @@ const DesignViewerScreen = ({ route, navigation }) => {
       // Inform user if there are more images
       if (imageFiles.length > 1) {
         setTimeout(() => {
-          Alert.alert(
+          showAlert(
             'Share Complete',
             `Shared first image with pricing details. ${imageFiles.length - 1} more image(s) available. You can share them individually if needed.`,
+            'success',
             [{ text: 'OK' }]
           );
         }, 1000);
       }
     } catch (error) {
-      Alert.alert(
+      showAlert(
         'Share Failed',
-        error?.message || 'Failed to share images. Please try again.'
+        error?.message || 'Failed to share images. Please try again.',
+        'error'
       );
     } finally {
       setIsSharing(false);
@@ -1546,7 +1556,7 @@ const DesignViewerScreen = ({ route, navigation }) => {
 
   const handleDownloadExcel = async () => {
     if (!designCode) {
-      Alert.alert('Error', 'Excel file not available - design code missing');
+      showAlert('Error', 'Excel file not available - design code missing', 'error');
       return;
     }
 
@@ -1673,9 +1683,10 @@ const DesignViewerScreen = ({ route, navigation }) => {
           if (shareError.message !== 'User did not share') {
             console.warn('Share dialog error (non-critical):', shareError);
           }
-          Alert.alert(
+          showAlert(
             'Success',
             `Excel file downloaded successfully!\n\nSaved to: Downloads/${excelFilename}`,
+            'success',
             [{ text: 'OK' }]
           );
         }
@@ -1721,9 +1732,10 @@ const DesignViewerScreen = ({ route, navigation }) => {
           if (shareError.message !== 'User did not share') {
             console.warn('Share dialog error (non-critical):', shareError);
           }
-          Alert.alert(
+          showAlert(
             'Success',
             `Excel file downloaded successfully!\n\nSaved to: Downloads/${excelFilename}`,
+            'success',
             [{ text: 'OK' }]
           );
         }
@@ -1745,9 +1757,10 @@ const DesignViewerScreen = ({ route, navigation }) => {
         errorMessage = error.message;
       }
       
-      Alert.alert(
+      showAlert(
         'Download Failed',
-        errorMessage
+        errorMessage,
+        'error'
       );
     } finally {
       setIsDownloadingExcel(false);
@@ -1756,7 +1769,7 @@ const DesignViewerScreen = ({ route, navigation }) => {
 
   const handleApprove = async () => {
     if (!selectedDesign) {
-      Alert.alert('Error', 'No design version found to approve');
+      showAlert('Error', 'No design version found to approve', 'error');
       return;
     }
 
@@ -1764,13 +1777,14 @@ const DesignViewerScreen = ({ route, navigation }) => {
     const enquiryId = enquiry?.id || enquiry?._id;
     
     if (!enquiryId) {
-      Alert.alert('Error', 'Enquiry ID not found');
+      showAlert('Error', 'Enquiry ID not found', 'error');
       return;
     }
 
-    Alert.alert(
+    showAlert(
       'Approve Design Version',
       `Are you sure you want to approve ${designType.toUpperCase()} ${version}?`,
+      'warning',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -1785,16 +1799,17 @@ const DesignViewerScreen = ({ route, navigation }) => {
                 version,
               }).unwrap();
 
-              Alert.alert('Success', `${designType.toUpperCase()} ${version} approved successfully`);
+              showAlert('Success', `${designType.toUpperCase()} ${version} approved successfully`, 'success');
               
               // Refetch enquiry data to get updated approval status
               if (enquiryId) {
                 refetchEnquiry();
               }
             } catch (error) {
-              Alert.alert(
+              showAlert(
                 'Error',
-                error?.data?.error || error?.message || 'Failed to approve design version. Please try again.'
+                error?.data?.error || error?.message || 'Failed to approve design version. Please try again.',
+                'error'
               );
             }
           },
@@ -1805,7 +1820,7 @@ const DesignViewerScreen = ({ route, navigation }) => {
 
   const handleReject = () => {
     if (!selectedDesign) {
-      Alert.alert('Error', 'No design version found to reject');
+      showAlert('Error', 'No design version found to reject', 'error');
       return;
     }
     setShowRejectModal(true);
@@ -1813,12 +1828,12 @@ const DesignViewerScreen = ({ route, navigation }) => {
 
   const confirmReject = async () => {
     if (!rejectionReason.trim()) {
-      Alert.alert('Error', 'Please provide a reason for rejection');
+      showAlert('Error', 'Please provide a reason for rejection', 'error');
       return;
     }
 
     if (!selectedDesign) {
-      Alert.alert('Error', 'No design version found to reject');
+      showAlert('Error', 'No design version found to reject', 'error');
       return;
     }
 
@@ -1826,13 +1841,13 @@ const DesignViewerScreen = ({ route, navigation }) => {
     const enquiryId = enquiry?.id || enquiry?._id;
     
     if (!enquiryId) {
-      Alert.alert('Error', 'Enquiry ID not found');
+      showAlert('Error', 'Enquiry ID not found', 'error');
       return;
     }
 
     try {
       
-
+      
       await rejectDesignVersion({
         enquiryId,
         designType,
@@ -1840,7 +1855,7 @@ const DesignViewerScreen = ({ route, navigation }) => {
         reason: rejectionReason.trim(),
       }).unwrap();
 
-      Alert.alert('Success', `${designType.toUpperCase()} ${version} rejected successfully`);
+      showAlert('Success', `${designType.toUpperCase()} ${version} rejected successfully`, 'success');
       setShowRejectModal(false);
       setRejectionReason('');
       
@@ -1849,16 +1864,17 @@ const DesignViewerScreen = ({ route, navigation }) => {
         refetchEnquiry();
       }
     } catch (error) {
-      Alert.alert(
+      showAlert(
         'Error',
-        error?.data?.error || error?.message || 'Failed to reject design version. Please try again.'
+        error?.data?.error || error?.message || 'Failed to reject design version. Please try again.',
+        'error'
       );
     }
   };
 
   const handleDeleteVersion = async () => {
     if (!selectedDesign) {
-      Alert.alert('Error', 'No design version selected');
+      showAlert('Error', 'No design version selected', 'error');
       return;
     }
     
@@ -1866,23 +1882,25 @@ const DesignViewerScreen = ({ route, navigation }) => {
     const enquiryId = enquiry?.id || enquiry?._id;
     
     if (!enquiryId) {
-      Alert.alert('Error', 'Enquiry ID not found');
+      showAlert('Error', 'Enquiry ID not found', 'error');
       return;
     }
     
     // Check if can delete (within 10 minutes)
     if (!canDeleteVersion(selectedDesign)) {
-      Alert.alert(
+      showAlert(
         'Cannot Delete',
         'This version can only be deleted within 10 minutes of upload. The time limit has expired.',
+        'warning',
         [{ text: 'OK' }]
       );
       return;
     }
     
-    Alert.alert(
+    showAlert(
       'Delete Version',
       `Are you sure you want to delete ${designType.toUpperCase()} ${version}? This action cannot be undone.`,
+      'warning',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -1898,7 +1916,7 @@ const DesignViewerScreen = ({ route, navigation }) => {
                 version,
               }).unwrap();
               
-              Alert.alert('Success', 'Version deleted successfully');
+              showAlert('Success', 'Version deleted successfully', 'success');
               
               // Refetch enquiry data
               if (enquiryId) {
@@ -1911,9 +1929,10 @@ const DesignViewerScreen = ({ route, navigation }) => {
                 navigation.goBack();
               }
             } catch (error) {
-              Alert.alert(
+              showAlert(
                 'Error',
-                error?.data?.error || error?.message || 'Failed to delete version. Please try again.'
+                error?.data?.error || error?.message || 'Failed to delete version. Please try again.',
+                'error'
               );
             }
           },
@@ -1924,7 +1943,7 @@ const DesignViewerScreen = ({ route, navigation }) => {
 
   const handleShowToClient = async (newValue) => {
     if (!selectedDesign) {
-      Alert.alert('Error', 'No design version found');
+      showAlert('Error', 'No design version found', 'error');
       return;
     }
 
@@ -1932,7 +1951,7 @@ const DesignViewerScreen = ({ route, navigation }) => {
     const enquiryId = enquiry?.id || enquiry?._id;
     
     if (!enquiryId) {
-      Alert.alert('Error', 'Enquiry ID not found');
+      showAlert('Error', 'Enquiry ID not found', 'error');
       return;
     }
 
@@ -1955,27 +1974,28 @@ const DesignViewerScreen = ({ route, navigation }) => {
         refetchEnquiry();
       }
     } catch (error) {
-      Alert.alert(
+      showAlert(
         'Error',
-        error?.data?.error || error?.message || 'Failed to update ShowToClient. Please try again.'
+        error?.data?.error || error?.message || 'Failed to update ShowToClient. Please try again.',
+        'error'
       );
     }
   };
 
   const handleSaveComment = async () => {
     if (!comment || comment.trim() === '') {
-      Alert.alert('Error', 'Please enter a description');
+      showAlert('Error', 'Please enter a description', 'error');
       return;
     }
 
     if (!enquiry?.id && !enquiry?._id) {
-      Alert.alert('Error', 'Enquiry ID is missing');
+      showAlert('Error', 'Enquiry ID is missing', 'error');
       return;
     }
 
     // Get current image to extract asset ID
     if (images.length === 0 || currentImageIndex >= images.length) {
-      Alert.alert('Error', 'No image selected');
+      showAlert('Error', 'No image selected', 'error');
       return;
     }
 
@@ -1983,7 +2003,7 @@ const DesignViewerScreen = ({ route, navigation }) => {
     const assetId = currentImage?.Id || currentImage?.id || currentImage?._id || currentImage?.Key || currentImage?.key;
     
     if (!assetId) {
-      Alert.alert('Error', 'Image ID not found');
+      showAlert('Error', 'Image ID not found', 'error');
       return;
     }
 
@@ -2019,10 +2039,10 @@ const DesignViewerScreen = ({ route, navigation }) => {
         // The invalidatesTags will trigger a refetch when navigating back
       }
 
-      Alert.alert('Success', 'Image description updated successfully');
+      showAlert('Success', 'Image description updated successfully', 'success');
     } catch (error) {
       const errorMessage = error?.data?.error || error?.data?.message || error?.message || 'Failed to update description. Please try again.';
-      Alert.alert('Error', errorMessage);
+      showAlert('Error', errorMessage, 'error');
     }
   };
 
@@ -2669,6 +2689,14 @@ const DesignViewerScreen = ({ route, navigation }) => {
           )}
         </View>
       </Modal>
+      <BrandedAlert
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        buttons={alertConfig.buttons}
+        onClose={hideAlert}
+      />
     </View>
   );
 };

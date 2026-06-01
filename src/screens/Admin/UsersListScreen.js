@@ -5,10 +5,10 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
-  Alert,
   Text,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import BrandedAlert from '../../components/common/BrandedAlert';
 import { useGetUsersQuery } from '../../store/api';
 import { Card } from '../../components/cards/Cards';
 import { SearchInput } from '../../components/common';
@@ -30,6 +30,10 @@ const UsersListScreen = ({ navigation }) => {
   const isAdmin = user?.role === 'admin' || user?.role === 'AD' || user?.roleNumber === 1 || user?.roleId === 1;
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
+  const showAlert = (title, message, type = 'info', buttons = []) =>
+    setAlertConfig({ visible: true, title, message, type, buttons });
+  const hideAlert = () => setAlertConfig(prev => ({ ...prev, visible: false }));
 
   const { data: usersData = [], isLoading: loading, refetch } = useGetUsersQuery();
   console.log('Fetched users:', usersData);
@@ -57,13 +61,13 @@ const UsersListScreen = ({ navigation }) => {
     if (userId) {
       navigation.navigate('CreateUser', { userId });
     } else {
-      Alert.alert('Error', 'User ID not found');
+      showAlert('Error', 'User ID not found', 'error');
     }
   };
 
   const handleAddUser = () => {
     if (!isAdmin) {
-      Alert.alert('Access Denied', 'Only administrators can create users.');
+      showAlert('Access Denied', 'Only administrators can create users.', 'warning');
       return;
     }
     navigation.navigate('CreateUser');
@@ -202,6 +206,14 @@ const UsersListScreen = ({ navigation }) => {
           </View>
         )}
       </ScrollView>
+      <BrandedAlert
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        buttons={alertConfig.buttons}
+        onClose={hideAlert}
+      />
     </SafeAreaView>
   );
 };

@@ -9,10 +9,10 @@ import {
   Modal,
   Text,
   Dimensions,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import BrandedAlert from '../../components/common/BrandedAlert';
 import { useRoute } from '@react-navigation/native';
 import { useSelector, useDispatch } from 'react-redux';
 import { useFocusEffect } from '@react-navigation/native';
@@ -899,6 +899,10 @@ const EnquiryListScreen = ({ navigation }) => {
   const [showFilters, setShowFilters] = useState(false);
   const [showSortModal, setShowSortModal] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
+  const showAlert = (title, message, type = 'info', buttons = []) =>
+    setAlertConfig({ visible: true, title, message, type, buttons });
+  const hideAlert = () => setAlertConfig(prev => ({ ...prev, visible: false }));
   
   // Initialize activeTab based on user role
   const getInitialTab = () => {
@@ -1445,9 +1449,10 @@ const EnquiryListScreen = ({ navigation }) => {
         actionMessage = 'Are you sure you want to reassign this enquiry?';
       }
 
-      Alert.alert(
+      showAlert(
         actionName,
         actionMessage,
+        'warning',
         [
           {
             text: 'Cancel',
@@ -1513,9 +1518,10 @@ const EnquiryListScreen = ({ navigation }) => {
 
   const handleDeleteEnquiry = useCallback(async (enquiryId) => {
     return new Promise((resolve) => {
-      Alert.alert(
+      showAlert(
         'Delete Enquiry',
         'Are you sure you want to delete this enquiry? This action cannot be undone.',
+        'warning',
         [
           {
             text: 'Cancel',
@@ -1725,9 +1731,10 @@ const EnquiryListScreen = ({ navigation }) => {
             functionType: typeof downloadFn,
           });
         }
-        Alert.alert(
+        showAlert(
           'Error',
-          'PDF export function is not available. Please contact support if this issue persists.'
+          'PDF export function is not available. Please contact support if this issue persists.',
+          'error'
         );
         return;
       }
@@ -1788,11 +1795,11 @@ const EnquiryListScreen = ({ navigation }) => {
       }
 
       // Show loading alert
-      Alert.alert(
+      showAlert(
         'Downloading PDF',
         'Downloading PDF from server... This may take a moment for large datasets.',
-        [],
-        { cancelable: false }
+        'info',
+        []
       );
 
       // Download PDF from backend with progress callback
@@ -1810,9 +1817,10 @@ const EnquiryListScreen = ({ navigation }) => {
       }
 
       if (result.success) {
-        Alert.alert(
+        showAlert(
           'Success',
           'PDF downloaded successfully! Check your share/download options.',
+          'success',
           [{ text: 'OK' }]
         );
       }
@@ -1821,9 +1829,10 @@ const EnquiryListScreen = ({ navigation }) => {
         console.error('Error downloading PDF:', error);
       }
       const errorMessage = error?.message || 'Unknown error occurred';
-      Alert.alert(
+      showAlert(
         'Error',
         `Failed to download PDF: ${errorMessage}. Please try again.`,
+        'error',
         [{ text: 'OK' }]
       );
     }
@@ -1854,7 +1863,7 @@ const EnquiryListScreen = ({ navigation }) => {
       if (__DEV__) {
         console.error('Error refreshing enquiries:', error);
       }
-      Alert.alert('Error', 'Failed to refresh enquiries. Please try again.');
+      showAlert('Error', 'Failed to refresh enquiries. Please try again.', 'error');
     } finally {
       setRefreshing(false);
     }
@@ -2383,6 +2392,14 @@ const EnquiryListScreen = ({ navigation }) => {
           </View>
         </View>
       </Modal>
+      <BrandedAlert
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        buttons={alertConfig.buttons}
+        onClose={hideAlert}
+      />
     </SafeAreaView>
   );
 };

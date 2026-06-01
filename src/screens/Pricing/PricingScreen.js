@@ -5,7 +5,6 @@ import {
   ScrollView,
   TouchableOpacity,
   Text,
-  Alert,
   Switch,
   Modal,
   TextInput,
@@ -13,6 +12,7 @@ import {
   Dimensions,
   InteractionManager,
 } from 'react-native';
+import BrandedAlert from '../../components/common/BrandedAlert';
 import { useFocusEffect } from '@react-navigation/native';
 import { Card } from '../../components/cards/Cards';
 import { Input } from '../../components/common';
@@ -308,6 +308,12 @@ const PricingScreen = ({ route, navigation }) => {
   // Save pricing mutation
   const [savePricing, { isLoading: isSaving }] = useSavePricingMutation();
   
+  // Alert state for BrandedAlert
+  const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
+  const showAlert = (title, message, type = 'info', buttons = []) =>
+    setAlertConfig({ visible: true, title, message, type, buttons });
+  const hideAlert = () => setAlertConfig(prev => ({ ...prev, visible: false }));
+
   // Sync client pricing loading state
   const [isSyncing, setIsSyncing] = useState(false);
   
@@ -377,7 +383,7 @@ const PricingScreen = ({ route, navigation }) => {
       
       // Validate metal weight is a positive number
       if (metalWeight < 0) {
-        Alert.alert('Validation Error', 'Metal weight cannot be negative');
+        showAlert('Validation Error', 'Metal weight cannot be negative', 'warning');
         return;
       }
       
@@ -454,10 +460,7 @@ const PricingScreen = ({ route, navigation }) => {
       }).filter(stone => stone !== null && stone.Type); // Remove null entries and ensure Type exists
 
       if (metalWeight <= 0 && transformedStones.length === 0) {
-        Alert.alert(
-          'Missing Weight Data',
-          'Please provide either metal weight or stone information for pricing calculation.'
-        );
+        showAlert('Missing Weight Data', 'Please provide either metal weight or stone information for pricing calculation.', 'warning');
         return;
       }
 
@@ -477,23 +480,23 @@ const PricingScreen = ({ route, navigation }) => {
 
       // Validate numeric values
       if (isNaN(loss) || loss < 0) {
-        Alert.alert('Validation Error', 'Loss percentage must be a valid positive number');
+        showAlert('Validation Error', 'Loss percentage must be a valid positive number', 'warning');
         return;
       }
       if (isNaN(labour) || labour < 0) {
-        Alert.alert('Validation Error', 'Labour must be a valid positive number');
+        showAlert('Validation Error', 'Labour must be a valid positive number', 'warning');
         return;
       }
       if (isNaN(extraCharges) || extraCharges < 0) {
-        Alert.alert('Validation Error', 'Extra charges must be a valid positive number');
+        showAlert('Validation Error', 'Extra charges must be a valid positive number', 'warning');
         return;
       }
       if (Object.values(dutyRates).some((v) => v < 0)) {
-        Alert.alert('Validation Error', 'Duty rates must be valid positive numbers');
+        showAlert('Validation Error', 'Duty rates must be valid positive numbers', 'warning');
         return;
       }
       if (isNaN(quantity) || quantity <= 0) {
-        Alert.alert('Validation Error', 'Quantity must be a valid positive number greater than 0');
+        showAlert('Validation Error', 'Quantity must be a valid positive number greater than 0', 'warning');
         return;
       }
 
@@ -553,10 +556,7 @@ const PricingScreen = ({ route, navigation }) => {
           !isFinite(payload.details.SilverAndLabsDuties) ||
           !isFinite(payload.details.LossAndLabourDuties) ||
           !isFinite(payload.details.Quantity)) {
-        Alert.alert(
-          'Validation Error',
-          'One or more numeric fields contain invalid values (NaN or Infinity). Please check your inputs.'
-        );
+        showAlert('Validation Error', 'One or more numeric fields contain invalid values (NaN or Infinity). Please check your inputs.', 'warning');
         return;
       }
       
@@ -569,16 +569,13 @@ const PricingScreen = ({ route, navigation }) => {
       );
       
       if (hasInvalidStone) {
-        Alert.alert(
-          'Validation Error',
-          'One or more stones contain invalid numeric values. Please check stone data.'
-        );
+        showAlert('Validation Error', 'One or more stones contain invalid numeric values. Please check stone data.', 'warning');
         return;
       }
 
       // Final validation: ensure payload structure is correct
       if (!payload.details.Metal.Weight && payload.details.Stones.length === 0) {
-        Alert.alert('Validation Error', 'At least one of Metal Weight or Stones must be provided');
+        showAlert('Validation Error', 'At least one of Metal Weight or Stones must be provided', 'warning');
         return;
       }
 
@@ -721,9 +718,9 @@ const PricingScreen = ({ route, navigation }) => {
           });
         }
 
-        Alert.alert('Success', 'Pricing calculated successfully');
+        showAlert('Success', 'Pricing calculated successfully', 'success');
       } else {
-        Alert.alert('Success', 'Calculation completed');
+        showAlert('Success', 'Calculation completed', 'success');
       }
     } catch (error) {
       if (__DEV__) {
@@ -828,18 +825,20 @@ const PricingScreen = ({ route, navigation }) => {
       }
       
       // Show detailed error alert
-      Alert.alert(
+      showAlert(
         'Pricing Calculation Error',
         errorMessage,
+        'error',
         [
           { text: 'OK' },
           ...(payload && error.status === 500 ? [{
             text: 'View Payload',
             onPress: () => {
               // Payload details available in error message
-              Alert.alert(
+              showAlert(
                 'Payload Details',
                 `Check console for full payload details.\n\nClient ID: ${payload.clientId}\nMetal Weight: ${payload.details.Metal.Weight}\nStones: ${payload.details.Stones.length}\nQuantity: ${payload.details.Quantity}`,
+                'info',
                 [{ text: 'OK' }]
               );
             }
@@ -950,9 +949,10 @@ const PricingScreen = ({ route, navigation }) => {
   }, []);
 
   const handleDeleteStone = useCallback((index) => {
-    Alert.alert(
+    showAlert(
       'Delete Stone',
       'Are you sure you want to delete this stone?',
+      'warning',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -1072,7 +1072,7 @@ const PricingScreen = ({ route, navigation }) => {
         if (__DEV__) {
           console.error('❌ [handleSave] Enquiry ID is missing');
         }
-        Alert.alert('Error', 'Enquiry ID is missing');
+        showAlert('Error', 'Enquiry ID is missing', 'error');
         return;
       }
 
@@ -1241,9 +1241,10 @@ const PricingScreen = ({ route, navigation }) => {
         await refetchEnquiry();
       }
       
-      Alert.alert(
+      showAlert(
         'Success',
         'Pricing saved successfully',
+        'success',
         [
           {
             text: 'OK',
@@ -1314,25 +1315,25 @@ const PricingScreen = ({ route, navigation }) => {
         console.error('❌ [handleSave] ===== END ERROR LOG =====');
       }
       
-      Alert.alert('Save Failed', errorMessage);
+      showAlert('Save Failed', errorMessage, 'error');
     }
   };
 
   const handleDownloadExcel = () => {
     if (!designCode) {
-      Alert.alert('Error', 'Design code not available');
+      showAlert('Error', 'Design code not available', 'error');
       return;
     }
     // TODO: Implement Excel download
     const excelUrl = `${API_BASE_URL}/api/enquiries/files/${designCode}.xlsx?download=true`;
-    Alert.alert('Info', 'Download Excel functionality will be implemented');
+    showAlert('Info', 'Download Excel functionality will be implemented', 'info');
     
   };
 
   // Download pricing for a specific entry
   const handleDownloadPricingForEntry = async (pricingEntry, entryStones) => {
     if (entryStones.length === 0) {
-      Alert.alert('No Data', 'No stones data available to download');
+      showAlert('No Data', 'No stones data available to download', 'info');
       return;
     }
 
@@ -1340,7 +1341,7 @@ const PricingScreen = ({ route, navigation }) => {
       // Get auth token
       const token = await AsyncStorage.getItem('token');
       if (!token) {
-        Alert.alert('Error', 'Authentication token not found');
+        showAlert('Error', 'Authentication token not found', 'error');
         return;
       }
 
@@ -1451,9 +1452,10 @@ const PricingScreen = ({ route, navigation }) => {
         });
       } catch (shareError) {
         if (shareError.message !== 'User did not share') {
-          Alert.alert(
+          showAlert(
             'Success',
             `Excel file generated successfully!\n\nSaved to: Downloads/${excelFilename}\n\nYou can share it from your file manager.`,
+            'success',
             [{ text: 'OK' }]
           );
         }
@@ -1497,9 +1499,10 @@ const PricingScreen = ({ route, navigation }) => {
       });
     } catch (shareError) {
       if (shareError.message !== 'User did not share') {
-        Alert.alert(
+        showAlert(
           'Success',
           `Excel file downloaded successfully!\n\nSaved to: Downloads/${filename}`,
+          'success',
           [{ text: 'OK' }]
         );
       }
@@ -1508,7 +1511,7 @@ const PricingScreen = ({ route, navigation }) => {
 
   const generateExcelFile = async () => {
     if (stones.length === 0) {
-      Alert.alert('No Data', 'No stones data available');
+      showAlert('No Data', 'No stones data available', 'info');
       return;
     }
 
@@ -1597,15 +1600,16 @@ const PricingScreen = ({ route, navigation }) => {
         });
       } catch (shareError) {
         if (shareError.message !== 'User did not share') {
-          Alert.alert(
+          showAlert(
             'Success',
             `Excel file downloaded successfully!\n\nSaved to: Downloads/${excelFilename}`,
+            'success',
             [{ text: 'OK' }]
           );
         }
       }
     } catch (error) {
-      Alert.alert('Error', `Failed to generate Excel file: ${error.message}`);
+      showAlert('Error', `Failed to generate Excel file: ${error.message}`, 'error');
     }
   };
 
@@ -1621,7 +1625,7 @@ const PricingScreen = ({ route, navigation }) => {
       console.log('❌ ERROR: Invalid pricing entry');
       console.log('Entry Index is null:', entryIndex === null);
       console.log('Entry exists:', !!pricingEntriesState[entryIndex]);
-      Alert.alert('Error', 'Invalid pricing entry');
+      showAlert('Error', 'Invalid pricing entry', 'error');
       return;
     }
 
@@ -1943,7 +1947,7 @@ const PricingScreen = ({ route, navigation }) => {
           return updated;
         });
         
-        Alert.alert('Success', 'All fields updated with calculated values');
+        showAlert('Success', 'All fields updated with calculated values', 'success');
       } else {
         console.log('ERROR: Response is null or undefined');
       }
@@ -1964,7 +1968,7 @@ const PricingScreen = ({ route, navigation }) => {
       
       const errorMessage = error?.data?.message || error?.data?.error || error?.message || 'Failed to calculate pricing';
       console.log('Showing error alert:', errorMessage);
-      Alert.alert('Error', errorMessage);
+      showAlert('Error', errorMessage, 'error');
     } finally {
       // Note: isCalculating is managed by the mutation hook automatically
       console.log('=== CALCULATE COMPLETE ===');
@@ -1974,7 +1978,7 @@ const PricingScreen = ({ route, navigation }) => {
   // Sync client pricing for a specific entry
   const handleSyncClientPricingForEntry = async (entryIndex) => {
     if (entryIndex === null || !pricingEntriesState[entryIndex]) {
-      Alert.alert('Error', 'Invalid pricing entry');
+      showAlert('Error', 'Invalid pricing entry', 'error');
       return;
     }
 
@@ -1992,9 +1996,10 @@ const PricingScreen = ({ route, navigation }) => {
                        null;
 
       if (!clientId) {
-        Alert.alert(
+        showAlert(
           'Missing Client ID',
-          'Client ID is required for syncing client pricing. Please ensure the enquiry has a valid client assigned.'
+          'Client ID is required for syncing client pricing. Please ensure the enquiry has a valid client assigned.',
+          'warning'
         );
         return;
       }
@@ -2158,11 +2163,11 @@ const PricingScreen = ({ route, navigation }) => {
           });
         }
 
-        Alert.alert('Success', 'Client pricing synced successfully');
+        showAlert('Success', 'Client pricing synced successfully', 'success');
       }
     } catch (error) {
       const errorMessage = error?.data?.message || error?.message || 'Failed to sync client pricing';
-      Alert.alert('Error', errorMessage);
+      showAlert('Error', errorMessage, 'error');
     } finally {
       setIsSyncing(false);
     }
@@ -2180,7 +2185,7 @@ const PricingScreen = ({ route, navigation }) => {
     if (pricingEntriesState.length > 0) {
       await handleSyncClientPricingForEntry(0);
     } else {
-      Alert.alert('Error', 'No pricing entries available');
+      showAlert('Error', 'No pricing entries available', 'error');
     }
   };
 
@@ -2720,9 +2725,10 @@ const PricingScreen = ({ route, navigation }) => {
                     <View style={[styles.tableCell, styles.tableCellFlexAction, isTablet && styles.tableCellTablet, isTablet && styles.tableCellFlexActionTablet]}>
                           <TouchableOpacity
                             onPress={() => {
-                              Alert.alert(
+                              showAlert(
                                 'Delete Stone',
                                 'Are you sure you want to delete this stone?',
+                                'warning',
                                 [
                                   { text: 'Cancel', style: 'cancel' },
                                   {
@@ -3338,7 +3344,7 @@ const PricingScreen = ({ route, navigation }) => {
                       await handleCalculateForEntry(editingEntryIndex);
                     } else {
                       console.log('❌ Cannot calculate - invalid entry index or entry does not exist');
-                      Alert.alert('Error', 'Please select a valid pricing entry to calculate');
+                      showAlert('Error', 'Please select a valid pricing entry to calculate', 'error');
                     }
                   }}
                   disabled={isCalculating}
@@ -3466,7 +3472,7 @@ const PricingScreen = ({ route, navigation }) => {
                       await handleCalculateForEntry(editingEntryIndex);
                     } else {
                       console.log('❌ Cannot calculate - invalid entry index or entry does not exist');
-                      Alert.alert('Error', 'Please select a valid pricing entry to calculate');
+                      showAlert('Error', 'Please select a valid pricing entry to calculate', 'error');
                     }
                   }}
                   disabled={isCalculating}
@@ -3502,6 +3508,14 @@ const PricingScreen = ({ route, navigation }) => {
         {/* All form sections (Pricing Details, Stones, Action Buttons) removed from main screen */}
         {/* All editing happens in modals - use "Add Pricing" button or "Edit" button on existing entries */}
       </ScrollView>
+      <BrandedAlert
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        buttons={alertConfig.buttons}
+        onClose={hideAlert}
+      />
     </View>
   );
 };

@@ -5,11 +5,11 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
-  Alert,
   Text,
   Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import BrandedAlert from '../../components/common/BrandedAlert';
 import { useClients } from '../../features/clients/clientsHooks';
 import { Card } from '../../components/cards/Cards';
 import { Button, SearchInput } from '../../components/common';
@@ -30,6 +30,10 @@ const ClientsListScreen = ({ navigation }) => {
                   user?.roleId === 1;
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
+  const showAlert = (title, message, type = 'info', buttons = []) =>
+    setAlertConfig({ visible: true, title, message, type, buttons });
+  const hideAlert = () => setAlertConfig(prev => ({ ...prev, visible: false }));
 
   // Redux hook with caching
   const { clients: clientsData = [], isLoading: loading, refetch } = useClients();
@@ -63,7 +67,7 @@ const ClientsListScreen = ({ navigation }) => {
         clientName: client.name,
       });
     } else {
-      Alert.alert('Error', 'Client ID not found');
+      showAlert('Error', 'Client ID not found', 'error');
     }
   };
 
@@ -71,14 +75,14 @@ const ClientsListScreen = ({ navigation }) => {
     
     
     if (!isAdmin) {
-      Alert.alert('Access Denied', 'Only administrators can create clients.');
+      showAlert('Access Denied', 'Only administrators can create clients.', 'warning');
       return;
     }
     
     try {
       navigation.navigate('CreateClient');
     } catch (error) {
-      Alert.alert('Error', `Failed to navigate: ${error.message}`);
+      showAlert('Error', `Failed to navigate: ${error.message}`, 'error');
     }
   };
 
@@ -295,6 +299,14 @@ const ClientsListScreen = ({ navigation }) => {
           </View>
         )}
       </ScrollView>
+      <BrandedAlert
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        buttons={alertConfig.buttons}
+        onClose={hideAlert}
+      />
     </SafeAreaView>
   );
 };

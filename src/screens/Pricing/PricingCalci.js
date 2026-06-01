@@ -7,11 +7,11 @@ import {
   TouchableOpacity,
   Modal,
   Image,
-  Alert,
   TextInput,
   ActivityIndicator,
   Platform,
 } from 'react-native';
+import BrandedAlert from '../../components/common/BrandedAlert';
 import RNFS from 'react-native-fs';
 import Share from 'react-native-share';
 import { launchImageLibrary } from 'react-native-image-picker';
@@ -48,7 +48,10 @@ export default function PricingCalci() {
   const [imageData, setImageData] = useState(null);
   const [isExtracting, setIsExtracting] = useState(false);
 
-
+  const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
+  const showAlert = (title, message, type = 'info', buttons = []) =>
+    setAlertConfig({ visible: true, title, message, type, buttons });
+  const hideAlert = () => setAlertConfig(prev => ({ ...prev, visible: false }));
 
   // Modals Visibility
   const [showClientModal, setShowClientModal] = useState(false);
@@ -72,9 +75,57 @@ export default function PricingCalci() {
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editingStoneIndex, setEditingStoneIndex] = useState(null);
 
+  // Validation: Check if metal rate and all stone prices are present
+  const validatePricingData = useCallback(() => {
+    const hasMetalRate = editableMetal && parseFloat(editableMetal.Rate) > 0;
+    const allStonesHavePrices = editableStones.length > 0 && editableStones.every(stone => parseFloat(stone.Price || 0) > 0);
+    return hasMetalRate && allStonesHavePrices;
+  }, [editableMetal, editableStones]);
+
+  const canRecalculate = validatePricingData();
+
   useEffect(() => {
-    if (!imageData?.pricing) return;
-    const p = imageData.pricing;
+    if (!imageData) return;
+    
+    // Check if imageData has any valid pricing information
+    const p = imageData.pricing || imageData.extractedData || imageData;
+    const extractedData = imageData.extractedData || {};
+    
+    // Check for valid stones
+    const hasStones = p.Stones && Array.isArray(p.Stones) && p.Stones.length > 0;
+    const hasExtractedStones = extractedData.Stones && Array.isArray(extractedData.Stones) && extractedData.Stones.length > 0;
+    
+    // Check for valid metal data
+    const hasMetal = p.Metal && (parseFloat(p.Metal.Weight) > 0);
+    const hasExtractedMetal = extractedData.Metal && (parseFloat(extractedData.Metal.Weight) > 0);
+    
+    // Check for valid total pieces
+    const hasTotalPieces = (extractedData.TotalPieces && extractedData.TotalPieces > 0) || (p.TotalPieces && p.TotalPieces > 0);
+    
+    // If no valid data at all, show error and clear
+    if (!hasStones && !hasExtractedStones && !hasMetal && !hasExtractedMetal && !hasTotalPieces) {
+      Alert.alert(
+        'No Data Found',
+        'No pricing data was extracted from the image. Please reupload a clear image with visible pricing information.',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              setImageFile(null);
+              setImageData(null);
+              setEditableStones([]);
+              setEditableMetal({ Weight: 0, Quality: '18K', Rate: 0 });
+              setPricingResult(null);
+            }
+          }
+        ]
+      );
+      return;
+    }
+    
+    // Only proceed if we have pricing data
+    if (!imageData.pricing) return;
+    
     setEditableStones(
       (p.Stones || []).map(s => ({ ...s }))
     );
@@ -93,7 +144,7 @@ export default function PricingCalci() {
     
     // Log the full response for debugging
     console.log('📊 Full Image Data:', JSON.stringify(imageData, null, 2));
-  }, [imageData]);
+  }, [imageData, metalKt]);
 
   const updateStone = (index, field, value) => {
     setEditableStones(prev => {
@@ -120,7 +171,7 @@ export default function PricingCalci() {
 
   const handleRecalculate = async () => {
     if (!clientId) {
-      Alert.alert('Validation Error', 'Client is required for pricing');
+      showAlert('Validation Error', 'Client is required for pricing', 'warning');
       return;
     }
     setIsRecalculating(true);
@@ -150,10 +201,10 @@ export default function PricingCalci() {
       }).unwrap();
 
       setPricingResult(result);
-      Alert.alert('Recalculation Complete', `Total Price: $${result.TotalPrice ?? result.totalPrice ?? 0}`);
+      showAlert('Recalculation Complete', `Total Price: $${result.TotalPrice ?? result.totalPrice ?? 0}`, 'info');
     } catch (error) {
       const msg = error?.data?.message || error?.message || 'Recalculation failed';
-      Alert.alert('Error', msg);
+      showAlert('Error', msg, 'error');
     } finally {
       setIsRecalculating(false);
     }
@@ -373,7 +424,7 @@ export default function PricingCalci() {
 
   const handleSharePDF = useCallback(async () => {
     if (!pricingResult) {
-      Alert.alert('No Data', 'Please calculate pricing first before sharing');
+      showAlert('No Data', 'Please calculate pricing first before sharing', 'info');
       return;
     }
     
@@ -426,14 +477,14 @@ export default function PricingCalci() {
     } catch (e) {
       console.error('Share PDF Error:', e);
       if (e?.message && !e.message.includes('User did not share') && !e.message.includes('cancelled') && !e.message.includes('User cancelled')) {
-        Alert.alert('Share Failed', e.message || 'Failed to share PDF. Please try again.');
+        showAlert('Share Failed', e.message || 'Failed to share PDF. Please try again.', 'error');
       }
     }
   }, [pricingResult, generatePdfFile, clients, clientId]);
 
   const handleExportDownload = useCallback(async () => {
     if (!pricingResult) {
-      Alert.alert('No Data', 'Please calculate pricing first before exporting');
+      showAlert('No Data', 'Please calculate pricing first before exporting', 'info');
       return;
     }
     
@@ -458,7 +509,7 @@ export default function PricingCalci() {
           );
           
           if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-            Alert.alert('Permission Denied', 'Storage permission is required to download files');
+            showAlert('Permission Denied', 'Storage permission is required to download files', 'warning');
             return;
           }
         }
@@ -496,11 +547,7 @@ export default function PricingCalci() {
           // First attempt: copy directly
           await RNFS.copyFile(pdf.filePath, downloadPath);
           
-          Alert.alert(
-            'Export Successful',
-            `PDF saved successfully!\n\nFile: ${fileName}\nLocation: Downloads folder\n\nYou can access it from your File Manager.`,
-            [{ text: 'OK' }]
-          );
+          showAlert('Export Successful', `PDF saved successfully!\n\nFile: ${fileName}\nLocation: Downloads folder\n\nYou can access it from your File Manager.`, 'success', [{ text: 'OK' }]);
         } catch (copyError) {
           console.warn('Direct copy failed, trying base64 write', copyError);
           try {
@@ -508,12 +555,8 @@ export default function PricingCalci() {
             // Helps bypass some scoped storage restrictions on Android 10/11
             const base64data = await RNFS.readFile(pdf.filePath, 'base64');
             await RNFS.writeFile(downloadPath, base64data, 'base64');
-            
-            Alert.alert(
-              'Export Successful',
-              `PDF saved successfully!\n\nFile: ${fileName}\nLocation: Downloads folder\n\nYou can access it from your File Manager.`,
-              [{ text: 'OK' }]
-            );
+
+            showAlert('Export Successful', `PDF saved successfully!\n\nFile: ${fileName}\nLocation: Downloads folder\n\nYou can access it from your File Manager.`, 'success', [{ text: 'OK' }]);
           } catch (writeError) {
             console.warn('Base64 write failed, falling back to Share', writeError);
             // Final fallback: use the Share module so user can save or send it
@@ -529,10 +572,7 @@ export default function PricingCalci() {
       console.error('Export PDF Error:', e);
       // Ignore user cancellation errors
       if (e?.message && !e.message.includes('User did not share') && !e.message.includes('cancelled') && !e.message.includes('User cancelled')) {
-        Alert.alert(
-          'Export Failed',
-          e?.message || 'Failed to export PDF. Please check storage permissions and try again.'
-        );
+        showAlert('Export Failed', e?.message || 'Failed to export PDF. Please check storage permissions and try again.', 'error');
       }
     }
   }, [pricingResult, generatePdfFile, clients, clientId]);
@@ -588,11 +628,11 @@ export default function PricingCalci() {
   const handleImagePick = async () => {
     // Validate required fields before picking image
     if (!clientId) {
-      Alert.alert('Validation Error', 'Please select a client first');
+      showAlert('Validation Error', 'Please select a client first', 'warning');
       return;
     }
     if (!stoneType) {
-      Alert.alert('Validation Error', 'Please select a stone type first');
+      showAlert('Validation Error', 'Please select a stone type first', 'warning');
       return;
     }
 
@@ -603,7 +643,7 @@ export default function PricingCalci() {
         const asset = pickerResult.assets[0];
         // Max 20MB limit validation
         if (asset.fileSize && asset.fileSize > 20 * 1024 * 1024) {
-          Alert.alert('File too large', 'Maximum allowed image size is 20MB.');
+          showAlert('File too large', 'Maximum allowed image size is 20MB.', 'warning');
           return;
         }
         setImageFile({
@@ -631,7 +671,7 @@ export default function PricingCalci() {
         } catch (apiError) {
           console.error('❌ API Error:', apiError);
           const errorMsg = apiError?.data?.message || apiError?.error || 'Failed to extract pricing data. Please ensure the client has pricing configuration set up.';
-          Alert.alert('Extraction Error', errorMsg);
+           showAlert('Extraction Error', errorMsg, 'error');
           // Clear the image on error
           setImageFile(null);
         } finally {
@@ -640,17 +680,14 @@ export default function PricingCalci() {
       }
     } catch (error) {
       console.error('❌ Image Picker Error:', error);
-      Alert.alert('Error', 'Failed to pick image. Please try again.');
+      showAlert('Error', 'Failed to pick image. Please try again.', 'error');
       setIsExtracting(false);
     }
   };
 
   const handleExcelPick = async () => {
     if (!DocumentPicker) {
-      Alert.alert(
-        'Feature Not Available',
-        'Document picker is not available on this device.'
-      );
+      showAlert('Feature Not Available', 'Document picker is not available on this device.', 'warning');
       return;
     }
     try {
@@ -664,7 +701,7 @@ export default function PricingCalci() {
       });
     } catch (err) {
       if (!DocumentPicker.isCancel(err)) {
-        Alert.alert('Error', 'Failed to pick excel file');
+        showAlert('Error', 'Failed to pick excel file', 'error');
       }
     }
   };
@@ -674,7 +711,7 @@ export default function PricingCalci() {
     const detailsData = data?.pricing || data?.extractedData || data?.details || data;
     
     if (!detailsData) {
-      Alert.alert('Validation Error', 'No pricing data available. Please upload an image first.');
+      showAlert('Validation Error', 'No pricing data available. Please upload an image first.', 'warning');
       return;
     }
     
@@ -711,17 +748,13 @@ export default function PricingCalci() {
       }).unwrap();
 
       const finalPrice = result?.TotalPrice !== undefined ? result.TotalPrice : (result?.totalPrice || 'N/A');
-      Alert.alert(
-        'Calculation Complete',
-        `Total Price: $${finalPrice}\n\nPlease check the console for detailed pricing breakdown.`,
-        [{ text: 'OK' }]
-      );
+      showAlert('Calculation Complete', `Total Price: $${finalPrice}\n\nPlease check the console for detailed pricing breakdown.`, 'success', [{ text: 'OK' }]);
       
       console.log('💰 Pricing Result:', result);
     } catch (error) {
       console.error('❌ Pricing calculation error:', error);
       const errorMsg = error?.data?.message || error?.message || 'Failed to calculate pricing. Please ensure the client has pricing configuration set up.';
-      Alert.alert('Calculation Failed', errorMsg);
+      showAlert('Calculation Failed', errorMsg, 'error');
     }
   };
 
@@ -901,7 +934,7 @@ export default function PricingCalci() {
           </View>
         </Card>
 
-        {imageData && editableStones && editableStones.length > 0 && (
+        {imageData && imageData.pricing && editableStones && editableStones.length > 0 && (
           <Card style={styles.card}>
             <Text style={styles.sectionTitle}>Extracted Details</Text>
 
@@ -959,7 +992,7 @@ export default function PricingCalci() {
                       <Text style={[styles.compactTableCell, { width: 45 }]}>{stone.Weight ?? 0}</Text>
                       <Text style={[styles.compactTableCell, { width: 40 }]}>{stone.Pcs ?? 0}</Text>
                       <Text style={[styles.compactTableCell, { width: 45 }]}>{stone.CtWeight ?? 0}</Text>
-                      <Text style={[styles.compactTableCell, { width: 50 }]}>{stone.Price ?? 0}</Text>
+                      <Text style={[styles.compactTableCell, { width: 50, color: (!stone.Price || parseFloat(stone.Price) <= 0) ? colors.error : colors.textPrimary, fontFamily: (!stone.Price || parseFloat(stone.Price) <= 0) ? fonts.bold : fonts.regular }]}>{stone.Price ?? 0}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity 
                       style={styles.deleteIconButton} 
@@ -990,8 +1023,16 @@ export default function PricingCalci() {
                     <TextInput style={styles.fieldInput} value={editableMetal.Quality || ''} onChangeText={v => setEditableMetal(p => ({ ...p, Quality: v }))} />
                   </View>
                   <View style={styles.chargeField}>
-                    <Text style={styles.fieldLabel}>Rate ($/g)</Text>
-                    <TextInput style={styles.fieldInput} keyboardType="decimal-pad" value={String(editableMetal.Rate || 0)} onChangeText={v => setEditableMetal(p => ({ ...p, Rate: v }))} />
+                    <Text style={[styles.fieldLabel, (!editableMetal.Rate || parseFloat(editableMetal.Rate) <= 0) && styles.fieldLabelError]}>Rate ($/g) *</Text>
+                    <TextInput 
+                      style={[styles.fieldInput, (!editableMetal.Rate || parseFloat(editableMetal.Rate) <= 0) && styles.fieldInputError]} 
+                      keyboardType="decimal-pad" 
+                      value={String(editableMetal.Rate || 0)} 
+                      onChangeText={v => setEditableMetal(p => ({ ...p, Rate: v }))} 
+                    />
+                    {(!editableMetal.Rate || parseFloat(editableMetal.Rate) <= 0) && (
+                      <Text style={styles.errorText}>Required</Text>
+                    )}
                   </View>
                 </View>
               </>
@@ -1085,7 +1126,11 @@ export default function PricingCalci() {
                 )}
                 
                 <View style={styles.actionButtonRow}>
-                  <TouchableOpacity style={styles.recalcButton} onPress={handleRecalculate} disabled={isRecalculating}>
+                  <TouchableOpacity 
+                    style={[styles.recalcButton, !canRecalculate && styles.recalcButtonDisabled]} 
+                    onPress={handleRecalculate} 
+                    disabled={isRecalculating || !canRecalculate}
+                  >
                     {isRecalculating ? (
                       <ActivityIndicator size="small" color={colors.textWhite} />
                     ) : (
@@ -1095,6 +1140,14 @@ export default function PricingCalci() {
                     )}
                   </TouchableOpacity>
                 </View>
+                {!canRecalculate && (
+                  <View style={styles.validationWarning}>
+                    <Icon name="warning" size={16} color={colors.warning} />
+                    <Text style={styles.validationWarningText}>
+                      Please fill metal rate and all stone prices before recalculating
+                    </Text>
+                  </View>
+                )}
               </>
             )}
           </Card>
@@ -1104,7 +1157,7 @@ export default function PricingCalci() {
       <View style={styles.footer}>
         {imageData && pricingResult ? (
           <View style={styles.footerActions}>
-            <TouchableOpacity style={styles.footerRecalcBtn} onPress={handleRecalculate} disabled={isRecalculating}>
+            <TouchableOpacity style={[styles.footerRecalcBtn, !canRecalculate && styles.recalcButtonDisabled]} onPress={handleRecalculate} disabled={isRecalculating || !canRecalculate}>
               {isRecalculating ? (
                 <ActivityIndicator size="small" color={colors.textWhite} />
               ) : (
@@ -1241,8 +1294,16 @@ export default function PricingCalci() {
                     </View>
                     <View style={styles.editFieldRow}>
                       <View style={styles.editFieldFull}>
-                        <Text style={styles.editFieldLabel}>$/Ct</Text>
-                        <TextInput style={styles.editFieldInput} keyboardType="decimal-pad" value={String(stone.Price ?? 0)} onChangeText={v => updateStone(editingStoneIndex, 'Price', v)} />
+                        <Text style={[styles.editFieldLabel, (!stone.Price || parseFloat(stone.Price) <= 0) && styles.fieldLabelError]}>$/Ct *</Text>
+                        <TextInput 
+                          style={[styles.editFieldInput, (!stone.Price || parseFloat(stone.Price) <= 0) && styles.fieldInputError]} 
+                          keyboardType="decimal-pad" 
+                          value={String(stone.Price ?? 0)} 
+                          onChangeText={v => updateStone(editingStoneIndex, 'Price', v)} 
+                        />
+                        {(!stone.Price || parseFloat(stone.Price) <= 0) && (
+                          <Text style={styles.errorText}>Required</Text>
+                        )}
                       </View>
                     </View>
                   </View>
@@ -1255,6 +1316,15 @@ export default function PricingCalci() {
           </View>
         </View>
       </Modal>
+
+      <BrandedAlert
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        buttons={alertConfig.buttons}
+        onClose={hideAlert}
+      />
     </View>
   );
 }
@@ -1661,6 +1731,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     gap: 6,
   },
+  recalcButtonDisabled: {
+    backgroundColor: colors.textSecondary,
+    opacity: 0.5,
+  },
   whatsappButton: {
     flex: 1,
     backgroundColor: '#25D366',
@@ -1861,5 +1935,33 @@ const styles = StyleSheet.create({
     color: colors.textWhite,
     fontFamily: fonts.bold,
     fontSize: fonts.md,
+  },
+  fieldLabelError: {
+    color: colors.error,
+  },
+  fieldInputError: {
+    borderColor: colors.error,
+    borderWidth: 2,
+  },
+  errorText: {
+    fontSize: fonts.xs,
+    fontFamily: fonts.regular,
+    color: colors.error,
+    marginTop: 2,
+  },
+  validationWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF3E0',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 12,
+    gap: 8,
+  },
+  validationWarningText: {
+    flex: 1,
+    fontSize: fonts.xs,
+    fontFamily: fonts.regular,
+    color: '#E65100',
   },
 });

@@ -4,7 +4,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
   Image,
   Platform,
   PermissionsAndroid,
@@ -28,6 +27,7 @@ import {
   EnquiryChatCta,
   isEnquiryClientUser,
 } from '../../components/enquiry/EnquirySummaryCard';
+import BrandedAlert from '../../components/common/BrandedAlert';
 
 const normalizeEnquiryChat = (chat) => chat?._originalData || chat;
 
@@ -57,6 +57,10 @@ const AddEnquiryStep2Screen = ({ route, navigation }) => {
   const { user } = useAuth();
   const [selectedImages, setSelectedImages] = useState([]);
   const [showSuccessAnimation, setShowSuccessAnimation] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
+  const showAlert = (title, message, type = 'info', buttons = []) =>
+    setAlertConfig({ visible: true, title, message, type, buttons });
+  const hideAlert = () => setAlertConfig(prev => ({ ...prev, visible: false }));
   
   // Fetch and cache users for name resolution
   useUsers();
@@ -168,7 +172,7 @@ const AddEnquiryStep2Screen = ({ route, navigation }) => {
   const handleCamera = async () => {
     const hasPermission = await requestCameraPermission();
     if (!hasPermission) {
-      Alert.alert('Permission Denied', 'Camera permission is required to take photos');
+      showAlert('Permission Denied', 'Camera permission is required to take photos', 'warning');
       return;
     }
 
@@ -181,7 +185,7 @@ const AddEnquiryStep2Screen = ({ route, navigation }) => {
     launchCamera(options, (response) => {
       if (response.didCancel) {
       } else if (response.errorCode) {
-        Alert.alert('Error', `Camera Error: ${response.errorMessage}`);
+        showAlert('Error', `Camera Error: ${response.errorMessage}`, 'error');
       } else if (response.assets && response.assets.length > 0) {
         const asset = response.assets[0];
         if (asset.uri) {
@@ -198,7 +202,7 @@ const AddEnquiryStep2Screen = ({ route, navigation }) => {
   const handleGallery = async () => {
     const hasPermission = await requestStoragePermission();
     if (!hasPermission && Platform.OS === 'android') {
-      Alert.alert('Permission Denied', 'Storage permission is required to select images and videos');
+      showAlert('Permission Denied', 'Storage permission is required to select images and videos', 'warning');
       return;
     }
 
@@ -230,7 +234,7 @@ const AddEnquiryStep2Screen = ({ route, navigation }) => {
           userMessage = 'Unable to read file metadata. This may happen with certain video files. Please try:\n\n1. Selecting a different file\n2. Converting the video to a different format\n3. Using a smaller video file';
         }
         
-        Alert.alert('Error', `Image Picker Error: ${userMessage}`);
+        showAlert('Error', `Image Picker Error: ${userMessage}`, 'error');
         return;
       } else if (response.assets && response.assets.length > 0) {
         const newImages = response.assets.map((asset, index) => {
@@ -274,9 +278,10 @@ const AddEnquiryStep2Screen = ({ route, navigation }) => {
   };
 
   const handleImagePicker = () => {
-    Alert.alert(
+    showAlert(
       'Select Media Source',
       'Choose how you want to add images or videos',
+      'info',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -298,7 +303,7 @@ const AddEnquiryStep2Screen = ({ route, navigation }) => {
   const handleSubmit = async () => {
     
     if (!user?.id) {
-      Alert.alert('Error', 'User not found. Please login again.');
+      showAlert('Error', 'User not found. Please login again.', 'error');
       return;
     }
     
@@ -337,9 +342,10 @@ const AddEnquiryStep2Screen = ({ route, navigation }) => {
             if (__DEV__) {
               console.error('❌ Error uploading reference images:', uploadError);
             }
-            Alert.alert(
+            showAlert(
               'Upload Failed',
               uploadError?.data?.message || uploadError?.data?.error || 'Failed to upload images/videos. The enquiry was created but media could not be uploaded.',
+              'error',
               [
                 {
                   text: 'Continue Anyway',
@@ -501,29 +507,29 @@ const AddEnquiryStep2Screen = ({ route, navigation }) => {
           budget: formData.budget && formData.budget.trim() ? parseFloat(formData.budget) || null : (enquiryToEdit.budget || null),
         };
         
-        Alert.alert(
+        showAlert(
           'Enquiry Updated',
           'Your enquiry has been updated successfully!',
+          'info',
           [
             {
               text: 'OK',
               onPress: () => {
-                // Navigate back to single enquiry screen with updated data
                 navigation.navigate('SingleEnquiry', { 
                   enquiryId: enquiryToEdit.id, 
                   enquiry: updatedEnquiry,
-                  shouldRefresh: true, // Flag to indicate data was updated
+                  shouldRefresh: true,
                 });
               },
             },
-          ],
-          { cancelable: false }
+          ]
         );
       } else {
         // This should not happen - new enquiries should return early above
-        Alert.alert(
+        showAlert(
           'Error',
-          'Unexpected error occurred. Please try again.'
+          'Unexpected error occurred. Please try again.',
+          'error'
         );
       }
     } catch (error) {
@@ -574,11 +580,11 @@ const AddEnquiryStep2Screen = ({ route, navigation }) => {
         errorMessage = error.message;
       }
       
-      Alert.alert(
+      showAlert(
         'Error',
         errorMessage,
-        [{ text: 'OK', onPress: () => {} }],
-        { cancelable: false }
+        'error',
+        [{ text: 'OK', onPress: () => {} }]
       );
       // Don't navigate on error - stay on the form
       return;
@@ -618,7 +624,7 @@ const AddEnquiryStep2Screen = ({ route, navigation }) => {
         clientId: formData.clientId,
       });
     } else {
-      Alert.alert('Info', 'Please complete the enquiry first to access chat');
+      showAlert('Info', 'Please complete the enquiry first to access chat', 'info');
     }
   }, [
     user,
@@ -781,11 +787,18 @@ const AddEnquiryStep2Screen = ({ route, navigation }) => {
         visible={showSuccessAnimation}
         onComplete={() => {
           setShowSuccessAnimation(false);
-          // Navigate back to enquiries list
           navigation.navigate('MainTabs', { screen: 'Enquiries' });
         }}
         title="Enquiry Created"
         message="Your enquiry has been created successfully!"
+      />
+      <BrandedAlert
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        buttons={alertConfig.buttons}
+        onClose={hideAlert}
       />
     </ScrollView>
   );

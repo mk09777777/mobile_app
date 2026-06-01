@@ -126,7 +126,9 @@ export default function NewEnquiryCard({
   const raw = item._originalData || item;
   const assignedVal = item.AssignedTo || item.assignedTo || raw.AssignedTo || raw.assignedTo;
   const hasAssignedUser = assignedVal
-    ? (typeof assignedVal === 'object' ? !!(assignedVal.id || assignedVal._id || assignedVal.userId) : true)
+    ? (typeof assignedVal === 'object'
+        ? !!(assignedVal.id || assignedVal.Id || assignedVal._id || assignedVal.userId)
+        : String(assignedVal).trim().length > 0)
     : false;
 
   // Button visibility based on user role and status

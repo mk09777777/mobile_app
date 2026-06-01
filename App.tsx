@@ -4,7 +4,6 @@
  *
  * @format
  */
-
 import React, { useState } from 'react';
 import { StatusBar, useColorScheme } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -22,7 +21,7 @@ import ChatListSocketSync from './src/components/providers/ChatListSocketSync';
 const AppContent = () => {
   const isDarkMode = useColorScheme() === 'dark';
   const { isLoading: authLoading } = useAuth();
-  const [splashFinished, setSplashFinished] = useState(false);
+  const [splashFinished, setSplashFinished] = useState(true);
 
   // Show splash screen first
   if (!splashFinished) {

@@ -10,6 +10,7 @@ import CustomTabBar from '../components/common/CustomTabBar';
 import DashboardScreen from '../screens/Dashboard/DashboardScreen';
 import EnquiryListScreen from '../screens/Enquiries/EnquiryListScreen';
 import ChatsScreen from '../screens/Chats/ChatsScreen';
+import AppsSelectionScreen from '../screens/AppSelection/AppSelectionScreen';
 import {useAuth} from '../context/AuthContext';
 
 const Tab = createBottomTabNavigator();
@@ -21,7 +22,7 @@ const BottomTabs = () => {
     if(user?.role==='admin'){
       return(
          <Tab.Navigator
-      tabBar={(props) => <CustomTabBar {...props} />}
+      tabBar={(props) => <CustomTabBar {...props} currentApp="custom" />}
       screenOptions={{
         headerShown: false,
       }}>
@@ -49,6 +50,7 @@ const BottomTabs = () => {
           tabBarIcon: ({ color, size }) => <Icon name="chat" size={size || 24} color={color} />,
         }}
       />
+ 
     </Tab.Navigator>
       )
 
@@ -58,7 +60,7 @@ const BottomTabs = () => {
   else if(user?.role==='coral'){
     return(
        <Tab.Navigator
-      tabBar={(props) => <CustomTabBar {...props} />}
+      tabBar={(props) => <CustomTabBar {...props} currentApp="custom" />}
       screenOptions={{
         headerShown: false,
       }}>
@@ -78,6 +80,7 @@ const BottomTabs = () => {
           tabBarIcon: ({ color, size }) => <Icon name="chat" size={size || 24} color={color} />,
         }}
       />
+
     </Tab.Navigator>
     )
   }
@@ -85,7 +88,7 @@ const BottomTabs = () => {
   else if(user?.role==='cad'){
     return(
        <Tab.Navigator
-      tabBar={(props) => <CustomTabBar {...props} />}
+      tabBar={(props) => <CustomTabBar {...props} currentApp="custom" />}
       screenOptions={{
         headerShown: false,
       }}>
@@ -105,6 +108,7 @@ const BottomTabs = () => {
           tabBarIcon: ({ color, size }) => <Icon name="chat" size={size || 24} color={color} />,
         }}
       />
+
     </Tab.Navigator>
     )
   }
@@ -112,7 +116,7 @@ const BottomTabs = () => {
   else{
     return(
          <Tab.Navigator
-      tabBar={(props) => <CustomTabBar {...props} />}
+      tabBar={(props) => <CustomTabBar {...props} currentApp="custom" />}
       screenOptions={{
         headerShown: false,
       }}>
@@ -140,6 +144,7 @@ const BottomTabs = () => {
           tabBarIcon: ({ color, size }) => <Icon name="chat" size={size || 24} color={color} />,
         }}
       />
+ 
     </Tab.Navigator>
     )
   }

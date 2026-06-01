@@ -4,13 +4,13 @@ import {
   Text,
   TouchableOpacity,
   Image,
-  Alert,
   StyleSheet,
 } from 'react-native';
 import Icon from '../../components/common/Icon';
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
 import { useUploadDesignMutation } from '../../store/api';
+import BrandedAlert from '../../components/common/BrandedAlert';
 
 let DocumentPicker;
 try {
@@ -29,11 +29,16 @@ export default function UploadExcelScreen({ route, navigation }) {
   const [selectedExcel, setSelectedExcel] = useState(null);
   const [uploadType, setUploadType] = useState(null);
   const [uploadDesign, { isLoading: isUploading }] = useUploadDesignMutation();
+  const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
+  const showAlert = (title, message, type = 'info', buttons = []) =>
+    setAlertConfig({ visible: true, title, message, type, buttons });
+  const hideAlert = () => setAlertConfig(prev => ({ ...prev, visible: false }));
   const handleSelectExcel = async () => {
     if (!DocumentPicker) {
-      Alert.alert(
+      showAlert(
         'Feature Not Available',
         'Document picker is not installed. Please install react-native-document-picker to use this feature.',
+        'info',
         [{ text: 'OK' }],
       );
       return;
@@ -41,7 +46,7 @@ export default function UploadExcelScreen({ route, navigation }) {
 
     const hasPermission = await requestStoragePermission();
     if (!hasPermission) {
-      Alert.alert(
+      showAlert(
         'Permission Denied',
         'Storage permission is required to select files',
       );
@@ -75,7 +80,7 @@ export default function UploadExcelScreen({ route, navigation }) {
       ) {
         return;
       }
-      Alert.alert('Error', 'Failed to select Excel file');
+      showAlert('Error', 'Failed to select Excel file', 'error');
     }
   };
 
@@ -157,7 +162,7 @@ export default function UploadExcelScreen({ route, navigation }) {
 
   const handleUploadAll = async (skipExcel = false) => {
     if (!skipExcel && !selectedExcel) {
-      Alert.alert(
+      showAlert(
         'Warning',
         'Please select an Excel file to upload',
       );
@@ -165,7 +170,7 @@ export default function UploadExcelScreen({ route, navigation }) {
     }
 
     if (!enquiryId) {
-      Alert.alert('Error', 'Enquiry ID is missing');
+      showAlert('Error', 'Enquiry ID is missing', 'error');
       return;
     }
 
@@ -181,9 +186,10 @@ export default function UploadExcelScreen({ route, navigation }) {
         designCode: designCode || '',
       }).unwrap();
 
-      Alert.alert(
+      showAlert(
         'Success',
         skipExcel ? 'Successfully uploaded design' : 'Successfully uploaded design with Excel file',
+        'info',
         [
           {
             text: 'OK',
@@ -200,7 +206,7 @@ export default function UploadExcelScreen({ route, navigation }) {
         error?.data ||
         error?.message ||
         'Failed to upload design. Please try again.';
-      Alert.alert('Upload Failed', errorMessage);
+      showAlert('Upload Failed', errorMessage, 'error');
     }
   };
 
@@ -262,6 +268,15 @@ export default function UploadExcelScreen({ route, navigation }) {
           )}
         </TouchableOpacity>
       </View>
+
+      <BrandedAlert
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        buttons={alertConfig.buttons}
+        onClose={hideAlert}
+      />
     </View>
   );
 }

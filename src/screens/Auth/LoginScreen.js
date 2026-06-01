@@ -3,11 +3,11 @@ import {
   View,
   StyleSheet,
   ScrollView,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Image,
 } from 'react-native';
+import BrandedAlert from '../../components/common/BrandedAlert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDispatch } from 'react-redux';
 import secureStorage from '../../utils/secureStorage';
@@ -30,6 +30,10 @@ const LoginScreen = ({ navigation }) => {
     password: '',
   });
   const [errors, setErrors] = useState({});
+  const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
+  const showAlert = (title, message, type = 'info', buttons = []) =>
+    setAlertConfig({ visible: true, title, message, type, buttons });
+  const hideAlert = () => setAlertConfig(prev => ({ ...prev, visible: false }));
 
   const handleInputChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -182,16 +186,13 @@ const LoginScreen = ({ navigation }) => {
         
         // Navigation handled by auth state
       } else {
-        Alert.alert('Login Failed', result.error || 'Invalid credentials');
+        showAlert('Login Failed', result.error || 'Invalid credentials', 'error');
       }
     } catch (error) {
       console.error('Full error:', JSON.stringify(error, null, 2));
       
       const errorMessage = error.data?.error || error.message || 'Invalid credentials. Please try again.';
-      Alert.alert(
-        'Login Failed',
-        errorMessage
-      );
+      showAlert('Login Failed', errorMessage, 'error');
     }
   };
 
@@ -277,6 +278,14 @@ const LoginScreen = ({ navigation }) => {
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
+      <BrandedAlert
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        buttons={alertConfig.buttons}
+        onClose={hideAlert}
+      />
     </SafeAreaView>
   );
 };

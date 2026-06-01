@@ -38,7 +38,9 @@ const TopNavbar = ({ navigation }) => {
   };
 
   const handleNotificationPress = () => {
-    navigation.navigate('Notifications');
+    if (navigationRef.isReady()) {
+      navigationRef.dispatch(CommonActions.navigate({ name: 'Notifications' }));
+    }
   };
 
   const handleAccountPress = () => {
@@ -47,12 +49,9 @@ const TopNavbar = ({ navigation }) => {
   };
 
   const handleSwitchApp = () => {
-    const rootNavigation = navigation?.getParent?.();
-    if (rootNavigation?.navigate) {
-      rootNavigation.navigate('AppSelection');
-      return;
+    if (navigationRef.isReady()) {
+      navigationRef.dispatch(CommonActions.navigate({ name: 'AppSelection' }));
     }
-    navigation?.navigate?.('AppSelection');
   };
 
   const handleLogoutPress = () => {

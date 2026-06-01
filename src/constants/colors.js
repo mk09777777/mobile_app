@@ -20,9 +20,10 @@ export const colors = {
   textBlack: '#000000',
   
   // Status colors
-  success: '#47b02c', // Vibrant green like the image
+  success: '#47b02c',
   error: '#EF4444',
-  warning: '#ffbb34', // Bright yellow to match the green vibrancy
+  warning: '#ffbb34',
+  orange: '#F59E0B',
   info: '#3B82F6',
   
   // Border colors
