@@ -4,7 +4,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
   Text,
   Image,
   Platform,
@@ -21,6 +20,7 @@ import { fonts } from '../../constants/fonts';
 import Icon from '../../components/common/Icon';
 import { Input } from '../../components/common';
 import { spacing } from '../../utils/responsive';
+import BrandedAlert from '../../components/common/BrandedAlert';
 
 const CreateClientScreen = ({ navigation }) => {
   const [formData, setFormData] = useState({
@@ -34,6 +34,10 @@ const CreateClientScreen = ({ navigation }) => {
   const [uploadImage, { isLoading: isUploading }] = useUploadImageMutation();
   
   const isLoading = isCreating || isUploading;
+  const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
+  const showAlert = (title, message, type = 'info', buttons = []) =>
+    setAlertConfig({ visible: true, title, message, type, buttons });
+  const hideAlert = () => setAlertConfig(prev => ({ ...prev, visible: false }));
 
   // Debug modal state
   useEffect(() => {
@@ -100,7 +104,7 @@ const CreateClientScreen = ({ navigation }) => {
     try {
       const hasPermission = await requestCameraPermission();
       if (!hasPermission) {
-        Alert.alert('Permission Denied', 'Camera permission is required to take photos');
+        showAlert('Permission Denied', 'Camera permission is required to take photos', 'warning');
         return;
       }
 
@@ -118,7 +122,7 @@ const CreateClientScreen = ({ navigation }) => {
         
         if (response.didCancel) {
         } else if (response.errorCode) {
-          Alert.alert('Error', `Camera Error: ${response.errorMessage || response.errorCode}`);
+          showAlert('Error', `Camera Error: ${response.errorMessage || response.errorCode}`, 'error');
         } else if (response.assets && response.assets.length > 0) {
           const asset = response.assets[0];
           
@@ -145,7 +149,7 @@ const CreateClientScreen = ({ navigation }) => {
         }
       });
     } catch (error) {
-      Alert.alert('Error', 'Failed to open camera. Please try again.');
+      showAlert('Error', 'Failed to open camera. Please try again.', 'error');
     }
   };
 
@@ -153,7 +157,7 @@ const CreateClientScreen = ({ navigation }) => {
     try {
       const hasPermission = await requestStoragePermission();
       if (!hasPermission) {
-        Alert.alert('Permission Denied', 'Storage permission is required to select images');
+        showAlert('Permission Denied', 'Storage permission is required to select images', 'warning');
         return;
       }
 
@@ -171,7 +175,7 @@ const CreateClientScreen = ({ navigation }) => {
         
         if (response.didCancel) {
         } else if (response.errorCode) {
-          Alert.alert('Error', `Image Picker Error: ${response.errorMessage || response.errorCode}`);
+          showAlert('Error', `Image Picker Error: ${response.errorMessage || response.errorCode}`, 'error');
         } else if (response.assets && response.assets.length > 0) {
           const asset = response.assets[0];
           
@@ -198,7 +202,7 @@ const CreateClientScreen = ({ navigation }) => {
         }
       });
     } catch (error) {
-      Alert.alert('Error', 'Failed to open image library. Please try again.');
+      showAlert('Error', 'Failed to open image library. Please try again.', 'error');
     }
   };
 
@@ -278,9 +282,10 @@ const CreateClientScreen = ({ navigation }) => {
             
           }
         } catch (uploadError) {
-          Alert.alert(
+          showAlert(
             'Image Upload Failed',
             'Failed to upload image. Would you like to create the client without an image?',
+            'warning',
             [
               { text: 'Cancel', style: 'cancel' },
               {
@@ -302,9 +307,10 @@ const CreateClientScreen = ({ navigation }) => {
         Pricing: undefined, // Can be added later if needed
       }).unwrap();
 
-      Alert.alert(
+      showAlert(
         'Success',
         result.message || 'Client created successfully',
+        'success',
         [
           {
             text: 'OK',
@@ -327,9 +333,10 @@ const CreateClientScreen = ({ navigation }) => {
         Pricing: undefined,
       }).unwrap();
       
-      Alert.alert(
+      showAlert(
         'Success',
         result.message || 'Client created successfully',
+        'success',
         [
           {
             text: 'OK',
@@ -360,9 +367,10 @@ const CreateClientScreen = ({ navigation }) => {
       errorMessage = error;
     }
     
-    Alert.alert(
+    showAlert(
       'Error',
       errorMessage,
+      'error',
       [{ text: 'OK' }]
     );
   };
@@ -519,6 +527,14 @@ const CreateClientScreen = ({ navigation }) => {
           </View>
         </View>
       </Modal>
+      <BrandedAlert
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        buttons={alertConfig.buttons}
+        onClose={hideAlert}
+      />
     </SafeAreaView>
   );
 };

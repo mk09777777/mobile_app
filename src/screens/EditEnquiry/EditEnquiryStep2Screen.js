@@ -4,7 +4,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
   Image,
   Platform,
   PermissionsAndroid,
@@ -18,6 +17,7 @@ import { fonts } from '../../constants/fonts';
 import { useUploadImageMutation, useUpdateEnquiryMutation } from '../../store/api';
 import { useAuth } from '../../context/AuthContext';
 import { formatDate } from '../../utils';
+import BrandedAlert from '../../components/common/BrandedAlert';
 
 const EditEnquiryStep2Screen = ({ route, navigation }) => {
   const { formData, enquiry } = route.params;
@@ -41,6 +41,11 @@ const EditEnquiryStep2Screen = ({ route, navigation }) => {
   const [updateEnquiry, { isLoading: isUpdating }] = useUpdateEnquiryMutation();
   
   const loading = isUploading || isUpdating;
+
+  const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
+  const showAlert = (title, message, type = 'info', buttons = []) =>
+    setAlertConfig({ visible: true, title, message, type, buttons });
+  const hideAlert = () => setAlertConfig(prev => ({ ...prev, visible: false }));
 
   // Request camera permission for Android
   const requestCameraPermission = async () => {
@@ -127,7 +132,7 @@ const EditEnquiryStep2Screen = ({ route, navigation }) => {
     const hasStoragePermission = source === 'library' ? await requestStoragePermission() : true;
 
     if (!hasCameraPermission || !hasStoragePermission) {
-      Alert.alert('Permission Denied', 'Please grant camera/storage permissions to upload images.');
+      showAlert('Permission Denied', 'Please grant camera/storage permissions to upload images.', 'warning');
       return;
     }
 
@@ -148,7 +153,7 @@ const EditEnquiryStep2Screen = ({ route, navigation }) => {
       }
 
       if (response.errorMessage) {
-        Alert.alert('Error', response.errorMessage);
+        showAlert('Error', response.errorMessage, 'error');
         return;
       }
 
@@ -169,7 +174,7 @@ const EditEnquiryStep2Screen = ({ route, navigation }) => {
         setSelectedImages(prev => [...prev, ...newImages]);
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to pick media');
+      showAlert('Error', 'Failed to pick media', 'error');
     }
   };
 
@@ -179,12 +184,12 @@ const EditEnquiryStep2Screen = ({ route, navigation }) => {
 
   const handleSubmit = async () => {
     if (!user?.id) {
-      Alert.alert('Error', 'User not authenticated');
+      showAlert('Error', 'User not authenticated', 'error');
       return;
     }
 
     if (!enquiry?.id) {
-      Alert.alert('Error', 'Enquiry ID is missing');
+      showAlert('Error', 'Enquiry ID is missing', 'error');
       return;
     }
 
@@ -320,9 +325,10 @@ const EditEnquiryStep2Screen = ({ route, navigation }) => {
         });
       }
       
-      Alert.alert(
+      showAlert(
         'Enquiry Updated',
         'Your enquiry has been updated successfully!',
+        'info',
         [
           {
             text: 'OK',
@@ -334,12 +340,12 @@ const EditEnquiryStep2Screen = ({ route, navigation }) => {
             },
           },
         ],
-        { cancelable: false }
       );
     } catch (error) {
-      Alert.alert(
+      showAlert(
         'Error',
-        error.data?.error || error.message || 'Failed to update enquiry. Please try again.'
+        error.data?.error || error.message || 'Failed to update enquiry. Please try again.',
+        'error'
       );
     }
   };
@@ -514,6 +520,14 @@ const EditEnquiryStep2Screen = ({ route, navigation }) => {
           style={styles.backButton}
         />
       </View>
+      <BrandedAlert
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        buttons={alertConfig.buttons}
+        onClose={hideAlert}
+      />
     </ScrollView>
   );
 };

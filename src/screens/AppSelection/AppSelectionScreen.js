@@ -15,14 +15,14 @@ const TITLE_COLOR = '#141D24';
 const SUBTITLE_COLOR = '#111111';
 const ICON_COLOR = '#1B6570';
 
-const AppCard = ({ iconSource, title, subtitle, onPress, animValue, delay = 0 }) => {
+const AppCard = ({ iconSource, title, subtitle, onPress, animValue, delay = 0, fullWidth = false }) => {
   const translateY = animValue.interpolate({
     inputRange: [0, 1],
     outputRange: [28 + delay, 0],
   });
 
   return (
-    <Animated.View style={[styles.cardWrapper, { opacity: animValue, transform: [{ translateY }] }]}>
+    <Animated.View style={[styles.cardWrapper, fullWidth && styles.cardWrapperFull, { opacity: animValue, transform: [{ translateY }] }]}>
       <TouchableOpacity
         style={styles.card}
         onPress={onPress}
@@ -105,10 +105,11 @@ const AppSelectionScreen = ({ navigation }) => {
           <AppCard
             iconSource={require('../../assets/images/productivity.png')}
             title="Production"
-            subtitle="production mode"
-            // onPress={() => navigateTo('CustomApp')}
+            subtitle="Production mode"
+            onPress={() => navigateTo('ProductionApp')}
             animValue={card3Anim}
             delay={16}
+            fullWidth={true}
           />
         </View>
       </SafeAreaView>
@@ -136,13 +137,22 @@ const styles = StyleSheet.create({
   },
   cardsContainer: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     alignItems: 'stretch',
   },
   cardWrapper: {
     flex: 1,
+    flexBasis: '48%',
+    maxWidth: '48%',
+    marginBottom: 16,
+  },
+  cardWrapperFull: {
+    flexBasis: '100%',
+    maxWidth: '100%',
   },
   card: {
+    flex: 1,
     backgroundColor: '#F9F9FB',
     borderRadius: 12,
     borderWidth: 1,

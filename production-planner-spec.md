@@ -377,12 +377,26 @@ Response: `[{ diamondCode, gSize, sieve, mm, onHand, allocated, available, requi
 ### 6.1 Material-Loss Accounting
 
 **Data sources:**
-- `StageMovement.weightInGrams`, `weightOutGrams` — gold loss per movement
-- `StageMovement.stonesIn`, `stonesOut` — stone loss per movement
-- `MetalLedger` — issued vs returned per JobCard
-- `DiamondAllocation` — allocated vs consumed per JobCard
+- `StageMovement.weightInGrams`, `weightOutGrams` — gold loss per movement (floor weighing, stage-level)
+- `StageMovement.stonesIn`, `stonesOut` — stone loss per movement (floor count, stage-level)
+- `MetalLedger` — issued vs returned per JobCard (vault-level gold fallback)
+- `DiamondAllocation` — allocated vs consumed per JobCard (vault-level stone fallback)
 
-**Per-JobCard loss:** `goldLoss = totalIssued - totalReturned - finalPieceWeight`. Negative finals (where outWeight < inWeight) flagged.
+**Two-tier tracking strategy (Vault Level vs Stage Level):**
+
+*Gold — stage primary, MetalLedger fallback:*
+- If `StageMovement.weightInGrams > 0`: `goldLoss = sum(weightInGrams) − sum(weightOutGrams)` — most accurate; shows which stage bled metal.
+- Fallback (stage weights absent): `goldLoss = MetalLedger.issued − MetalLedger.returned − finalPieceWeight`.
+
+*Stones — stage primary, DiamondAllocation fallback:*
+- Vault level (admin action): Admin clicks **Allocate Stones** on the JobCard. This creates a `DiamondAllocation` record (`quantityAllocated = N, quantityConsumed = 0`) **and** a negative `DiamondInventoryLedger` entry so those stones are immediately removed from available vault stock.
+- Stage level (WIP upload): When the GatiSOFT WIP file includes stone-count columns per stage, the import adapter writes `stonesIn` / `stonesOut` on each `StageMovement` as pieces move between departments.
+- If `StageMovement.stonesIn > 0`: `stoneLoss = sum(stonesIn) − sum(stonesOut)` — pinpoints which stage (and cell) lost the stone.
+- Fallback (stage counts absent): `stoneLoss = DiamondAllocation.quantityAllocated − DiamondAllocation.quantityConsumed` — vault-level total; flags that stones are missing even when floor data is unavailable.
+- When an allocation is **consumed** (stones physically set into jewelry), `quantityConsumed` is incremented and a `consumption` audit entry (quantity = 0, no double-count) is added to `DiamondInventoryLedger`.
+- When an allocation is **released** (job cancelled / stones returned), a positive `return` ledger entry restores the stones to available stock.
+
+**Per-JobCard gold loss:** `goldLoss = totalIssued − totalReturned − finalPieceWeight`. Negative finals (where outWeight < inWeight) flagged.
 
 **Reports:**
 - Per-JobCard loss summary

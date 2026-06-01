@@ -4,7 +4,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
   Modal,
   Text,
   Platform,
@@ -13,6 +12,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { Input, Button } from '../../components/common';
 import { Heading, CustomText } from '../../components/common/Text';
+import BrandedAlert from '../../components/common/BrandedAlert';
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
 import IconComponent from '../../components/common/Icon';
@@ -394,6 +394,10 @@ const EditEnquiryStep1Screen = ({ route, navigation }) => {
   const [showApprovedDatePicker, setShowApprovedDatePicker] = useState(false);
   const [tempApprovedDate, setTempApprovedDate] = useState(new Date());
 
+  const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
+  const showAlert = (title, message, type = 'info', buttons = []) =>
+    setAlertConfig({ visible: true, title, message, type, buttons });
+  const hideAlert = () => setAlertConfig(prev => ({ ...prev, visible: false }));
 
   // Update form data when enquiry changes or when fetched data arrives
   useEffect(() => {
@@ -685,12 +689,12 @@ const EditEnquiryStep1Screen = ({ route, navigation }) => {
     }
 
     if (!user?.id) {
-      Alert.alert('Error', 'User not authenticated');
+      showAlert('Error', 'User not authenticated', 'error');
       return;
     }
 
     if (!finalEnquiryToEdit?.id && !enquiryId) {
-      Alert.alert('Error', 'Enquiry ID is missing');
+      showAlert('Error', 'Enquiry ID is missing', 'error');
       return;
     }
 
@@ -743,9 +747,10 @@ const EditEnquiryStep1Screen = ({ route, navigation }) => {
 
       await updateEnquiry({ id: enquiryIdToUpdate, ...enquiryData }).unwrap();
       
-      Alert.alert(
+      showAlert(
         'Enquiry Updated',
         'Your enquiry has been updated successfully!',
+        'info',
         [
           {
             text: 'OK',
@@ -755,15 +760,14 @@ const EditEnquiryStep1Screen = ({ route, navigation }) => {
               navigation.goBack();
             },
           },
-        ],
-        { cancelable: false }
+        ]
       );
     } catch (error) {
-      Alert.alert(
+      showAlert(
         'Error',
         error?.data?.error || error?.message || 'Failed to update enquiry. Please try again.',
-        [{ text: 'OK', onPress: () => {} }],
-        { cancelable: false }
+        'error',
+        [{ text: 'OK', onPress: () => {} }]
       );
       // Don't navigate on error - stay on the form
       return;
@@ -1384,6 +1388,14 @@ const EditEnquiryStep1Screen = ({ route, navigation }) => {
           disabled={isUpdating}
         />
       </View>
+      <BrandedAlert
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        buttons={alertConfig.buttons}
+        onClose={hideAlert}
+      />
     </ScrollView>
   );
 };

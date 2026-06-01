@@ -3,11 +3,11 @@ import {
   View,
   StyleSheet,
   ScrollView,
-  Alert,
   Text,
   TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import BrandedAlert from '../../components/common/BrandedAlert';
 import { Input, Button } from '../../components/common';
 import { AnimatedLogoLoader } from '../../components/common';
 import { colors } from '../../constants/colors';
@@ -38,6 +38,10 @@ const CreateUserScreen = ({ navigation, route }) => {
     skills: '',
   });
   const [errors, setErrors] = useState({});
+  const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
+  const showAlert = (title, message, type = 'info', buttons = []) =>
+    setAlertConfig({ visible: true, title, message, type, buttons });
+  const hideAlert = () => setAlertConfig(prev => ({ ...prev, visible: false }));
 
   // RTK Query hooks
   const { data: userData, isLoading: fetchingUser } = useGetUserByIdQuery(userId, {
@@ -78,12 +82,12 @@ const CreateUserScreen = ({ navigation, route }) => {
 
   const handleSubmit = async () => {
     if (!isAdmin) {
-      Alert.alert('Access Denied', 'Only administrators can create/edit users.');
+      showAlert('Access Denied', 'Only administrators can create/edit users.', 'warning');
       return;
     }
 
     if (!validateForm()) {
-      Alert.alert('Validation Error', 'Please fix the errors in the form');
+      showAlert('Validation Error', 'Please fix the errors in the form', 'warning');
       return;
     }
 
@@ -109,40 +113,34 @@ const CreateUserScreen = ({ navigation, route }) => {
         result = await createUser(payload).unwrap();
       }
 
-      Alert.alert(
-        'Success',
-        result.message || (isEditMode ? 'User updated successfully' : 'User created successfully'),
-        [{ text: 'OK', onPress: () => navigation.goBack() }]
-      );
+      showAlert('Success', result.message || (isEditMode ? 'User updated successfully' : 'User created successfully'), 'success', [
+        { text: 'OK', onPress: () => navigation.goBack() }
+      ]);
     } catch (error) {
-      Alert.alert('Error', error.error || error.message || 'Failed to save user');
+      showAlert('Error', error.error || error.message || 'Failed to save user', 'error');
     }
   };
 
   const handleDelete = async () => {
     if (!isAdmin || !isEditMode) return;
 
-    Alert.alert(
-      'Delete User',
-      'Are you sure you want to delete this user? This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const result = await deleteUser(userId).unwrap();
-              Alert.alert('Success', result.message || 'User deleted successfully', [
-                { text: 'OK', onPress: () => navigation.goBack() }
-              ]);
-            } catch (error) {
-              Alert.alert('Error', error.error || error.message || 'Failed to delete user');
-            }
-          },
+    showAlert('Delete User', 'Are you sure you want to delete this user? This action cannot be undone.', 'warning', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            const result = await deleteUser(userId).unwrap();
+            showAlert('Success', result.message || 'User deleted successfully', 'success', [
+              { text: 'OK', onPress: () => navigation.goBack() }
+            ]);
+          } catch (error) {
+            showAlert('Error', error.error || error.message || 'Failed to delete user', 'error');
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
 
   if (loading || fetchingUser) {
@@ -264,6 +262,14 @@ const CreateUserScreen = ({ navigation, route }) => {
           )}
         </View>
       </ScrollView>
+      <BrandedAlert
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        buttons={alertConfig.buttons}
+        onClose={hideAlert}
+      />
     </SafeAreaView>
   );
 };

@@ -7,6 +7,7 @@ import {
 } from 'react-native';
 import { useGetEnquiriesQuery } from '../../store/api';
 import { useAuth } from '../../context/AuthContext';
+import { useClients } from '../../features/clients/clientsHooks';
 import { colors } from '../../constants/colors';
 
 const PAGE_SIZE = 50;
@@ -83,6 +84,33 @@ export default function AllStatus({
     { skip: !user },
   );
 
+  // Fetch clients for name resolution (uses RTK Query cache — no extra network calls)
+  const { clients: clientsData = [] } = useClients({ skip: !user });
+  const clients = Array.isArray(clientsData) ? clientsData : [];
+
+  const clientNameMap = useMemo(() => {
+    const map = new Map();
+    clients.forEach(client => {
+      const clientId = client.id || client._id || client.Id;
+      const clientName = client.name || client.Name;
+      if (clientId && clientName && clientName !== 'Unknown Client') {
+        const idStr = String(clientId).trim();
+        map.set(idStr, clientName);
+        map.set(idStr.toLowerCase(), clientName);
+      }
+    });
+    return map;
+  }, [clients]);
+
+  const resolveClientName = useCallback((enquiry) => {
+    const existing = enquiry.clientName || enquiry.ClientName;
+    if (existing && existing !== 'Unknown Client') return existing;
+    const rawId = enquiry.clientId || enquiry.ClientId;
+    if (!rawId) return 'Unknown Client';
+    const idStr = String(rawId).trim();
+    return clientNameMap.get(idStr) || clientNameMap.get(idStr.toLowerCase()) || 'Unknown Client';
+  }, [clientNameMap]);
+
   // Frontend filtering fallback (backend may not filter by multi-word statuses or assignedTo correctly)
   useEffect(() => {
     if (!data?.data) return;
@@ -110,17 +138,18 @@ export default function AllStatus({
           const raw = item._originalData || item;
           const assignedId = raw.AssignedTo || raw.assignedTo || raw.assigned_to || raw.Assigned_To;
           if (assignedId && typeof assignedId === 'object') {
-            return String(assignedId.id || assignedId._id || '').trim().toLowerCase() === userId;
+            return String(assignedId.id || assignedId.Id || assignedId._id || '').trim().toLowerCase() === userId;
           }
           return String(assignedId || '').trim().toLowerCase() === userId;
         });
       }
     }
 
-    // Normalize item ids
+    // Normalize item ids and enrich client names
     const normalized = filtered.map(item => ({
       ...item,
       id: item.id || item._id || item.Id || item.EnquiryId || item.enquiryId,
+      clientName: resolveClientName(item),
     }));
 
     setAllItems(prev => {
@@ -129,7 +158,18 @@ export default function AllStatus({
       const newItems = normalized.filter(item => !existingIds.has(item.id));
       return [...prev, ...newItems];
     });
-  }, [data, page, statusValues, currentTab, user]);
+  }, [data, page, statusValues, currentTab, user, resolveClientName]);
+
+  // Re-enrich client names when the client map loads after enquiries
+  useEffect(() => {
+    if (clientNameMap.size === 0) return;
+    setAllItems(prev =>
+      prev.map(item => ({
+        ...item,
+        clientName: resolveClientName(item),
+      })),
+    );
+  }, [clientNameMap, resolveClientName]);
 
   const refreshFetchSeenRef = useRef(false);
   const refreshTimerRef = useRef(null);

@@ -16,6 +16,9 @@ export const formatDate = (dateString) => {
     if (isNaN(date.getTime())) {
       return 'Invalid date';
     }
+    if (date.getFullYear() < 2000) {
+      return 'No date';
+    }
     return date.toLocaleDateString('en-IN', {
       year: 'numeric',
       month: 'short',
@@ -35,6 +38,11 @@ export const formatDateTime = (dateString) => {
     hour: '2-digit',
     minute: '2-digit',
   });
+};
+
+export const excelSerialToDate = (serial) => {
+  if (serial == null || isNaN(serial)) return null;
+  return new Date((Number(serial) - 25569) * 86400 * 1000);
 };
 
 export const formatChatDate = (dateString) => {
@@ -79,6 +87,15 @@ export const getStatusColor = (status) => {
     rejected: colors.error,
   };
   return statusColors[status] || colors.textSecondary;
+};
+
+/** Color for load/percentage bars — multi-stop heat map */
+export const getLoadColor = (pct) => {
+  if (pct >= 85) return colors.error;
+  if (pct >= 70) return colors.orange;
+  if (pct >= 50) return colors.warning;
+  if (pct >= 25) return colors.info;
+  return colors.success;
 };
 
 export const getPriorityColor = (priority) => {

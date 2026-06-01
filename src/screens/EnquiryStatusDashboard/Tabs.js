@@ -223,7 +223,7 @@ export default function StatusTabs({
     
     // If assigned is an object, try to extract the ID
     if (assigned && typeof assigned === 'object') {
-      assigned = assigned.id || assigned._id || assigned.userId || null;
+      assigned = assigned.id || assigned.Id || assigned._id || assigned.userId || null;
     }
     
     // Convert to string and trim if it exists

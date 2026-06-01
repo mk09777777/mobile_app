@@ -10,7 +10,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
   Image,
   Text,
   Platform,
@@ -44,6 +43,7 @@ import { AnimatedLogoLoader } from '../../components/common';
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
 import Icon from '../../components/common/Icon';
+import BrandedAlert from '../../components/common/BrandedAlert';
 import {
   formatCurrency,
   formatDate,
@@ -385,6 +385,10 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
   const [modalCurrentIndex, setModalCurrentIndex] = useState(0);
   const [isModalZoomed, setIsModalZoomed] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
+  const showAlert = (title, message, type = 'info', buttons = []) =>
+    setAlertConfig({ visible: true, title, message, type, buttons });
+  const hideAlert = () => setAlertConfig(prev => ({ ...prev, visible: false }));
 
   // Handle sharing to WhatsApp
   const handleShareToWhatsApp = useCallback(async () => {
@@ -394,7 +398,7 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
     try {
       const currentMedia = modalImages[modalCurrentIndex] || modalImages[0];
       if (!currentMedia) {
-        Alert.alert('Error', 'No media to share');
+        showAlert('Error', 'No media to share', 'error');
         setIsSharing(false);
         return;
       }
@@ -405,14 +409,14 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
         currentMedia.imageUri || currentMedia.cachedUri || selectedImageUri;
 
       if (!mediaKey && !mediaUri) {
-        Alert.alert('Error', 'Media URL not available');
+        showAlert('Error', 'Media URL not available', 'error');
         setIsSharing(false);
         return;
       }
 
       const token = await AsyncStorage.getItem('token');
       if (!token) {
-        Alert.alert('Error', 'Authentication required');
+        showAlert('Error', 'Authentication required', 'error');
         setIsSharing(false);
         return;
       }
@@ -478,7 +482,7 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
             }
           }
         } catch (error) {
-          Alert.alert('Error', 'Failed to prepare media for sharing');
+          showAlert('Error', 'Failed to prepare media for sharing', 'error');
           setIsSharing(false);
           return;
         }
@@ -527,7 +531,7 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
             fileUrl = `file://${tempFilePath}`;
           }
         } catch (error) {
-          Alert.alert('Error', 'Failed to download media for sharing');
+          showAlert('Error', 'Failed to download media for sharing', 'error');
           setIsSharing(false);
           return;
         }
@@ -558,7 +562,7 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
         }
       }
     } catch (error) {
-      Alert.alert('Error', error.message || 'Failed to share media');
+      showAlert('Error', error.message || 'Failed to share media', 'error');
     } finally {
       setIsSharing(false);
     }
@@ -979,7 +983,7 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
       enquiryId || currentEnquiry?.id || currentEnquiry?._id;
 
     if (!currentEnquiryId) {
-      Alert.alert('Error', 'Cannot open chat: Enquiry ID is missing');
+      showAlert('Error', 'Cannot open chat: Enquiry ID is missing', 'error');
       return;
     }
 
@@ -1480,7 +1484,7 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
     }
 
     if (versionIndex === null) {
-      Alert.alert('Error', 'No design versions available to approve');
+      showAlert('Error', 'No design versions available to approve', 'error');
       return;
     }
 
@@ -1489,9 +1493,10 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
         ? coralVersions[versionIndex]?.Version || `Version ${versionIndex + 1}`
         : cadVersions[versionIndex]?.Version || `Version ${versionIndex + 1}`;
 
-    Alert.alert(
+    showAlert(
       'Approve Design Version',
       `Are you sure you want to approve ${designType.toUpperCase()} ${version}?`,
+      'warning',
       [
         {
           text: 'Cancel',
@@ -1510,18 +1515,20 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
                 version,
               }).unwrap();
 
-              Alert.alert(
+              showAlert(
                 'Success',
                 `${designType.toUpperCase()} ${version} approved successfully`,
+                'success',
               );
               // Refetch enquiry data to get updated approval status
               refetch();
             } catch (error) {
-              Alert.alert(
+              showAlert(
                 'Error',
                 error?.data?.error ||
                   error?.message ||
                   'Failed to approve design version. Please try again.',
+                'error',
               );
             }
           },
@@ -1550,7 +1557,7 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
     }
 
     if (versionIndex === null) {
-      Alert.alert('Error', 'No design versions available to reject');
+      showAlert('Error', 'No design versions available to reject', 'error');
       return;
     }
 
@@ -1562,12 +1569,12 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
 
   const confirmReject = async () => {
     if (!approvalMessage.trim()) {
-      Alert.alert('Error', 'Please provide a reason for rejection');
+      showAlert('Error', 'Please provide a reason for rejection', 'error');
       return;
     }
 
     if (!selectedDesignType || selectedVersionIndex === null) {
-      Alert.alert('Error', 'Design version information is missing');
+      showAlert('Error', 'Design version information is missing', 'error');
       return;
     }
 
@@ -1579,7 +1586,7 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
           : originalData?.Cad || enquiry?.Cad || [];
 
       if (selectedVersionIndex >= versions.length) {
-        Alert.alert('Error', 'Selected version not found');
+        showAlert('Error', 'Selected version not found', 'error');
         return;
       }
 
@@ -1595,9 +1602,10 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
         reason: approvalMessage.trim(),
       }).unwrap();
 
-      Alert.alert(
+      showAlert(
         'Success',
         `${selectedDesignType.toUpperCase()} ${version} rejected successfully`,
+        'success',
       );
 
       // Reset state
@@ -1609,11 +1617,12 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
       // Refetch enquiry data to get updated rejection status
       refetch();
     } catch (error) {
-      Alert.alert(
+      showAlert(
         'Error',
         error?.data?.error ||
           error?.message ||
           'Failed to reject design version. Please try again.',
+        'error',
       );
     }
   };
@@ -1637,9 +1646,10 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
   const handleUploadReferenceImages = () => {
     const currentEnquiryId = enquiry.id || enquiry._id;
     if (!currentEnquiryId) {
-      Alert.alert(
+      showAlert(
         'Error',
         'Unable to find this enquiry. Please refresh and try again.',
+        'error',
       );
       return;
     }
@@ -1656,18 +1666,20 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
       }
 
       if (response.errorCode) {
-        Alert.alert(
+        showAlert(
           'Media Picker Error',
           response.errorMessage || 'Failed to open gallery. Please try again.',
+          'error',
         );
         return;
       }
 
       const assets = response.assets?.filter(asset => asset?.uri) || [];
       if (assets.length === 0) {
-        Alert.alert(
+        showAlert(
           'No Media Selected',
           'Please choose at least one reference image or video to upload.',
+          'info',
         );
         return;
       }
@@ -1695,9 +1707,10 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
           images: imagesPayload,
         }).unwrap();
 
-        Alert.alert(
+        showAlert(
           'Success',
           'Reference images/videos uploaded successfully.',
+          'success',
         );
         refetch();
       } catch (error) {
@@ -1707,7 +1720,7 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
           error?.data ||
           error?.error ||
           'Failed to upload reference images. Please try again.';
-        Alert.alert('Upload Failed', message);
+        showAlert('Upload Failed', message, 'error');
       }
     });
   };
@@ -3663,11 +3676,12 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
   };
 
   const handleDeleteEnquiry = () => {
-    Alert.alert(
+    showAlert(
       'Delete Enquiry',
       `Are you sure you want to delete "${
         enquiry?.title || 'this enquiry'
       }"? This action cannot be undone.`,
+      'warning',
       [
         {
           text: 'Cancel',
@@ -3690,11 +3704,12 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
               // Success - no need for alert since user already navigated
             } catch (error) {
               // Show error alert
-              Alert.alert(
+              showAlert(
                 'Error',
                 error.data?.error ||
                   error.message ||
                   'Failed to delete enquiry. Please try again.',
+                'error',
               );
             }
           },
@@ -3780,7 +3795,7 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
     const cadVersions = originalData?.Cad || enquiry?.Cad || [];
 
     if (cadVersions.length === 0) {
-      Alert.alert('No Versions', 'No CAD versions available');
+      showAlert('No Versions', 'No CAD versions available', 'info');
       return;
     }
 
@@ -4205,6 +4220,15 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
           <Text style={styles.chatFabText}>Open Chat</Text>
         </TouchableOpacity>
       )}
+
+      <BrandedAlert
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        buttons={alertConfig.buttons}
+        onClose={hideAlert}
+      />
     </View>
   );
 };

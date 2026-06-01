@@ -6,18 +6,15 @@ import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
 import { useCart } from '../../context/CartContext';
 import { navigationRef } from '../../navigation/navigationRef';
-
 const CUSTOM_ICON = require('../../assets/images/SketchOutlined.png');
-const REORDER_ICON = require('../../assets/images/list-restart.png');
 
 const CustomTabBar = ({ state, descriptors, navigation, currentApp }) => {
   const insets = useSafeAreaInsets();
   const { lineCount } = useCart();
 
-  const handleSwitchApp = () => {
+  const handleQuickSwitch = () => {
     if (navigationRef.isReady()) {
-      const target = currentApp === 'custom' ? 'CatalogApp' : 'CustomApp';
-      navigationRef.reset({ index: 0, routes: [{ name: target }] });
+      navigationRef.navigate('AppSelection');
     }
   };
 
@@ -47,10 +44,50 @@ const CustomTabBar = ({ state, descriptors, navigation, currentApp }) => {
       navigation.emit({ type: 'tabLongPress', target: route.key });
     };
 
+    if (route.name === 'Switch') {
+      return (
+        <TouchableOpacity
+          key={route.key}
+          accessibilityRole="button"
+          accessibilityState={isFocused ? { selected: true } : {}}
+          accessibilityLabel={options.tabBarAccessibilityLabel}
+          testID={options.tabBarTestID}
+          onPress={onPress}
+          onLongPress={onLongPress}
+          style={styles.tabButton}
+          activeOpacity={0.7}>
+          <View style={[styles.switchIconContainer, isFocused && styles.switchIconContainerActive]}>
+            <Image
+              source={CUSTOM_ICON}
+              style={[
+                styles.switchTabIcon,
+                { tintColor: isFocused ? colors.accent : colors.textLight },
+              ]}
+              resizeMode="contain"
+            />
+          </View>
+          <Text
+            style={[
+              styles.tabLabel,
+              {
+                color: isFocused ? colors.primary : colors.textLight,
+                fontFamily: isFocused ? fonts.medium : fonts.regular,
+              },
+            ]}>
+            {label}
+          </Text>
+        </TouchableOpacity>
+      );
+    }
+
     let iconName;
     if (route.name === 'Dashboard') iconName = 'homeIcon';
     else if (route.name === 'Cart') iconName = 'cartIcon';
     else if (route.name === 'MyOrders') iconName = 'ordersIcon';
+    else if (route.name === 'Tracking') iconName = 'track-changes';
+    else if (route.name === 'Imports') iconName = 'file-upload';
+    else if (route.name === 'Planning') iconName = 'bar-chart';
+    else if (route.name === 'Inventory') iconName = 'diamond';
     else if (route.name === 'Chats') iconName = 'chatIcon';
     else if (route.name === 'Enquiries') iconName = 'assignment';
 
@@ -109,19 +146,17 @@ const CustomTabBar = ({ state, descriptors, navigation, currentApp }) => {
 
         {currentApp ? (
           <TouchableOpacity
-            onPress={handleSwitchApp}
-            style={styles.switchTabButton}
+            onPress={handleQuickSwitch}
+            style={styles.quickSwitchButton}
             activeOpacity={0.8}>
-            <View style={styles.switchCircle}>
-              <Image
-                source={currentApp === 'custom' ? REORDER_ICON : CUSTOM_ICON}
-                style={styles.switchIcon}
-                resizeMode="contain"
+            <View style={styles.quickSwitchCircle}>
+              <Icon
+                name="list"
+                size={24}
+                color={colors.accent}
               />
             </View>
-            <Text style={styles.switchLabel}>
-              {currentApp === 'custom' ? 'Reorder' : 'Custom'}
-            </Text>
+            <Text style={styles.quickSwitchLabel}>Switch</Text>
           </TouchableOpacity>
         ) : null}
 
@@ -190,7 +225,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
     textTransform: 'capitalize',
   },
-  switchTabButton: {
+  quickSwitchButton: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -198,7 +233,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     height: '100%',
   },
-  switchCircle: {
+  quickSwitchCircle: {
     width: 46,
     height: 46,
     borderRadius: 23,
@@ -212,16 +247,33 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 7,
   },
-  switchIcon: {
+  quickSwitchIcon: {
     width: 22,
     height: 22,
     tintColor: colors.accent,
   },
-  switchLabel: {
+  quickSwitchLabel: {
     color: colors.primary,
     fontSize: 10,
     fontWeight: '600',
     letterSpacing: 0.2,
+  },
+  switchIconContainer: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
+  },
+  switchIconContainerActive: {
+    backgroundColor: colors.primary,
+    transform: [{ scale: 1.05 }],
+  },
+  switchTabIcon: {
+    width: 18,
+    height: 18,
   },
 });
 
