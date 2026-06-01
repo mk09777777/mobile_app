@@ -191,10 +191,11 @@ export const deleteAllAlerts  = (params = {}) => {
 };
 
 // ── Stages ────────────────────────────────────────────────────────────────────
-export const getStages   = () => request('GET', '/stages');
-export const createStage = (data)       => request('POST', '/stages', data);
-export const updateStage = (code, data) => request('PUT', `/stages/${code}`, data);
-export const deleteStage = (code)       => request('DELETE', `/stages/${code}`);
+export const getStages    = () => request('GET', '/stages');
+export const createStage  = (data)       => request('POST', '/stages', data);
+export const updateStage  = (code, data) => request('PUT', `/stages/${code}`, data);
+export const deleteStage  = (code)       => request('DELETE', `/stages/${code}`);
+export const reseedStages = ()           => request('POST', '/stages/reseed');
 
 // ── Dev utilities ─────────────────────────────────────────────────────────────
 // Wipes all imported production data (JobCards, movements, imports, column maps).
