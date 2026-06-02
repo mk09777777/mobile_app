@@ -131,6 +131,31 @@ export default function NewEnquiryCard({
         : String(assignedVal).trim().length > 0)
     : false;
 
+  // Resolve assigned user's display name
+  const assignedUserName = useMemo(() => {
+    if (!assignedVal) return null;
+    if (typeof assignedVal === 'object') {
+      // Object may already contain name
+      const name = assignedVal.name || assignedVal.Name || assignedVal.username || assignedVal.email;
+      if (name) return name;
+      // Fall back to ID lookup
+      const id = String(assignedVal.id || assignedVal.Id || assignedVal._id || '').trim();
+      if (id && users) {
+        const found = users.find(u => String(u.id || u._id || '').trim() === id);
+        return found?.name || found?.Name || found?.username || found?.email || null;
+      }
+      return null;
+    }
+    // Plain string — treat as ID and look up
+    const idStr = String(assignedVal).trim();
+    if (!idStr || idStr === 'null' || idStr === 'undefined') return null;
+    if (users) {
+      const found = users.find(u => String(u.id || u._id || '').trim() === idStr);
+      return found?.name || found?.Name || found?.username || found?.email || null;
+    }
+    return null;
+  }, [assignedVal, users]);
+
   // Button visibility based on user role and status
   const shouldShowActionButtons = isAdmin && isJustCreated;
   const shouldShowAdminCoralUpload = isAdmin && isCoralPending;
@@ -472,6 +497,14 @@ export default function NewEnquiryCard({
             </Text>
           </View>
         </View>
+        {assignedUserName ? (
+          <View style={styles.AssignedRow}>
+            <Icon name="person-add" size={14} color={colors.background} />
+            <Text style={styles.AssignedName} numberOfLines={1}>
+              Assigned: {assignedUserName}
+            </Text>
+          </View>
+        ) : null}
 
         {shouldShowActionButtons ? (
           <View style={styles.QuickButtonContainer}>
@@ -1087,6 +1120,26 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     fontSize: 12,
     color: colors.textSecondary,
+  },
+
+  AssignedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    backgroundColor: colors.primary || '#EEF4FF',
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+    marginBottom: 9,
+  },
+
+  AssignedName: {
+    fontFamily: fonts.medium,
+    fontSize: 12,
+    color: colors.textWhite,
+    flexShrink: 1,
   },
 
   QuickButtonContainer: {

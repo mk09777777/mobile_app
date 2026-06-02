@@ -48,10 +48,10 @@ const VideoSplashScreen = ({ onAnimationFinish }) => {
       ]).start();
     }, 500);
 
-    // Fallback timer - finish after 4 seconds regardless
+    // Fallback timer - finish after 3 seconds regardless
     const fallbackTimer = setTimeout(() => {
       finishSplashScreen();
-    }, 4000);
+    }, 3000);
 
     return () => {
       clearTimeout(animationTimer);
@@ -86,10 +86,7 @@ const VideoSplashScreen = ({ onAnimationFinish }) => {
 
   // Video source configuration
   const getVideoSource = () => {
-    // Use local video file
-    return Platform.OS === 'ios' 
-      ? require('../assets/videos/Splash.mp4')
-      : require('../assets/videos/Splash.mp4');
+    return require('../assets/videos/Splash.mp4');
   };
 
   return (
