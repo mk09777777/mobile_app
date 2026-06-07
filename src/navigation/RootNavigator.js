@@ -12,6 +12,7 @@ const Root = createStackNavigator();
 const RootNavigator = ({ isAuthenticated }) => {
   const { user } = useAuth();
   const isDesignRole = user?.role === 'coral' || user?.role === 'cad';
+  // client_handler goes to AppSelection like admin
 
   return (
     <Root.Navigator screenOptions={{ headerShown: false }}>

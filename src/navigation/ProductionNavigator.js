@@ -56,6 +56,7 @@ import ColumnMapsScreen          from '../screens/Production/settings/ColumnMaps
 import CalendarScreen            from '../screens/Production/settings/CalendarScreen';
 import AppsSelectionScreen       from '../screens/AppSelection/AppSelectionScreen';
 import NotificationsScreen       from '../screens/Notifications/NotificationsScreen';
+import ProductionSchedule        from '../screens/Production/planning/ProductionSchedule';
 
 
 const Tab = createBottomTabNavigator();
@@ -127,6 +128,7 @@ const DashboardStack = () => (
     <Stack.Screen name="StagesSettings"      component={StagesSettingsScreen}     options={{ title: 'Stages' }} />
     <Stack.Screen name="ColumnMaps"          component={ColumnMapsScreen}         options={{ title: 'Column Maps' }} />
     <Stack.Screen name="Calendar"            component={CalendarScreen}           options={{ title: 'Production Calendar' }} />
+    <Stack.Screen name="ScheduleView"        component={ProductionSchedule}         options={{ title: 'PRODUCTION SCHEDULE' }} />
   </Stack.Navigator>
 );
 

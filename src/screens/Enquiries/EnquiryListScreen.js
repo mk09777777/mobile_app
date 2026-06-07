@@ -46,6 +46,7 @@ import useDeviceLayout from '../../hooks/useDeviceLayout';
 // Import PDF generator module
 import * as pdfGeneratorModule from '../../utils/pdfGenerator';
 import StatusTabs from '../EnquiryStatusDashboard/Tabs';
+import CreateEnquiryModal from '../EditEnquiry/createEnquiryModal';
 
 // Debug: Log module import status
 if (__DEV__) {
@@ -201,6 +202,13 @@ const EnquiryListScreen = ({ navigation }) => {
     roleLower === 'cl' ||
     user?.roleId === 4 ||
     user?.roleNumber === 4;
+  const isClientHandler = roleLower === 'client_handler';
+
+  // Persist whether this screen was opened from client_handler dashboard (params get cleared after processing)
+  const isClientHandlerViewRef = useRef(route.params?.filterSource === 'client_handler');
+
+  // Check if this screen is being used as a separate client enquiries view (stack screen)
+  const isClientView = route.name === 'ClientEnquiries' || isClientHandlerViewRef.current;
 
   // Get status options from API (cached) - already includes role-based filtering
   const statusOptions = useStatusOptions();
@@ -251,6 +259,30 @@ const EnquiryListScreen = ({ navigation }) => {
   const [isPdfModalVisible, setIsPdfModalVisible] = useState(false);
   const [selectedPdfUrl, setSelectedPdfUrl] = useState(null);
 
+  // Local search input value — updates immediately for responsive UI
+  // Actual Redux dispatch (which triggers API refetch) is debounced by 2 seconds
+  const [localSearchValue, setLocalSearchValue] = useState(searchQuery);
+  const searchDebounceRef = useRef(null);
+
+  const handleSearchChange = useCallback((text) => {
+    setLocalSearchValue(text);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
+      dispatch(setSearchQuery(text));
+    }, 2000);
+  }, [dispatch]);
+
+  const handleSearchClear = useCallback(() => {
+    setLocalSearchValue('');
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    dispatch(setSearchQuery(''));
+  }, [dispatch]);
+
+  // Sync local value if Redux searchQuery changes externally (e.g. filter clear)
+  useEffect(() => {
+    setLocalSearchValue(searchQuery);
+  }, [searchQuery]);
+
   const resolvedFilters = useMemo(() => {
     const normalizedFilters = {
       status: filters.status,
@@ -272,15 +304,17 @@ const EnquiryListScreen = ({ navigation }) => {
     // For Client users (role 4), use ClientId from token
     if ((!normalizedFilters.clientId || normalizedFilters.clientId === 'all') && isClient && clientUserId) {
       normalizedFilters.clientId = clientUserId;
-
     } else if (isClient && !clientUserId) {
-
+      // no-op
     }
 
+    // For Client Handler (role 5) — backend scopes automatically via userScope.service
+    // No extra filter needed here; backend uses the handler's clientsHandled array
+
     if ((!normalizedFilters.assignedTo || normalizedFilters.assignedTo === 'all') && !isAdmin && !isClient && currentUserId) {
-      // Don't auto-assign for coral/cad users during testing
+      // Don't auto-assign for coral/cad/client_handler users
       const role = user?.role?.toLowerCase();
-      if (role !== 'coral' && role !== 'cad') {
+      if (role !== 'coral' && role !== 'cad' && role !== 'client_handler') {
         normalizedFilters.assignedTo = currentUserId;
       }
     }
@@ -370,7 +404,7 @@ const EnquiryListScreen = ({ navigation }) => {
       'clientName': 'ClientId',
     };
 
-    const backendSortField = sortFieldMap[sortBy] || sortBy || 'AssignedDate';
+    const backendSortField = sortFieldMap[sortBy] || sortBy || 'CreatedDate';
     const sortDirection = sortOrder || 'desc';
     params.append('sortBy', backendSortField);
     params.append('sortOrder', sortDirection);
@@ -749,6 +783,8 @@ const EnquiryListScreen = ({ navigation }) => {
       }
       // Reset restore flag so scroll can be restored when returning
       hasRestoredScrollRef.current = false;
+      // Cancel any pending search debounce
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
       // Cleanup function runs when component unmounts
       dispatch(clearFilters());
       dispatch(setSearchQuery(''));
@@ -898,6 +934,9 @@ const EnquiryListScreen = ({ navigation }) => {
   // Local UI state
   const [showFilters, setShowFilters] = useState(false);
   const [showSortModal, setShowSortModal] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [previewEnquiry, setPreviewEnquiry] = useState(null);
+  const [summaryEnquiry, setSummaryEnquiry] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
   const showAlert = (title, message, type = 'info', buttons = []) =>
@@ -906,8 +945,9 @@ const EnquiryListScreen = ({ navigation }) => {
   
   // Initialize activeTab based on user role
   const getInitialTab = () => {
-    const role = user?.role?.toLowerCase();    if (role !== 'admin' ) return 'AssignedToYou';
-    return 'all';
+    const role = user?.role?.toLowerCase();
+    if (role === 'admin' || role === 'client_handler') return 'all';
+    return 'AssignedToYou';
   };
   
   const [activeTab, setActiveTab] = useState(getInitialTab());
@@ -1073,8 +1113,8 @@ const EnquiryListScreen = ({ navigation }) => {
 
     let routeFilterHandled = false;
 
-    // When navigating from dashboard, clear all existing filters so only the clicked filter applies
-    if (filterSource === 'dashboard' && rawFilter) {
+    // When navigating from dashboard or client_handler, clear all existing filters so only the clicked filter applies
+    if ((filterSource === 'dashboard' || filterSource === 'client_handler') && rawFilter) {
       if (lastDashboardFilterRef.current !== dashboardToken) {
         dispatch(clearFilters());
         lastDashboardFilterRef.current = dashboardToken;
@@ -1165,8 +1205,8 @@ const EnquiryListScreen = ({ navigation }) => {
       routeFilterHandled = true;
     }
 
-    // Handle client filter from route params
-    if (filterType === 'client' && rawFilter) {
+    // Handle client filter from route params (skip in Enquiries tab to keep it showing all)
+    if (filterType === 'client' && rawFilter && route.name !== 'Enquiries') {
       const clientName = rawFilter;
       const clientId = route.params?.clientId;
       const preSelectedStatuses = route.params?.statuses || route.params?.selectedStatuses || [];
@@ -1559,7 +1599,7 @@ const EnquiryListScreen = ({ navigation }) => {
     });
   }, [deleteEnquiry, fetchEnquiries, refetchStatusStats]);
 
-  const renderEnquiryItem = useCallback(({ item: enquiry, currentTab }) => {
+  const renderEnquiryItem = useCallback(({ item: enquiry, currentTab, isExpandedAll }) => {
     if (!enquiry || !enquiry.id) {
       if (__DEV__) {
         console.warn('Skipping invalid enquiry item:', enquiry);
@@ -1569,18 +1609,39 @@ const EnquiryListScreen = ({ navigation }) => {
 
     try {
       return (
-        <NewCard
-          item={enquiry}
-          navigation={navigation}
-          onViewQuotation={handleViewQuotation}
-          currentTab={currentTab || activeTab}
-          onUpdateEnquiry={handleUpdateEnquiry}
-          onDeleteEnquiry={handleDeleteEnquiry}
-          onPress={() => navigation.navigate('SingleEnquiry', {
-            enquiryId: enquiry.id || enquiry._id,
-            enquiry: enquiry,
-          })}
-        />
+        <View>
+          <NewCard
+            item={enquiry}
+            navigation={navigation}
+            onViewQuotation={handleViewQuotation}
+            currentTab={currentTab || activeTab}
+            onUpdateEnquiry={handleUpdateEnquiry}
+            onDeleteEnquiry={handleDeleteEnquiry}
+            isExpandedAll={!!isExpandedAll}
+            onPress={() => navigation.navigate('SingleEnquiry', {
+              enquiryId: enquiry.id || enquiry._id,
+              enquiry: enquiry,
+            })}
+          />
+          {isClientView && (
+            <View style={styles.enquiryActions}>
+              <TouchableOpacity
+                style={styles.enquiryActionBtn}
+                onPress={() => setPreviewEnquiry(enquiry)}
+              >
+                <Icon name="remove-red-eye" size={14} color={colors.primary} />
+                <Text style={styles.enquiryActionText}>Preview</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.enquiryActionBtn}
+                onPress={() => setSummaryEnquiry(enquiry)}
+              >
+                <Icon name="assessment" size={14} color={colors.primary} />
+                <Text style={styles.enquiryActionText}>Summary</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
       );
     } catch (error) {
       if (__DEV__) {
@@ -1775,7 +1836,7 @@ const EnquiryListScreen = ({ navigation }) => {
         'clientName': 'ClientId',
       };
 
-      const backendSortField = sortFieldMap[sortBy] || sortBy || 'AssignedDate';
+      const backendSortField = sortFieldMap[sortBy] || sortBy || 'CreatedDate';
       const sortDirection = sortOrder || 'desc';
       exportFilters.sortBy = backendSortField;
       exportFilters.sortOrder = sortDirection;
@@ -2311,10 +2372,35 @@ const EnquiryListScreen = ({ navigation }) => {
     <SafeAreaView style={styles.container}>
       <TopNavbar navigation={navigation} />
 
+      {/* Client-specific header for ClientEnquiries stack screen */}
+      {isClientView && (
+        <View style={styles.clientHeader}>
+          <TouchableOpacity
+            style={styles.clientHeaderBack}
+            onPress={() => navigation.goBack()}>
+            <Icon name="arrow-back" size={20} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <View style={styles.clientHeaderInfo}>
+            <Text style={styles.clientHeaderLabel}>Client Enquiries</Text>
+            <Text style={styles.clientHeaderName} numberOfLines={1}>
+              {route.params?.filter || (selectedClient && selectedClient !== 'All' ? selectedClient : null) || 'Selected Client'}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.addEnquiryBtn}
+            onPress={() => {
+              console.log('EnquiryListScreen route params:', JSON.stringify(route.params));
+              setShowCreateModal(true);
+            }}>
+            <Icon name="add" size={22} color={colors.textWhite} />
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Status Tabs */}
       <StatusTabs 
-        activeTab={activeTab} 
-        onTabChange={setActiveTab}
+        activeTab={isClientView ? 'all' : activeTab} 
+        onTabChange={isClientView ? () => {} : setActiveTab}
         displayEnquiries={displayEnquiries}
         flatListRef={flatListRef}
         renderEnquiryItem={renderEnquiryItem}
@@ -2328,9 +2414,9 @@ const EnquiryListScreen = ({ navigation }) => {
         onEndReachedDuringMomentumRef={onEndReachedDuringMomentumRef}
         handleLoadMore={handleLoadMore}
         styles={styles}
-        searchQuery={searchQuery}
-        onSearchChange={(text) => dispatch(setSearchQuery(text))}
-        onSearchClear={() => dispatch(setSearchQuery(''))}
+        searchQuery={localSearchValue}
+        onSearchChange={handleSearchChange}
+        onSearchClear={handleSearchClear}
         onSortPress={() => setShowSortModal(true)}
         onFilterPress={() => setShowFilters(true)}
         onDownloadPress={handleDownloadAllPDF}
@@ -2361,6 +2447,10 @@ const EnquiryListScreen = ({ navigation }) => {
         isAdmin={isAdmin}
         statusCounts={statusCounts}
         onUpdateEnquiry={handleUpdateEnquiry}
+        resolvedFilters={resolvedFilters}
+        sortBy={sortBy}
+        sortOrder={sortOrder}
+        hideHeader={isClientView}
       />
 
       {shouldShowScreenApiLoader && (
@@ -2400,6 +2490,84 @@ const EnquiryListScreen = ({ navigation }) => {
         buttons={alertConfig.buttons}
         onClose={hideAlert}
       />
+      <CreateEnquiryModal
+        visible={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        route={route}
+      />
+      <Modal visible={!!previewEnquiry} transparent animationType="slide" onRequestClose={() => setPreviewEnquiry(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox2}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Enquiry Preview</Text>
+              <TouchableOpacity onPress={() => setPreviewEnquiry(null)}>
+                <Icon name="close" size={24} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            {previewEnquiry && (
+              <ScrollView>
+                <View style={styles.detailCard}>
+                  <Text style={styles.detailCardTitle}>General</Text>
+                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Name</Text><Text style={styles.detailValue}>{previewEnquiry.Name || previewEnquiry.title || 'N/A'}</Text></View>
+                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Client</Text><Text style={styles.detailValue}>{previewEnquiry.clientName || 'N/A'}</Text></View>
+                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Status</Text><Text style={styles.detailValue}>{previewEnquiry.CurrentStatus || previewEnquiry.Status || 'N/A'}</Text></View>
+                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Priority</Text><Text style={styles.detailValue}>{previewEnquiry.Priority || 'N/A'}</Text></View>
+                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Category</Text><Text style={styles.detailValue}>{previewEnquiry.Category || 'N/A'}</Text></View>
+                </View>
+                <View style={styles.detailCard}>
+                  <Text style={styles.detailCardTitle}>Materials</Text>
+                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Metal</Text><Text style={styles.detailValue}>{previewEnquiry.Metal?.Quality || ''} {previewEnquiry.Metal?.Color || ''}</Text></View>
+                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Stone Type</Text><Text style={styles.detailValue}>{previewEnquiry.StoneType || 'N/A'}</Text></View>
+                  {previewEnquiry.Stamping && <View style={styles.detailRow}><Text style={styles.detailLabel}>Stamping</Text><Text style={styles.detailValue}>{previewEnquiry.Stamping}</Text></View>}
+                </View>
+                {previewEnquiry.Remarks && (
+                  <View style={styles.detailCard}>
+                    <Text style={styles.detailCardTitle}>Remarks</Text>
+                    <Text style={styles.detailRemarks}>{previewEnquiry.Remarks}</Text>
+                  </View>
+                )}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
+      <Modal visible={!!summaryEnquiry} transparent animationType="slide" onRequestClose={() => setSummaryEnquiry(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox2}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Enquiry Summary</Text>
+              <TouchableOpacity onPress={() => setSummaryEnquiry(null)}>
+                <Icon name="close" size={24} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            {summaryEnquiry && (
+              <ScrollView>
+                <View style={styles.detailCard}>
+                  <Text style={styles.detailCardTitle}>General</Text>
+                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Name</Text><Text style={styles.detailValue}>{summaryEnquiry.Name || summaryEnquiry.title || 'N/A'}</Text></View>
+                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Client</Text><Text style={styles.detailValue}>{summaryEnquiry.clientName || 'N/A'}</Text></View>
+                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Status</Text><Text style={styles.detailValue}>{summaryEnquiry.CurrentStatus || summaryEnquiry.Status || 'N/A'}</Text></View>
+                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Category</Text><Text style={styles.detailValue}>{summaryEnquiry.Category || 'N/A'}</Text></View>
+                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Priority</Text><Text style={styles.detailValue}>{summaryEnquiry.Priority || 'N/A'}</Text></View>
+                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Budget</Text><Text style={styles.detailValue}>{summaryEnquiry.Budget || 'N/A'}</Text></View>
+                </View>
+                <View style={styles.detailCard}>
+                  <Text style={styles.detailCardTitle}>Materials</Text>
+                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Metal</Text><Text style={styles.detailValue}>{summaryEnquiry.Metal?.Quality || ''} {summaryEnquiry.Metal?.Color || ''}</Text></View>
+                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Stone Type</Text><Text style={styles.detailValue}>{summaryEnquiry.StoneType || 'N/A'}</Text></View>
+                  {summaryEnquiry.Stamping && <View style={styles.detailRow}><Text style={styles.detailLabel}>Stamping</Text><Text style={styles.detailValue}>{summaryEnquiry.Stamping}</Text></View>}
+                  {summaryEnquiry.MetalWeight?.Exact && <View style={styles.detailRow}><Text style={styles.detailLabel}>Metal Weight</Text><Text style={styles.detailValue}>{summaryEnquiry.MetalWeight.Exact}g</Text></View>}
+                </View>
+                <View style={styles.detailCard}>
+                  <Text style={styles.detailCardTitle}>Timeline</Text>
+                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Created</Text><Text style={styles.detailValue}>{summaryEnquiry.CreatedDate ? new Date(summaryEnquiry.CreatedDate).toLocaleDateString() : 'N/A'}</Text></View>
+
+                </View>
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -2407,7 +2575,7 @@ const EnquiryListScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.backgroundSecondary,
+    backgroundColor:"#f9f7f2",
   },
 
   headerActions: {
@@ -2749,7 +2917,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
-    elevation: 10,
+    elevation: 6,
     overflow: 'hidden',
     position: 'relative',
   },
@@ -2913,6 +3081,125 @@ const styles = StyleSheet.create({
     fontFamily: fonts.medium,
     color: colors.textSecondary,
     paddingHorizontal: 4,
+  },
+  clientHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  clientHeaderBack: {
+    padding: 4,
+    marginRight: 12,
+  },
+  clientHeaderInfo: {
+    flex: 1,
+  },
+  clientHeaderLabel: {
+    fontSize: fonts.xs,
+    fontFamily: fonts.regular,
+    color: colors.textWhite + 'CC',
+  },
+  clientHeaderName: {
+    fontSize: fonts.base,
+    fontFamily: fonts.bold,
+    color: colors.textWhite,
+    marginTop: 2,
+  },
+  addEnquiryBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 12,
+  },
+  enquiryActions: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+
+    marginBottom: 8,
+  },
+  enquiryActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: colors.primaryLight || colors.primary,
+    backgroundColor: colors.primaryExtraLight || colors.backgroundSecondary,
+  },
+  enquiryActionText: {
+    fontSize: 11,
+    fontFamily: fonts.medium,
+    color: colors.primary,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'flex-end',
+  },
+  modalBox2: {
+    backgroundColor: colors.background,
+    borderTopRightRadius: 20,
+    borderTopLeftRadius: 20,
+    padding: 24,
+    maxHeight: '70%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: fonts.lg,
+    fontFamily: fonts.bold,
+    color: colors.textPrimary,
+  },
+  detailCard: {
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+  },
+  detailCardTitle: {
+    fontSize: fonts.sm,
+    fontFamily: fonts.bold,
+    color: colors.primary,
+    marginBottom: 10,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  detailLabel: {
+    fontSize: fonts.sm,
+    fontFamily: fonts.medium,
+    color: colors.textSecondary,
+    flex: 1,
+  },
+  detailValue: {
+    fontSize: fonts.sm,
+    fontFamily: fonts.regular,
+    color: colors.textPrimary,
+    flex: 1.5,
+    textAlign: 'right',
+  },
+  detailRemarks: {
+    fontSize: fonts.sm,
+    fontFamily: fonts.regular,
+    color: colors.textPrimary,
+    lineHeight: 20,
   },
 });
 

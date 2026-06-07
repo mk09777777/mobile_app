@@ -48,12 +48,17 @@ export default function StatusTabs({
   isAdmin,
   statusCounts,
   onUpdateEnquiry,
+  resolvedFilters,
+  sortBy,
+  sortOrder,
+  hideHeader,
 }) {
   const { user } = useAuth();
   const userRole = user?.role?.toLowerCase();
 
   const [selectedStatus, setSelectedStatus] = React.useState(null);
   const [selectedAssignTo, setSelectedAssignTo] = React.useState(null);
+  const [isExpandedAll, setIsExpandedAll] = React.useState(false);
 
 
   React.useEffect(() => {
@@ -141,6 +146,18 @@ export default function StatusTabs({
       return [
         { key: 'AssignedToYou', label: 'Assigned to You' },
         { key: 'CadPending', label: 'CAD Pending' }
+      ];
+    } else if (userRole === 'client_handler') {
+      return [
+        { key: 'all', label: 'All' },
+        { key: 'NewEnquiry', label: 'New Enquiries' },
+        { key: 'CoralPending', label: 'Coral Pending' },
+        { key: 'CadPending', label: 'CAD Pending' },
+        { key: 'Quotation', label: 'Quotation' },
+        { key: 'ApprovalPending', label: 'Approval Pending' },
+        { key: 'OrderPlaced', label: 'Order Placement' },
+        { key: 'Production', label: 'Production' },
+        { key: 'Shipped', label: 'Shipped' },
       ];
     }
     return [
@@ -297,10 +314,13 @@ export default function StatusTabs({
       });
     }
     
+    // Show Assign To button below the card only in expanded mode and when unassigned
+    const showAssignBtn = isExpandedAll && shouldShowAssignButton;
+
     return (
-      <View style={{ paddingBottom: shouldShowAssignButton ? 10 : 0 }}>
-        {renderEnquiryItem(props)}
-        {shouldShowAssignButton && (
+      <View style={{ paddingBottom: showAssignBtn ? 8 : 0 }}>
+        {renderEnquiryItem({ ...props, isExpandedAll })}
+        {showAssignBtn && (
           <View style={styles.QuickButtonContainerWrapper}>
             <View style={styles.QuickButtonContainer}>
               <TouchableOpacity
@@ -308,18 +328,18 @@ export default function StatusTabs({
                 onPress={() => {
                   const statusStr = item.CurrentStatus || item.Status || item.status || '';
                   const statusLower = statusStr.toLowerCase();
-                  
+
                   let targetRoleId = null;
                   if (statusLower.includes('coral')) targetRoleId = 2;
                   else if (statusLower.includes('cad')) targetRoleId = 3;
-                  
+
                   let usersToList = [];
                   if (targetRoleId && users && users.length > 0) {
                     usersToList = users.filter(u => u.role === targetRoleId);
                   } else if (users && users.length > 0) {
                     usersToList = users;
                   }
-                  
+
                   if (usersToList.length > 0) {
                     setAssignDropDownUsers(usersToList.map(u => ({
                       id: u.id,
@@ -328,8 +348,6 @@ export default function StatusTabs({
                     setActiveEnquiryId(item.Id || item._id || item.id);
                     setActiveEnquiryStatus(statusStr);
                     setShowAssignDropdown(true);
-                  } else {
-                    console.log('No users available for assignment');
                   }
                 }}
               >
@@ -346,15 +364,17 @@ export default function StatusTabs({
 
   return (
     <View style={{ flex: 1 }}>
-      <FlatList
-        data={tabs}
-        renderItem={renderTab}
-        keyExtractor={item => item.key}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.tabsContainer}
-        style={styles.flatListStyle}
-      />
+      {!hideHeader && (
+        <FlatList
+          data={tabs}
+          renderItem={renderTab}
+          keyExtractor={item => item.key}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tabsContainer}
+          style={styles.flatListStyle}
+        />
+      )}
 
       {activeTab === 'AssignedToYou' && (
         <>
@@ -380,12 +400,19 @@ export default function StatusTabs({
                 <Icon name="tune" size={20} color={colors.primary} />
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.downloadButton}
-                onPress={onDownloadPress}
-              >
-                <Icon name="download" size={20} color={colors.primary} />
-              </TouchableOpacity>
+              <View style={styles.expandToggleWrapper}>
+                <Text style={styles.expandToggleLabel}>
+                  {isExpandedAll ? 'Collapse' : 'Expand'}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setIsExpandedAll(v => !v)}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.expandToggleTrack, isExpandedAll && styles.expandToggleTrackOn]}>
+                    <View style={[styles.expandToggleThumb, isExpandedAll && styles.expandToggleThumbOn]} />
+                  </View>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
 
@@ -393,6 +420,10 @@ export default function StatusTabs({
             flatListRef={flatListRef}
             renderEnquiryItem={renderItemWithActions}
             renderEmpty={renderEmpty}
+            searchQuery={searchQuery}
+            resolvedFilters={resolvedFilters}
+            sortBy={sortBy}
+            sortOrder={sortOrder}
             isTablet={isTablet}
             styles={parentStyles}
             currentTab="AssignedToYou"
@@ -428,12 +459,19 @@ export default function StatusTabs({
                 <Icon name="tune" size={20} color={colors.primary} />
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.downloadButton}
-                onPress={onDownloadPress}
-              >
-                <Icon name="download" size={20} color={colors.primary} />
-              </TouchableOpacity>
+              <View style={styles.expandToggleWrapper}>
+                <Text style={styles.expandToggleLabel}>
+                  {isExpandedAll ? 'Collapse' : 'Expand'}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setIsExpandedAll(v => !v)}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.expandToggleTrack, isExpandedAll && styles.expandToggleTrackOn]}>
+                    <View style={[styles.expandToggleThumb, isExpandedAll && styles.expandToggleThumbOn]} />
+                  </View>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
 
@@ -441,6 +479,10 @@ export default function StatusTabs({
             flatListRef={flatListRef}
             renderEnquiryItem={renderItemWithActions}
             renderEmpty={renderEmpty}
+            searchQuery={searchQuery}
+            resolvedFilters={resolvedFilters}
+            sortBy={sortBy}
+            sortOrder={sortOrder}
             isTablet={isTablet}
             styles={parentStyles}
             currentTab="all"
@@ -474,12 +516,19 @@ export default function StatusTabs({
                 <Icon name="tune" size={20} color={colors.primary} />
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.downloadButton}
-                onPress={onDownloadPress}
-              >
-                <Icon name="download" size={20} color={colors.primary} />
-              </TouchableOpacity>
+              <View style={styles.expandToggleWrapper}>
+                <Text style={styles.expandToggleLabel}>
+                  {isExpandedAll ? 'Collapse' : 'Expand'}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setIsExpandedAll(v => !v)}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.expandToggleTrack, isExpandedAll && styles.expandToggleTrackOn]}>
+                    <View style={[styles.expandToggleThumb, isExpandedAll && styles.expandToggleThumbOn]} />
+                  </View>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
 
@@ -487,6 +536,10 @@ export default function StatusTabs({
             flatListRef={flatListRef}
             renderEnquiryItem={renderItemWithActions}
             renderEmpty={renderEmpty}
+            searchQuery={searchQuery}
+            resolvedFilters={resolvedFilters}
+            sortBy={sortBy}
+            sortOrder={sortOrder}
             isTablet={isTablet}
             styles={parentStyles}
             currentTab="NewEnquiry"
@@ -520,12 +573,19 @@ export default function StatusTabs({
                 <Icon name="tune" size={20} color={colors.primary} />
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.downloadButton}
-                onPress={onDownloadPress}
-              >
-                <Icon name="download" size={20} color={colors.primary} />
-              </TouchableOpacity>
+              <View style={styles.expandToggleWrapper}>
+                <Text style={styles.expandToggleLabel}>
+                  {isExpandedAll ? 'Collapse' : 'Expand'}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setIsExpandedAll(v => !v)}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.expandToggleTrack, isExpandedAll && styles.expandToggleTrackOn]}>
+                    <View style={[styles.expandToggleThumb, isExpandedAll && styles.expandToggleThumbOn]} />
+                  </View>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
 
@@ -533,6 +593,10 @@ export default function StatusTabs({
             flatListRef={flatListRef}
             renderEnquiryItem={renderItemWithActions}
             renderEmpty={renderEmpty}
+            searchQuery={searchQuery}
+            resolvedFilters={resolvedFilters}
+            sortBy={sortBy}
+            sortOrder={sortOrder}
             isTablet={isTablet}
             styles={parentStyles}
             currentTab="ApprovalPending"
@@ -566,12 +630,19 @@ export default function StatusTabs({
                 <Icon name="tune" size={20} color={colors.primary} />
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.downloadButton}
-                onPress={onDownloadPress}
-              >
-                <Icon name="download" size={20} color={colors.primary} />
-              </TouchableOpacity>
+              <View style={styles.expandToggleWrapper}>
+                <Text style={styles.expandToggleLabel}>
+                  {isExpandedAll ? 'Collapse' : 'Expand'}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setIsExpandedAll(v => !v)}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.expandToggleTrack, isExpandedAll && styles.expandToggleTrackOn]}>
+                    <View style={[styles.expandToggleThumb, isExpandedAll && styles.expandToggleThumbOn]} />
+                  </View>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
 
@@ -579,6 +650,10 @@ export default function StatusTabs({
             flatListRef={flatListRef}
             renderEnquiryItem={renderItemWithActions}
             renderEmpty={renderEmpty}
+            searchQuery={searchQuery}
+            resolvedFilters={resolvedFilters}
+            sortBy={sortBy}
+            sortOrder={sortOrder}
             isTablet={isTablet}
             styles={parentStyles}
             currentTab="CoralPending"
@@ -612,12 +687,19 @@ export default function StatusTabs({
                 <Icon name="tune" size={20} color={colors.primary} />
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.downloadButton}
-                onPress={onDownloadPress}
-              >
-                <Icon name="download" size={20} color={colors.primary} />
-              </TouchableOpacity>
+              <View style={styles.expandToggleWrapper}>
+                <Text style={styles.expandToggleLabel}>
+                  {isExpandedAll ? 'Collapse' : 'Expand'}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setIsExpandedAll(v => !v)}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.expandToggleTrack, isExpandedAll && styles.expandToggleTrackOn]}>
+                    <View style={[styles.expandToggleThumb, isExpandedAll && styles.expandToggleThumbOn]} />
+                  </View>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
 
@@ -625,6 +707,10 @@ export default function StatusTabs({
             flatListRef={flatListRef}
             renderEnquiryItem={renderItemWithActions}
             renderEmpty={renderEmpty}
+            searchQuery={searchQuery}
+            resolvedFilters={resolvedFilters}
+            sortBy={sortBy}
+            sortOrder={sortOrder}
             isTablet={isTablet}
             styles={parentStyles}
             currentTab="CadPending"
@@ -658,12 +744,19 @@ export default function StatusTabs({
                 <Icon name="tune" size={20} color={colors.primary} />
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.downloadButton}
-                onPress={onDownloadPress}
-              >
-                <Icon name="download" size={20} color={colors.primary} />
-              </TouchableOpacity>
+              <View style={styles.expandToggleWrapper}>
+                <Text style={styles.expandToggleLabel}>
+                  {isExpandedAll ? 'Collapse' : 'Expand'}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setIsExpandedAll(v => !v)}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.expandToggleTrack, isExpandedAll && styles.expandToggleTrackOn]}>
+                    <View style={[styles.expandToggleThumb, isExpandedAll && styles.expandToggleThumbOn]} />
+                  </View>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
 
@@ -671,6 +764,10 @@ export default function StatusTabs({
             flatListRef={flatListRef}
             renderEnquiryItem={renderItemWithActions}
             renderEmpty={renderEmpty}
+            searchQuery={searchQuery}
+            resolvedFilters={resolvedFilters}
+            sortBy={sortBy}
+            sortOrder={sortOrder}
             isTablet={isTablet}
             styles={parentStyles}
             currentTab="Quotation"
@@ -704,12 +801,19 @@ export default function StatusTabs({
                 <Icon name="tune" size={20} color={colors.primary} />
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.downloadButton}
-                onPress={onDownloadPress}
-              >
-                <Icon name="download" size={20} color={colors.primary} />
-              </TouchableOpacity>
+              <View style={styles.expandToggleWrapper}>
+                <Text style={styles.expandToggleLabel}>
+                  {isExpandedAll ? 'Collapse' : 'Expand'}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setIsExpandedAll(v => !v)}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.expandToggleTrack, isExpandedAll && styles.expandToggleTrackOn]}>
+                    <View style={[styles.expandToggleThumb, isExpandedAll && styles.expandToggleThumbOn]} />
+                  </View>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
 
@@ -717,6 +821,10 @@ export default function StatusTabs({
             flatListRef={flatListRef}
             renderEnquiryItem={renderItemWithActions}
             renderEmpty={renderEmpty}
+            searchQuery={searchQuery}
+            resolvedFilters={resolvedFilters}
+            sortBy={sortBy}
+            sortOrder={sortOrder}
             isTablet={isTablet}
             styles={parentStyles}
             currentTab="OrderPlaced"
@@ -750,12 +858,19 @@ export default function StatusTabs({
                 <Icon name="tune" size={20} color={colors.primary} />
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.downloadButton}
-                onPress={onDownloadPress}
-              >
-                <Icon name="download" size={20} color={colors.primary} />
-              </TouchableOpacity>
+              <View style={styles.expandToggleWrapper}>
+                <Text style={styles.expandToggleLabel}>
+                  {isExpandedAll ? 'Collapse' : 'Expand'}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setIsExpandedAll(v => !v)}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.expandToggleTrack, isExpandedAll && styles.expandToggleTrackOn]}>
+                    <View style={[styles.expandToggleThumb, isExpandedAll && styles.expandToggleThumbOn]} />
+                  </View>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
 
@@ -763,6 +878,10 @@ export default function StatusTabs({
             flatListRef={flatListRef}
             renderEnquiryItem={renderItemWithActions}
             renderEmpty={renderEmpty}
+            searchQuery={searchQuery}
+            resolvedFilters={resolvedFilters}
+            sortBy={sortBy}
+            sortOrder={sortOrder}
             isTablet={isTablet}
             styles={parentStyles}
             currentTab="Production"
@@ -795,12 +914,19 @@ export default function StatusTabs({
                 <Icon name="tune" size={20} color={colors.primary} />
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.downloadButton}
-                onPress={onDownloadPress}
-              >
-                <Icon name="download" size={20} color={colors.primary} />
-              </TouchableOpacity>
+              <View style={styles.expandToggleWrapper}>
+                <Text style={styles.expandToggleLabel}>
+                  {isExpandedAll ? 'Collapse' : 'Expand'}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setIsExpandedAll(v => !v)}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.expandToggleTrack, isExpandedAll && styles.expandToggleTrackOn]}>
+                    <View style={[styles.expandToggleThumb, isExpandedAll && styles.expandToggleThumbOn]} />
+                  </View>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
 
@@ -808,6 +934,10 @@ export default function StatusTabs({
             flatListRef={flatListRef}
             renderEnquiryItem={renderItemWithActions}
             renderEmpty={renderEmpty}
+            searchQuery={searchQuery}
+            resolvedFilters={resolvedFilters}
+            sortBy={sortBy}
+            sortOrder={sortOrder}
             isTablet={isTablet}
             styles={parentStyles}
             currentTab="Shipped"
@@ -934,40 +1064,73 @@ const styles = StyleSheet.create({
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
   },
   searchContainer: {
     flex: 1,
+    minWidth: 0,
   },
   sortButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
+    width: 40,
+    height: 40,
+    borderRadius: 10,
     backgroundColor: colors.backgroundSecondary,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
     borderColor: colors.borderLight,
+    flexShrink: 0,
   },
   filterButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
+    width: 40,
+    height: 40,
+    borderRadius: 10,
     backgroundColor: colors.backgroundSecondary,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
     borderColor: colors.borderLight,
+    flexShrink: 0,
   },
-  downloadButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: colors.backgroundSecondary,
-    justifyContent: 'center',
+  expandToggleWrapper: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.borderLight,
+    height: 48,
+    flexShrink: 0,
+  },
+  expandToggleLabel: {
+    fontSize: 11,
+    fontFamily: fonts.medium,
+    color: colors.primary,
+  },
+  expandToggleTrack: {
+    width: 36,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: colors.border,
+    justifyContent: 'center',
+    paddingHorizontal: 2,
+  },
+  expandToggleTrackOn: {
+    backgroundColor: colors.primary,
+  },
+  expandToggleThumb: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    elevation: 2,
+    alignSelf: 'flex-start',
+  },
+  expandToggleThumbOn: {
+    alignSelf: 'flex-end',
   },
   compactFilterRow: {
     flexDirection: 'row',

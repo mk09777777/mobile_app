@@ -52,6 +52,7 @@ export const api = createApi({
     'StoneTypes',
     'Notification',
     'DeviceToken',
+    'Users',
   ],
   // Prevent memory buildup by removing unused data after 60 seconds
   keepUnusedDataFor: 60,
@@ -241,7 +242,7 @@ export const api = createApi({
           const roleString = mapRoleNumberToString(roleNumber);
 
           if (!roleString) {
-            throw new Error(`Unknown role: ${roleNumber}. Expected 1-4.`);
+            throw new Error(`Unknown role: ${roleNumber}. Expected 1-5.`);
           }
 
           // Try different case variations for ID
@@ -311,12 +312,13 @@ export const api = createApi({
 
     // Create user/register endpoint
     createUser: builder.mutation({
-      query: ({ email, password, roleNumber, name }) => ({
+      query: (data) => ({
         url: '/api/users',
         method: 'POST',
-        body: { email, password, roleNumber, name },
+        body: data,
       }),
       transformResponse: response => {
+        console.log('🆕 [createUser] Raw API Response:', JSON.stringify(response, null, 2));
         return {
           success: true,
           user: response.user || response,
@@ -338,6 +340,7 @@ export const api = createApi({
     getUserById: builder.query({
       query: userId => `/api/users/${userId}`,
       transformResponse: response => {
+        console.log('👤 [getUserById] Raw API Response:', JSON.stringify(response, null, 2));
         // Handle different response formats
         const user = response.user || response;
         return {
@@ -363,12 +366,17 @@ export const api = createApi({
 
     // Update user endpoint
     updateUser: builder.mutation({
-      query: ({ userId, ...data }) => ({
-        url: `/api/users/${userId}`,
-        method: 'PUT',
-        body: data,
-      }),
+      query: ({ userId, ...data }) => {
+        console.log('📤 [updateUser] userId:', userId, 'payload:', JSON.stringify(data, null, 2));
+        return {
+          url: `/api/users/${userId}`,
+          method: 'PUT',
+          body: data,
+        };
+      },
+      invalidatesTags: ['Users'],
       transformResponse: response => {
+        console.log('✅ [updateUser] Response:', JSON.stringify(response, null, 2));
         return {
           success: true,
           user: response.user || response,
@@ -376,6 +384,7 @@ export const api = createApi({
         };
       },
       transformErrorResponse: response => {
+        console.log('❌ [updateUser] Error:', JSON.stringify(response, null, 2));
         return {
           success: false,
           error:
@@ -412,6 +421,7 @@ export const api = createApi({
     // Get users list endpoint
     getUsers: builder.query({
       query: () => '/api/users',
+      providesTags: ['Users'],
       transformResponse: data => {
         console.log(
           '🔍 [getUsers] Raw API Response:',
@@ -735,7 +745,7 @@ export const api = createApi({
           }
         } else {
           // Even if no filters, ensure default sort is applied for consistent ordering
-          queryString += `&sortBy=createdAt&sortOrder=asc`;
+          queryString += `&sortBy=CreatedDate&sortOrder=desc`;
         }
 
         const finalUrl = `/api/enquiries/search?${queryString}`;

@@ -10,6 +10,7 @@ import {
 import BrandedAlert from '../../components/common/BrandedAlert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDispatch } from 'react-redux';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import secureStorage from '../../utils/secureStorage';
 import { useLoginMutation } from '../../store/api';
 import { setCredentials } from '../../features/auth/authSlice';
@@ -74,12 +75,7 @@ const LoginScreen = ({ navigation }) => {
       
       if (result.success) {
         // Console log the login token
-        console.log('Token Preview:', result.token?.substring(0, 50) + '...');
-        console.log('Full Login Result:', {
-          success: result.success,
-          token: result.token,
-          user: result.user,
-        });
+        console.log('🔑 BEARER TOKEN (copy for Swagger):', result.token);
         
         // Fetch user details from API to get the actual name and clientId from database
         let userDetails = null;
@@ -96,7 +92,9 @@ const LoginScreen = ({ navigation }) => {
             
             if (userResponse.ok) {
               const userDataResponse = await userResponse.json();
+              console.log('🔍 [LOGIN] Raw /api/users/:id response:', JSON.stringify(userDataResponse, null, 2));
               userDetails = userDataResponse.user || userDataResponse;
+              console.log('🔍 [LOGIN] userDetails extracted:', JSON.stringify(userDetails, null, 2));
               
               // If ClientId is not in token but user is Role 4, get it from database
               if (result.user.roleNumber === 4 && !result.user.clientId && userDetails) {
@@ -137,14 +135,14 @@ const LoginScreen = ({ navigation }) => {
         const userData = {
           ...result.user,
           email: formData.email,
-          name: userName, // Use actual name from database
-          // Include ClientId from token or database for role 4 users
+          name: userName,
           clientId: result.user.clientId || userDetails?.clientId || userDetails?.ClientId,
-          // Include other user details if available
           ...(userDetails && {
             phone: userDetails.phone || userDetails.Phone,
+            clientsHandled: userDetails.clientsHandled || userDetails.ClientsHandled || [],
           }),
         };
+        console.log('👤 [LOGIN] userData.clientsHandled:', userData.clientsHandled);
         
         if (__DEV__ && userData.roleNumber === 4) {
          
@@ -157,6 +155,9 @@ const LoginScreen = ({ navigation }) => {
         // Store in secure storage
         await secureStorage.setItem('user', JSON.stringify(userData));
         await secureStorage.setItem('token', result.token);
+        // Also store in AsyncStorage so screens using AsyncStorage.getItem('token') can find it
+        await AsyncStorage.setItem('token', result.token);
+        await AsyncStorage.setItem('user', JSON.stringify(userData));
         
         // Verify token was stored securely
         const tokenVerification = await secureStorage.verifyStorage('token');
@@ -201,6 +202,7 @@ const LoginScreen = ({ navigation }) => {
     { role: 'Client', email: 'test@cl.com', password: '123456' },
     { role: 'Coral Designer', email: 'pitbull9792@gmail.com', password: 'sourav84206' },
     { role: 'CAD Designer', email: 'anupampatra386@gmail.com', password: 'anupam97698' },
+    { role: 'Client Handler', email: '', password: '' },
   ];
 
   const fillDemoCredentials = (email, password) => {
@@ -259,6 +261,7 @@ const LoginScreen = ({ navigation }) => {
             loading={isLoading}
             style={styles.loginButton}
           />
+
         </View>
 
         <View style={styles.demoSection}>

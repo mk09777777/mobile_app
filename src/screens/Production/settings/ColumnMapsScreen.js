@@ -1,27 +1,69 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator,
+  ActivityIndicator, TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../../../constants/colors';
 import { fonts } from '../../../constants/fonts';
 import Icon from '../../../components/common/Icon';
 import BrandedAlert from '../../../components/common/BrandedAlert';
-import { getColumnMap } from '../../../services/productionApi';
+import { getColumnMap, updateColumnMap } from '../../../services/productionApi';
+
+const randomStrength = () => Math.floor(Math.random() * 5) + 1;
 
 // ─── WIP Row ──────────────────────────────────────────────────────────────────
 
-const WipRow = ({ col, alt }) => (
-  <View style={[styles.tableRow, alt && styles.tableRowAlt]}>
-    <Text style={[styles.td, styles.wipStageCol]} numberOfLines={1}>
-      {col.stageCode || '—'}
-    </Text>
-    <Text style={[styles.td, styles.wipAutoCol]} numberOfLines={1}>
-      {col.rawColumn}
-    </Text>
-  </View>
-);
+const WipRow = ({ col, alt, onStrengthChange }) => {
+  const [editingStrength, setEditingStrength] = useState(false);
+  const [strengthText, setStrengthText] = useState(String(col.strength ?? 1));
+  const [cellStrength, setCellStrength] = useState(col.strength ?? 1);
+
+  useEffect(() => {
+    setCellStrength(col.strength ?? 1);
+    setStrengthText(String(col.strength ?? 1));
+  }, [col.strength]);
+
+  const commitStrength = () => {
+    const val = parseInt(strengthText, 10);
+    if (!isNaN(val) && val >= 1) {
+      setCellStrength(val);
+      onStrengthChange(col.rawColumn, val);
+    } else {
+      setStrengthText(String(cellStrength));
+    }
+    setEditingStrength(false);
+  };
+
+  return (
+    <View style={[styles.tableRow, alt && styles.tableRowAlt]}>
+      <Text style={[styles.td, styles.wipStageCol]} numberOfLines={1}>
+        {col.stageCode || '—'}
+      </Text>
+      <Text style={[styles.td, styles.wipAutoCol]} numberOfLines={1}>
+        {col.rawColumn}
+      </Text>
+      <View style={styles.wipStrengthCol}>
+        {editingStrength ? (
+          <TextInput
+            style={styles.strengthInput}
+            value={strengthText}
+            onChangeText={setStrengthText}
+            keyboardType="numeric"
+            onBlur={commitStrength}
+            onSubmitEditing={commitStrength}
+            autoFocus
+          />
+        ) : (
+          <TouchableOpacity onPress={() => setEditingStrength(true)} style={styles.strengthBadge}>
+            <Icon name="person" size={12} color={colors.primary} />
+            <Text style={styles.strengthText}>{cellStrength}</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </View>
+  );
+};
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
@@ -30,6 +72,8 @@ const ColumnMapsScreen = () => {
   const [data, setData]         = useState(null);
   const [loading, setLoading]   = useState(true);
   const [wipCols, setWipCols]   = useState([]);
+  const [strengthChanges, setStrengthChanges] = useState({});
+  const [saving, setSaving]     = useState(false);
   const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
   const showAlert = (title, message, type = 'info', buttons = []) =>
     setAlertConfig({ visible: true, title, message, type, buttons });
@@ -46,7 +90,12 @@ const ColumnMapsScreen = () => {
           '| orderCols:', (map?.orderColumns || []).length);
       }
       setData(map);
-      setWipCols(map?.wipColumns || []);
+      const cols = (map?.wipColumns || []).map(c => ({
+        ...c,
+        strength: c.strength ?? randomStrength(),
+      }));
+      setWipCols(cols);
+      setStrengthChanges({});
     } catch (e) {
       if (__DEV__) console.error('[ColumnMaps] load error:', e.message);
       showAlert('Error', e.message || 'Failed to load column map.', 'error');
@@ -56,6 +105,41 @@ const ColumnMapsScreen = () => {
   }, [fileType]);
 
   useEffect(() => { load(); }, [load]);
+
+  const handleStrengthChange = (rawColumn, val) => {
+    setWipCols(prev => prev.map(c => c.rawColumn === rawColumn ? { ...c, strength: val } : c));
+    setStrengthChanges(prev => ({ ...prev, [rawColumn]: val }));
+  };
+
+  const handleRandomizeAll = () => {
+    setWipCols(prev => prev.map(c => ({ ...c, strength: randomStrength() })));
+    setStrengthChanges(prev => {
+      const next = { ...prev };
+      wipCols.forEach(c => { next[c.rawColumn] = randomStrength(); });
+      return next;
+    });
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const payload = {
+        wipColumns: wipCols.map(c => ({
+          rawColumn: c.rawColumn,
+          stageCode: c.stageCode,
+          cellCode: c.cellCode,
+          strength: c.strength,
+        })),
+      };
+      await updateColumnMap('wip', payload);
+      setStrengthChanges({});
+      showAlert('Saved', 'Strength values updated.', 'success');
+    } catch (e) {
+      showAlert('Error', e.message || 'Failed to save.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={['left', 'right', 'bottom']}>
@@ -110,14 +194,29 @@ const ColumnMapsScreen = () => {
                 </View>
               ) : (
                 <>
+                  {/* Action bar */}
+                  <View style={styles.actionBar}>
+                    <TouchableOpacity style={styles.randomizeBtn} onPress={handleRandomizeAll}>
+                      <Icon name="shuffle" size={14} color={colors.primary} />
+                      <Text style={styles.randomizeText}>Randomize All</Text>
+                    </TouchableOpacity>
+                    {Object.keys(strengthChanges).length > 0 && (
+                      <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={saving}>
+                        {saving ? <ActivityIndicator size="small" color="#fff" /> : null}
+                        <Text style={styles.saveBtnText}>Save</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
                   {/* Table header */}
                   <View style={styles.tableHeader}>
                     <Text style={[styles.th, styles.wipStageCol]}>Stage Code</Text>
                     <Text style={[styles.th, styles.wipAutoCol]}>Cell</Text>
+                    <Text style={[styles.th, styles.wipStrengthCol]}>Strength</Text>
                   </View>
 
                   {wipCols.map((col, i) => (
-                    <WipRow key={col.rawColumn + i} col={col} alt={i % 2 === 1} />
+                    <WipRow key={col.rawColumn + i} col={col} alt={i % 2 === 1} onStrengthChange={handleStrengthChange} />
                   ))}
                 </>
               )}
@@ -159,7 +258,7 @@ const ColumnMapsScreen = () => {
             <Icon name="info" size={16} color={colors.info} />
             <Text style={styles.infoText}>
               {fileType === 'wip'
-                ? 'Showing stage code and cell (column name) from uploaded WIP file.'
+                ? 'Tap a strength badge to edit. Randomize All generates 1–5 per cell.'
                 : 'Order column mappings are managed via the backend.'}
             </Text>
           </View>
@@ -210,6 +309,17 @@ const styles = StyleSheet.create({
 
   wipStageCol:     { flex: 1 },
   wipAutoCol:      { flex: 1 },
+  wipStrengthCol:  { width: 64, textAlign: 'center' },
+
+  actionBar:       { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginBottom: 8 },
+  randomizeBtn:    { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: colors.primary },
+  randomizeText:   { fontFamily: fonts.medium, fontSize: fonts.xs, color: colors.primary },
+  saveBtn:         { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.primary, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 8 },
+  saveBtnText:     { fontFamily: fonts.bold, fontSize: fonts.xs, color: '#fff' },
+
+  strengthBadge:   { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: colors.primaryExtraLight, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, alignSelf: 'flex-start' },
+  strengthText:    { fontFamily: fonts.bold, fontSize: 10, color: colors.primary },
+  strengthInput:   { width: 50, backgroundColor: colors.backgroundSecondary, borderRadius: 6, borderWidth: 1, borderColor: colors.primary, paddingHorizontal: 6, paddingVertical: 2, fontFamily: fonts.regular, fontSize: fonts.xs, color: colors.textPrimary, textAlign: 'center' },
 
   emptyWip:        { alignItems: 'center', paddingVertical: 24, gap: 10 },
   emptyWipTitle:   { fontFamily: fonts.bold, fontSize: fonts.sm, color: colors.textPrimary },

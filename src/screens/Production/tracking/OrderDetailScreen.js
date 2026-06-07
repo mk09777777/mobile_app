@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  View, Text, StyleSheet, FlatList, ScrollView, TouchableOpacity,
   RefreshControl, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -24,7 +24,7 @@ const STATUS_COLORS = {
   on_hold: colors.warning,
 };
 
-const JobCardRow = ({ jc, onPress }) => {
+const JobCardRow = React.memo(({ jc, onPress }) => {
   const isLate = jc.latenessDays > 0;
   const eta = jc.plannedCompletionAt ? new Date(jc.plannedCompletionAt) : null;
   const due = jc.expectedDeliveryAt  ? new Date(jc.expectedDeliveryAt)  : null;
@@ -67,7 +67,7 @@ const JobCardRow = ({ jc, onPress }) => {
       </View>
     </TouchableOpacity>
   );
-};
+});
 
 const OrderDetailScreen = ({ route, navigation }) => {
   const { orderNumber } = route.params || {};
@@ -99,6 +99,128 @@ const OrderDetailScreen = ({ route, navigation }) => {
 
   useEffect(() => { load(); }, [load]);
 
+  const order = data?.order ?? null;
+  const jobCards = useMemo(() => data?.pieces || data?.jobCards || [], [data]);
+
+  const { totalPieces, completed, inProgress, lateCount, pct } = useMemo(() => {
+    const total = jobCards.length;
+    const done  = jobCards.filter(j => j.status === 'completed').length;
+    const prog  = jobCards.filter(j => j.status === 'in_progress').length;
+    const late  = jobCards.filter(j => j.latenessDays > 0).length;
+    return { totalPieces: total, completed: done, inProgress: prog, lateCount: late,
+             pct: total > 0 ? Math.round((done / total) * 100) : 0 };
+  }, [jobCards]);
+
+  const stageTotals = useMemo(() => {
+    const totals = {};
+    jobCards.forEach(jc => {
+      jc.currentStageDistribution?.forEach(s => {
+        totals[s.stageCode] = (totals[s.stageCode] || 0) + s.qty;
+      });
+    });
+    return totals;
+  }, [jobCards]);
+
+  const flowStages = useMemo(
+    () => stages.filter(s => s.displayOrder >= 1 && s.displayOrder < 90),
+    [stages]
+  );
+
+  const handlePressCard = useCallback(
+    j => navigation.navigate('JobCardDetail', { jobCardId: j._id }),
+    [navigation]
+  );
+
+  const renderJobCard = useCallback(
+    ({ item }) => <JobCardRow jc={item} onPress={handlePressCard} />,
+    [handlePressCard]
+  );
+
+  const ListHeader = useMemo(() => (
+    <>
+      {/* Order header */}
+      <View style={styles.orderHeader}>
+        <View style={styles.orderHeaderTop}>
+          <Text style={styles.orderNum}>{order?.orderNumber || orderNumber}</Text>
+          <View style={[styles.statusBadge, { backgroundColor: (STATUS_COLORS[order?.status] || colors.textSecondary) + '22' }]}>
+            <Text style={[styles.statusText, { color: STATUS_COLORS[order?.status] || colors.textSecondary }]}>
+              {order?.status?.replace('_', ' ')}
+            </Text>
+          </View>
+        </View>
+        <Text style={styles.orderCustomer}>{order?.customerCode}</Text>
+        <Text style={styles.orderDelivery}>Due: {formatDate(order?.expectedDeliveryAt)}</Text>
+        {order?.plannedCompletionAt && (
+          <View style={styles.etaRow}>
+            <Text style={styles.etaLabel}>ETA: </Text>
+            <Text style={[
+              styles.etaValue,
+              order.expectedDeliveryAt && new Date(order.plannedCompletionAt) > new Date(order.expectedDeliveryAt)
+                ? { color: colors.error }
+                : { color: colors.success }
+            ]}>
+              {formatDate(order.plannedCompletionAt)}
+            </Text>
+          </View>
+        )}
+        <View style={styles.progressBar}>
+          <View style={[styles.progressFill, { width: `${pct}%` }]} />
+        </View>
+        <Text style={styles.progressText}>{completed}/{totalPieces} pieces completed ({pct}%)</Text>
+        <View style={styles.statsRow}>
+          <View style={styles.statBox}>
+            <Text style={styles.statValue}>{totalPieces}</Text>
+            <Text style={styles.statLabel}>Pieces</Text>
+          </View>
+          <View style={styles.statBox}>
+            <Text style={[styles.statValue, { color: colors.success }]}>{completed}</Text>
+            <Text style={styles.statLabel}>Done</Text>
+          </View>
+          <View style={styles.statBox}>
+            <Text style={[styles.statValue, { color: colors.warning }]}>{inProgress}</Text>
+            <Text style={styles.statLabel}>In Progress</Text>
+          </View>
+          <View style={styles.statBox}>
+            <Text style={[styles.statValue, { color: colors.error }]}>{lateCount}</Text>
+            <Text style={styles.statLabel}>Late</Text>
+          </View>
+        </View>
+      </View>
+
+      {/* Stage flow — horizontal ScrollView is fine here (bounded, ~20 stages max) */}
+      {flowStages.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Stage Flow</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.stageFlow}>
+            {flowStages.map((stage, idx) => {
+              const qty = stageTotals[stage.code] || 0;
+              const isActive = qty > 0;
+              return (
+                <React.Fragment key={stage.code}>
+                  {idx > 0 && <View style={[styles.sfConnector, isActive && styles.sfConnectorActive]} />}
+                  <View style={styles.sfWrap}>
+                    <View style={[styles.sfDot, isActive && styles.sfDotActive]}>
+                      {isActive && <Text style={styles.sfDotQty}>{qty}</Text>}
+                    </View>
+                    <Text style={[styles.sfCode, isActive && styles.sfCodeActive]} numberOfLines={1}>
+                      {stage.code}
+                    </Text>
+                  </View>
+                </React.Fragment>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
+
+      {/* Section title for job cards */}
+      <View style={[styles.section, { paddingBottom: 0 }]}>
+        <Text style={styles.sectionTitle}>Line Items ({totalPieces})</Text>
+      </View>
+    </>
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ), [order, orderNumber, pct, completed, totalPieces, inProgress, lateCount, flowStages, stageTotals]);
+
   if (loading) return <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>;
   if (!data) return (
     <View style={styles.center}>
@@ -107,126 +229,19 @@ const OrderDetailScreen = ({ route, navigation }) => {
     </View>
   );
 
-  // Backend returns { order, pieces } — support both keys for safety
-  const { order } = data;
-  const jobCards = data.pieces || data.jobCards || [];
-  const totalPieces = jobCards.length;
-  const completed = jobCards?.filter(j => j.status === 'completed').length || 0;
-  const pct = totalPieces > 0 ? Math.round((completed / totalPieces) * 100) : 0;
-
-  // Aggregate stage distribution
-  const stageTotals = {};
-  jobCards?.forEach(jc => {
-    jc.currentStageDistribution?.forEach(s => {
-      stageTotals[s.stageCode] = (stageTotals[s.stageCode] || 0) + s.qty;
-    });
-  });
-
-  // Main production flow only — exclude PENDING (displayOrder: -1),
-  // HOLD (98), JW (99), and any other out-of-flow or pre-production stages
-  const flowStages = stages.filter(s => s.displayOrder >= 1 && s.displayOrder < 90);
-
   return (
     <SafeAreaView style={styles.safe} edges={['left', 'right', 'bottom']}>
-      <ScrollView
+      <FlatList
+        data={jobCards}
+        keyExtractor={jc => jc._id}
+        renderItem={renderJobCard}
+        ListHeaderComponent={ListHeader}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} colors={[colors.primary]} />}
         contentContainerStyle={styles.content}
-      >
-        {/* Order header */}
-        <View style={styles.orderHeader}>
-          <View style={styles.orderHeaderTop}>
-            <Text style={styles.orderNum}>{order?.orderNumber || orderNumber}</Text>
-            <View style={[styles.statusBadge, { backgroundColor: (STATUS_COLORS[order?.status] || colors.textSecondary) + '22' }]}>
-              <Text style={[styles.statusText, { color: STATUS_COLORS[order?.status] || colors.textSecondary }]}>
-                {order?.status?.replace('_', ' ')}
-              </Text>
-            </View>
-          </View>
-          <Text style={styles.orderCustomer}>{order?.customerCode}</Text>
-          <Text style={styles.orderDelivery}>
-            Due: {formatDate(order?.expectedDeliveryAt)}
-          </Text>
-          {order?.plannedCompletionAt && (
-            <View style={styles.etaRow}>
-              <Text style={styles.etaLabel}>ETA: </Text>
-              <Text style={[
-                styles.etaValue,
-                order.expectedDeliveryAt && new Date(order.plannedCompletionAt) > new Date(order.expectedDeliveryAt)
-                  ? { color: colors.error }
-                  : { color: colors.success }
-              ]}>
-                {formatDate(order.plannedCompletionAt)}
-              </Text>
-            </View>
-          )}
-
-          {/* Progress */}
-          <View style={styles.progressBar}>
-            <View style={[styles.progressFill, { width: `${pct}%` }]} />
-          </View>
-          <Text style={styles.progressText}>{completed}/{totalPieces} pieces completed ({pct}%)</Text>
-
-          {/* Stats row */}
-          <View style={styles.statsRow}>
-            <View style={styles.statBox}>
-              <Text style={styles.statValue}>{totalPieces}</Text>
-              <Text style={styles.statLabel}>Pieces</Text>
-            </View>
-            <View style={styles.statBox}>
-              <Text style={[styles.statValue, { color: colors.success }]}>{completed}</Text>
-              <Text style={styles.statLabel}>Done</Text>
-            </View>
-            <View style={styles.statBox}>
-              <Text style={[styles.statValue, { color: colors.warning }]}>{jobCards?.filter(j => j.status === 'in_progress').length || 0}</Text>
-              <Text style={styles.statLabel}>In Progress</Text>
-            </View>
-            <View style={styles.statBox}>
-              <Text style={[styles.statValue, { color: colors.error }]}>{jobCards?.filter(j => j.latenessDays > 0).length || 0}</Text>
-              <Text style={styles.statLabel}>Late</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Stage flow */}
-        {flowStages.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Stage Flow</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.stageFlow}>
-              {flowStages.map((stage, idx) => {
-                const qty = stageTotals[stage.code] || 0;
-                const isActive = qty > 0;
-                return (
-                  <React.Fragment key={stage.code}>
-                    {idx > 0 && (
-                      <View style={[styles.sfConnector, isActive && styles.sfConnectorActive]} />
-                    )}
-                    <View style={styles.sfWrap}>
-                      <View style={[styles.sfDot, isActive && styles.sfDotActive]}>
-                        {isActive && <Text style={styles.sfDotQty}>{qty}</Text>}
-                      </View>
-                      <Text style={[styles.sfCode, isActive && styles.sfCodeActive]} numberOfLines={1}>
-                        {stage.code}
-                      </Text>
-                    </View>
-                  </React.Fragment>
-                );
-              })}
-            </ScrollView>
-          </View>
-        )}
-
-        {/* Job cards */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Line Items ({totalPieces})</Text>
-          {jobCards?.map(jc => (
-            <JobCardRow
-              key={jc._id}
-              jc={jc}
-              onPress={j => navigation.navigate('JobCardDetail', { jobCardId: j._id })}
-            />
-          ))}
-        </View>
-      </ScrollView>
+        initialNumToRender={15}
+        maxToRenderPerBatch={10}
+        windowSize={10}
+      />
     </SafeAreaView>
   );
 };

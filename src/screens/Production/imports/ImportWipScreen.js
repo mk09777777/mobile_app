@@ -9,7 +9,7 @@ import { colors } from '../../../constants/colors';
 import { fonts } from '../../../constants/fonts';
 import Icon from '../../../components/common/Icon';
 import BrandedAlert from '../../../components/common/BrandedAlert';
-import { uploadWipFile } from '../../../services/productionApi';
+import { uploadWipFile, getJobCards } from '../../../services/productionApi';
 
 const ImportWipScreen = ({ navigation }) => {
   const [file, setFile] = useState(null);
@@ -46,15 +46,52 @@ const ImportWipScreen = ({ navigation }) => {
         name: file.name,
       });
       const res = await uploadWipFile(formData, testDelay);
-      if (__DEV__) {
-        console.log('[WIP Import] upload response keys:', Object.keys(res || {}));
-        // Expect: { run: { _id, updated, skipped, errored, unmappedColumns[], rowErrors[], status } }
-        console.log('[WIP Import] raw:', JSON.stringify(res)?.slice(0, 500));
-        const run = res?.run || res;
-        if (run) console.log('[WIP Import] run keys:', Object.keys(run));
-      }
-      // Backend returns { run: { updated, skipped, errored, unmappedColumns } }
+      // Backend returns { run: { updated, skipped, errored, unmappedColumns, rowErrors, status } }
       const run = res?.run || res;
+
+      if (__DEV__) {
+        console.log(
+          '\n[WIP Import] ══════════════════════════════════════\n' +
+          `[WIP Import]  File    : ${file.name}\n` +
+          `[WIP Import]  Status  : ${run?.status ?? 'unknown'}\n` +
+          `[WIP Import]  Updated : ${run?.updated ?? 0}  |  Skipped: ${run?.skipped ?? 0}`
+        );
+        if (run?.unmappedColumns?.length > 0) {
+          console.log(`[WIP Import]  ⚠️  Unmapped: ${run.unmappedColumns.join(', ')}`);
+        }
+
+        // Fetch updated job cards to show stage movements
+        try {
+          const jcData = await getJobCards({ status: 'in_progress', limit: 100 });
+          const items  = jcData?.items ?? [];
+          console.log(`[WIP Import]  ── Job cards now in_progress (${items.length}) ──────`);
+
+          items.forEach(jc => {
+            const dist = (jc.currentStageDistribution ?? [])
+              .map(s => `${s.stageCode}(${s.qty})`)
+              .join(' + ');
+            console.log(`[WIP Import]    ${jc.gatiPieceCode?.split('/').slice(-2).join('/')} | ${dist}`);
+          });
+
+          // Summarise: how many pieces per stage
+          const stageTotals = {};
+          items.forEach(jc => {
+            (jc.currentStageDistribution ?? []).forEach(s => {
+              stageTotals[s.stageCode] = (stageTotals[s.stageCode] ?? 0) + s.qty;
+            });
+          });
+          console.log(`[WIP Import]  ── Stage totals ─────────────────────────────`);
+          Object.entries(stageTotals)
+            .sort((a, b) => a[0].localeCompare(b[0]))
+            .forEach(([code, qty]) => {
+              console.log(`[WIP Import]    ${code.padEnd(18)} : ${qty} pcs`);
+            });
+        } catch (e) {
+          console.log(`[WIP Import]  (could not fetch stage details: ${e.message})`);
+        }
+
+        console.log('[WIP Import] ══════════════════════════════════════\n');
+      }
 
       // If every row errored with "JobCard not found" the orders haven't been
       // uploaded yet — show a friendly prompt instead of a wall of row errors.
@@ -85,7 +122,9 @@ const ImportWipScreen = ({ navigation }) => {
 
       setResult(run);
     } catch (e) {
-      showAlert('Upload Failed', e.message, 'error');
+      const errMsg = typeof e.message === 'string' ? e.message : JSON.stringify(e.message);
+      if (__DEV__) console.error('[WIP Import] upload error:', errMsg);
+      showAlert('Upload Failed', errMsg, 'error');
     } finally {
       setUploading(false);
     }

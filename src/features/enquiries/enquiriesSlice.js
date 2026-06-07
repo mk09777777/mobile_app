@@ -18,7 +18,7 @@ const initialState = {
     createdDateTo: '',
   },
   searchQuery: '',
-  sortBy: 'AssignedDate',
+  sortBy: 'CreatedDate',
   sortOrder: 'desc',
   selectedEnquiryId: null,
   selectedStatus: 'All', // Keep for backward compatibility, but use selectedStatuses array

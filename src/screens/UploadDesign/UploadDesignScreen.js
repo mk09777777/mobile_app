@@ -65,9 +65,9 @@ const UploadDesignScreen = ({ route, navigation }) => {
   const [selectedExcel, setSelectedExcel] = useState(null);
   const [showVersionDropdown, setShowVersionDropdown] = useState(false);
   const [imageValidated, setImageValidated] = useState(false);
-  const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
-  const showAlert = (title, message, type = 'info', buttons = []) =>
-    setAlertConfig({ visible: true, title, message, type, buttons });
+  const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [], checklist: [] });
+  const showAlert = (title, message, type = 'info', buttons = [], checklist = []) =>
+    setAlertConfig({ visible: true, title, message, type, buttons, checklist });
   const hideAlert = () => setAlertConfig(prev => ({ ...prev, visible: false }));
 
   const [validateImageUpload, { isLoading: isUploading }] =
@@ -385,16 +385,16 @@ const UploadDesignScreen = ({ route, navigation }) => {
       // Display validation results
       const summary = result?.summary || 'Validation completed';
       const issues = result?.issues;
-      
-      let message = `${summary}`;
-      if (issues && Array.isArray(issues) && issues.length > 0) {
-        message += `\n\nIssues found:\n${issues.map((issue, i) => `${i + 1}. ${issue}`).join('\n')}`;
-      }
+      const hasIssues = Array.isArray(issues) && issues.length > 0;
+
+      const checklist = hasIssues
+        ? issues.map(issue => ({ text: issue, status: 'fail' }))
+        : [{ text: summary, status: 'pass' }];
 
       showAlert(
         'Validation Result',
-        message,
-        'info',
+        hasIssues ? summary : '',
+        hasIssues ? 'warning' : 'success',
         [
           {
             text: 'Continue',
@@ -419,6 +419,7 @@ const UploadDesignScreen = ({ route, navigation }) => {
             style: 'cancel',
           },
         ],
+        checklist,
       );
     } catch (error) {
       if (__DEV__) {
@@ -664,6 +665,7 @@ const UploadDesignScreen = ({ route, navigation }) => {
         title={alertConfig.title}
         message={alertConfig.message}
         type={alertConfig.type}
+        checklist={alertConfig.checklist}
         buttons={alertConfig.buttons}
         onClose={hideAlert}
       />

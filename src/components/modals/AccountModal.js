@@ -9,6 +9,7 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { CommonActions } from '@react-navigation/native';
 import { useAuth } from '../../context/AuthContext';
 import { Card } from '../../components/cards/Cards';
 import { Button } from '../../components/common';
@@ -16,6 +17,7 @@ import Icon from '../../components/common/Icon';
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
 import { getRoleDisplayName } from '../../utils/helpers';
+import { navigationRef } from '../../navigation/navigationRef';
 
 const AccountModal = ({ visible, onClose }) => {
   const { user, logout } = useAuth();
@@ -75,7 +77,9 @@ const AccountModal = ({ visible, onClose }) => {
       subtitle: 'View and edit your profile',
       onPress: () => {
         onClose();
-        // Navigate to profile screen
+        if (navigationRef.isReady()) {
+          navigationRef.dispatch(CommonActions.navigate('CreateUser', { userId: user?.id }));
+        }
       },
     },
     {

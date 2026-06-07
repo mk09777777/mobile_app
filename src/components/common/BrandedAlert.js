@@ -1,5 +1,5 @@
 import React from 'react';
-import { Modal, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { Modal, View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import Icon from './Icon';
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
@@ -26,15 +26,24 @@ const TYPE_ICON_COLORS = {
  *   title     {string}    – bold heading
  *   message   {string}    – body text
  *   type      {'info'|'success'|'error'|'warning'}  – icon + accent colour
+ *   checklist {Array<{ text: string, status: 'pass'|'fail'|'warning' }>}
+ *             – optional checklist rendered below message
  *   buttons   {Array<{ text, style?: 'default'|'destructive'|'cancel', onPress? }>}
  *             – if omitted, a single "OK" button that calls onClose is shown
  *   onClose   {function}  – called when the modal is dismissed (back button / OK)
  */
+const CHECKLIST_ICONS = {
+  pass: { name: 'check-circle', color: colors.success },
+  fail: { name: 'cancel', color: colors.error },
+  warning: { name: 'warning', color: colors.warning },
+};
+
 const BrandedAlert = ({
   visible,
   title,
   message,
   type = 'info',
+  checklist,
   buttons,
   onClose,
 }) => {
@@ -80,6 +89,24 @@ const BrandedAlert = ({
 
           {!!title && <Text style={styles.title}>{title}</Text>}
           {!!message && <Text style={styles.message}>{message}</Text>}
+
+          {checklist && checklist.length > 0 && (
+            <ScrollView
+              style={styles.checklist}
+              contentContainerStyle={styles.checklistContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {checklist.map((item, i) => {
+                const icon = CHECKLIST_ICONS[item.status] || CHECKLIST_ICONS.warning;
+                return (
+                  <View key={i} style={styles.checklistRow}>
+                    <Icon name={icon.name} size={18} color={icon.color} />
+                    <Text style={styles.checklistText}>{item.text}</Text>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          )}
 
           <View style={[styles.buttons, useColumnLayout && styles.buttonsColumn]}>
             {resolvedButtons.map((btn, i) => (
@@ -139,6 +166,30 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
     marginBottom: 22,
+  },
+  checklist: {
+    width: '100%',
+    maxHeight: 180,
+    marginBottom: 16,
+  },
+  checklistContent: {
+    gap: 8,
+  },
+  checklistRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  checklistText: {
+    flex: 1,
+    fontFamily: fonts.regular,
+    fontSize: fonts.sm,
+    color: colors.textPrimary,
+    lineHeight: 20,
   },
   buttons: {
     flexDirection: 'row',

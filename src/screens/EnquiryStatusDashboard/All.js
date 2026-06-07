@@ -38,7 +38,11 @@ export default function AllStatus({
   currentTab,
   user: propUser,
   statusValues,
-  displayEnquiries: parentDisplayEnquiries, // Add this prop from parent
+  displayEnquiries: parentDisplayEnquiries,
+  searchQuery,
+  resolvedFilters,
+  sortBy,
+  sortOrder,
 }) {
   const { user: authUser } = useAuth();
   const user = propUser || authUser;
@@ -53,26 +57,32 @@ export default function AllStatus({
 
   useEffect(() => {
     setPage(1);
-  }, [currentTab]);
+    setAllItems([]);
+  }, [currentTab, searchQuery, resolvedFilters, sortBy, sortOrder]);
 
   const queryParams = useMemo(() => {
-    const params = { role: user?.role, page, limit: PAGE_SIZE };
+    // Base params
+    const params = {
+      role: user?.role,
+      page,
+      limit: PAGE_SIZE,
+      search: searchQuery && searchQuery.trim() ? searchQuery.trim() : undefined,
+    };
 
-    console.log('🔍 [Query Params] Building params for tab:', currentTab);
-    console.log('🔍 [Query Params] User:', { id: user?.id, _id: user?._id, role: user?.role });
-
-    if (!currentTab || currentTab === 'all') {
-      console.log('🔍 [Query Params] Tab is "all", returning basic params:', params);
-      return params;
-    }
+    // Build shared filters from resolvedFilters (priority, clientId, dates, etc.)
+    // sortBy/sortOrder are appended via the filters object (api.js reads filters.sortBy)
+    const baseFilters = {
+      ...(resolvedFilters || {}),
+      sortBy: sortBy || 'CreatedDate',
+      sortOrder: sortOrder || 'desc',
+    };
 
     if (currentTab === 'AssignedToYou') {
       params.assignedTo = user?.id || user?._id;
       params.AssignedTo = user?.id || user?._id;
-      params.filters = { assignedTo: user?.id || user?._id };
-      console.log('🔍 [Query Params] Tab is "AssignedToYou", params:', params);
-    } else if (statusValues) {
-      // Send common case variants so backend matches regardless of DB casing
+      params.filters = { ...baseFilters, assignedTo: user?.id || user?._id };
+    } else if (statusValues && statusValues.length > 0) {
+      // Tab-specific status filter — send common case variants
       const expanded = [...new Set(
         statusValues.flatMap(s => [
           s,
@@ -81,12 +91,14 @@ export default function AllStatus({
           s.charAt(0).toUpperCase() + s.slice(1).toLowerCase(),
         ]),
       )];
-      params.filters = { status: expanded };
-      console.log('🔍 [Query Params] Tab has status filter:', { currentTab, statusValues, expanded });
+      params.filters = { ...baseFilters, status: expanded };
+    } else {
+      // "All" tab or no status filter — still apply base filters + sort
+      params.filters = baseFilters;
     }
 
     return params;
-  }, [user, page, currentTab, statusValues]);
+  }, [user, page, currentTab, statusValues, searchQuery, resolvedFilters, sortBy, sortOrder]);
 
   const { data, isLoading, isFetching, refetch } = useGetEnquiriesQuery(
     queryParams,

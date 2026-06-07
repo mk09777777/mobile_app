@@ -59,8 +59,9 @@ const ImportOrdersScreen = ({ navigation }) => {
       // Backend returns { run: { inserted, updated, skipped, errored, unmappedColumns, _id } }
       setResult(res?.run || res);
     } catch (e) {
-      if (__DEV__) console.error('[Imports] upload error:', e.message);
-      showAlert('Upload Failed', e.message, 'error');
+      const errMsg = typeof e.message === 'string' ? e.message : JSON.stringify(e.message);
+      if (__DEV__) console.error('[Imports] upload error:', errMsg);
+      showAlert('Upload Failed', errMsg, 'error');
     } finally {
       setUploading(false);
     }

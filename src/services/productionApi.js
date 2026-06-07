@@ -13,6 +13,7 @@ const BASE = `${USE_PRODUCTION_URL ? PRODUCTION_PLANNER_PROD_URL : API_BASE_URL}
 async function getHeaders(multipart = false) {
   // Use secureStorage (Keychain → AsyncStorage fallback) — same as rest of app
   const token = await secureStorage.getItem('token');
+  if (__DEV__ && !token) console.warn('[ProductionAPI] ⚠️ No token found — user may need to log in again');
   const headers = { Authorization: `Bearer ${token}` };
   if (!multipart) headers['Content-Type'] = 'application/json';
   return headers;
@@ -41,7 +42,11 @@ async function request(method, path, body = null, multipart = false, _attempt = 
     try { data = JSON.parse(text); } catch { data = text; }
     if (!res.ok) {
       if (__DEV__) console.warn(`[ProductionAPI] ✗ ${res.status} ${url}`, data);
-      throw new Error(data?.message || data || `HTTP ${res.status}`);
+      // Extract a readable message — server may return { error }, { message }, or plain text
+      const msg = data?.message || data?.error || data?.msg ||
+        (typeof data === 'string' ? data : null) ||
+        `HTTP ${res.status}`;
+      throw new Error(msg);
     }
     return data;
   } catch (e) {
@@ -209,3 +214,29 @@ export const updateCalendar = (data) => request('PUT', '/calendar', data);
 // ── Column Maps ───────────────────────────────────────────────────────────────
 export const getColumnMap    = (fileType) => request('GET', `/column-maps/${fileType}`);
 export const updateColumnMap = (fileType, data) => request('PUT', `/column-maps/${fileType}`, data);
+
+
+// ── Production Scheduler ─────────────────────────
+// GET /schedule/Analytics?days=N  →  { bottlenecks, lateOrders, startToday (count), totalPieces }
+export const getScheduleAnalytics = (params = {}) => {
+  const q = new URLSearchParams(params).toString();
+  return request('GET', `/schedule/Analytics${q ? '?' + q : ''}`);
+};
+// GET /schedule?days=N  →  { grid[], pieces[], bottlenecks[], lateOrders[], startToday[] }
+// startToday[] items: { orderNumber, itemCategory, qty, priority }
+export const getFullSchedule = (params = {}) => {
+  const q = new URLSearchParams(params).toString();
+  return request('GET', `/schedule${q ? '?' + q : ''}`);
+};
+// GET /schedule?startDate=YYYY-MM-DD&days=N  →  full data for a specific date range
+export const getScheduleByDateRange = (startDate, days) => {
+  const q = new URLSearchParams({ startDate, days }).toString();
+  return request('GET', `/schedule?${q}`);
+};
+export const getLiveStages = () => request('GET', '/schedule/live-stages');
+// GET /schedule/today  →  { startToday[], stageLoad[] }
+// startToday[] items: { orderNumber, itemCategory, qty, priority }
+// stageLoad[] items: { stage, workerHoursUsed, workerHoursAvailable, utilisation }
+export const getTodaySchedule  = () => request('GET', '/schedule/today');
+export const getScheduleByPiece = (code) => request('GET', `/schedule/by-piece?code=${encodeURIComponent(code)}`);
+export const getScheduleByStage = (stageCode, days = 14) => request('GET', `/schedule/by-stage/${stageCode}?days=${days}`);
