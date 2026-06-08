@@ -9,6 +9,7 @@ import {
   Image,
   ActivityIndicator,
   KeyboardAvoidingView, Platform,
+  TextInput,
 } from 'react-native';
 import { Input, Button } from '../../components/common';
 import { colors } from '../../constants/colors';
@@ -16,6 +17,7 @@ import { fonts } from '../../constants/fonts';
 import IconComponent from '../../components/common/Icon';
 import {
   useGetUsersQuery,
+  useGetRolesQuery,
   useGetStoneTypesQuery,
   useParseEnquiryMutation,
   useSubmitEnquiryMutation,
@@ -26,6 +28,7 @@ import { launchImageLibrary, launchCamera } from 'react-native-image-picker';
 import BrandedAlert from '../../components/common/BrandedAlert';
 import { useSelector } from 'react-redux';
 
+
 export default function CreateEnquiryModal({ visible, onClose, onEnquiryCreated, route }) {
   const { user } = useAuth();
   const [parseEnquiry, { isLoading: isParsing }] = useParseEnquiryMutation();
@@ -33,6 +36,8 @@ export default function CreateEnquiryModal({ visible, onClose, onEnquiryCreated,
   const { clients: clientsData = [] } = useClients({ skip: false });
   const clients = Array.isArray(clientsData) ? clientsData : [];
   const { data: stoneTypesData = [] } = useGetStoneTypesQuery();
+  const { data: usersData = [] } = useGetUsersQuery();
+  const { data: rolesData = [] } = useGetRolesQuery();
 
   const roleLower = user?.role?.toLowerCase();
   const isClient = roleLower === 'client' || roleLower === 'cl' || user?.roleId === 4 || user?.roleNumber === 4;
@@ -44,6 +49,8 @@ export default function CreateEnquiryModal({ visible, onClose, onEnquiryCreated,
   const preSelectedClientName = route?.params?.clientName || route?.params?.filter || (reduxSelectedClient && reduxSelectedClient !== 'All' ? reduxSelectedClient : null) || (preSelectedClientIdResolved ? clients.find(c => (c.id || c._id) === preSelectedClientIdResolved)?.name : null) || null;
 
   const [projectType, setProjectType] = useState('coral');
+  const [assignedTo, setAssignedTo] = useState(null); // { id, name }
+  const [showAssignModal, setShowAssignModal] = useState(false);
   const [enquiryDescription, setEnquiryDescription] = useState('');
   const [referenceImages, setReferenceImages] = useState([]);
   const [textSubmitted, setTextSubmitted] = useState(false);
@@ -56,12 +63,73 @@ export default function CreateEnquiryModal({ visible, onClose, onEnquiryCreated,
     setAlertConfig({ visible: true, title, message, type, buttons });
   const hideAlert = () => setAlertConfig(prev => ({ ...prev, visible: false }));
 
+  // Auto-derive status from parsed data
+  const autoStatus = String(parsedData?.Status || 'Enquiry Created');
+
+  // Dynamically filter users based on the status returned by AI parsing.
+  // 1. Match the status name against the roles API to get the target role.
+  // 2. Filter users whose role matches that role code/name.
+  // 3. Fallback: show all non-client users when no role match is found.
+  const filteredUsers = useMemo(() => {
+    const allUsers = Array.isArray(usersData) ? usersData : (usersData?.users || usersData?.data || []);
+    if (!allUsers.length) return [];
+
+    const statusLower = String(autoStatus).toLowerCase().trim();
+    console.log('🎯 [CreateEnquiry] Auto Status from parsed data:', autoStatus);
+    console.log('🔍 [CreateEnquiry] Roles from API:', rolesData);
+
+    // Try to find a role in the roles API that matches the status name
+    const matchedRole = Array.isArray(rolesData)
+      ? rolesData.find(r => {
+          const rName = String(r.name || '').toLowerCase().trim();
+          const rCode = String(r.code || '').toLowerCase().trim();
+          return rName === statusLower ||
+            rCode === statusLower ||
+            statusLower.includes(rName) ||
+            rName.includes(statusLower.replace(/\s+/g, ''));
+        })
+      : null;
+
+    const filtered = allUsers.filter(u => {
+      const uRoleRaw  = u.role || u.Role || u.roleId || u.RoleId || '';
+      const uRoleStr  = String(uRoleRaw).toLowerCase().trim();
+
+      // Exclude client-role users from assignment (by name, code, or id)
+      if (uRoleStr === 'client' || uRoleStr === 'cl' || uRoleStr === '4') return false;
+
+      if (matchedRole) {
+        const mName = String(matchedRole.name || '').toLowerCase().trim();
+        const mCode = String(matchedRole.code || '').toLowerCase().trim();
+        const mId   = String(matchedRole.id   || '').trim();
+        // Match by role name, code, or numeric id — covers all API storage formats
+        return uRoleStr === mName || uRoleStr === mCode || uRoleStr === mId;
+      }
+
+      // No role match → show all non-client users
+      return true;
+    });
+
+    console.log('👥 [CreateEnquiry] Matched role:', matchedRole || 'none (showing all)');
+    console.log('👤 [CreateEnquiry] Filtered members for assign:', filtered.map(u => ({
+      id: u.id || u._id,
+      name: String(u.name || u.Name || '?'),
+      role: String(u.role || u.Role || ''),
+    })));
+    console.log('🔎 [CreateEnquiry] Raw user roles (first 5):', allUsers.slice(0, 5).map(u => ({
+      name: String(u.name || u.Name || '?'),
+      role: u.role, Role: u.Role, roleId: u.roleId, RoleId: u.RoleId,
+    })));
+    return filtered;
+  }, [usersData, rolesData, autoStatus]);
+
   useEffect(() => {
     if (visible) {
       console.log('CreateEnquiryModal - clientId:', preSelectedClientIdResolved, 'clientName:', preSelectedClientName);
     }
     if (!visible) {
       setProjectType('coral');
+      setAssignedTo(null);
+      setShowAssignModal(false);
       setEnquiryDescription('');
       setReferenceImages([]);
       setTextSubmitted(false);
@@ -143,7 +211,7 @@ export default function CreateEnquiryModal({ visible, onClose, onEnquiryCreated,
         finalData = {
           Name: missingFieldsData.Name || parsedData?.Name || '',
           ClientId: preSelectedClientIdResolved || missingFieldsData.ClientId || parsedData?.ClientId || (isClient ? user.clientId || user.id : user.id),
-          AssignedTo: missingFieldsData.AssignedTo || parsedData?.AssignedTo || (isClient ? null : null),
+          AssignedTo: assignedTo?.id || missingFieldsData.AssignedTo || parsedData?.AssignedTo || null,
           Status: missingFieldsData.Status || parsedData?.Status || 'Enquiry Created',
           Priority: missingFieldsData.Priority || parsedData?.Priority || 'Normal',
           Quantity: missingFieldsData.Quantity || parsedData?.Quantity || 1,
@@ -183,7 +251,7 @@ export default function CreateEnquiryModal({ visible, onClose, onEnquiryCreated,
         finalData = {
           Name: '',
           ClientId: preSelectedClientIdResolved || user.clientId || user.id,
-          AssignedTo: null,
+          AssignedTo: assignedTo?.id || null,
           Status: 'Enquiry Created',
           Priority: 'Normal',
           Quantity: 1,
@@ -305,7 +373,8 @@ export default function CreateEnquiryModal({ visible, onClose, onEnquiryCreated,
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Extracted Details</Text>
         <View style={styles.parsedDataCard}>
-          <Text style={styles.parsedDataLabel}>Name: <Text style={styles.parsedDataValue}>{parsedData.Name || 'Not specified'}</Text></Text>
+          <Text style={styles.parsedDataLabel}>Name:</Text>
+          <TextInput style={[styles.parsedDataLabel, styles.editableField]} value={missingFieldsData.Name !== undefined ? missingFieldsData.Name : (parsedData.Name || '')} onChangeText={value => setMissingFieldsData(prev => ({ ...prev, Name: value }))} placeholder="Name" />
           {!isClient && <Text style={styles.parsedDataLabel}>Client: <Text style={styles.parsedDataValue}>{displayClientName}</Text></Text>}
           <Text style={styles.parsedDataLabel}>Category: <Text style={styles.parsedDataValue}>{parsedData.Category || 'Not specified'}</Text></Text>
           <Text style={styles.parsedDataLabel}>Metal: <Text style={styles.parsedDataValue}>{parsedData.Metal?.Quality || ''} {parsedData.Metal?.Color || ''}</Text></Text>
@@ -380,6 +449,7 @@ export default function CreateEnquiryModal({ visible, onClose, onEnquiryCreated,
               <Text style={styles.clientBadgeText}>{preSelectedClientName}</Text>
             </View>
           )}
+
           <View style={styles.designTypeRow}>
             {['coral', 'cad', 'approvedCad'].map(type => (
               <TouchableOpacity
@@ -403,6 +473,25 @@ export default function CreateEnquiryModal({ visible, onClose, onEnquiryCreated,
             {!textSubmitted ? renderInitialInput() : (
               <View>
                 {renderParsedPreview()}
+
+                {/* Assign To — shown only after AI parsing, users filtered by parsed status */}
+                <View style={styles.assignRow}>
+                  <IconComponent name="person-add" size={16} color={colors.textSecondary} />
+                  {assignedTo ? (
+                    <View style={styles.assignedBadge}>
+                      <Text style={styles.assignedBadgeText}>{assignedTo.name}</Text>
+                      <TouchableOpacity onPress={() => setAssignedTo(null)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                        <IconComponent name="close" size={14} color={colors.textWhite} />
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <TouchableOpacity style={styles.assignBtn} onPress={() => setShowAssignModal(true)} activeOpacity={0.8}>
+                      <Text style={styles.assignBtnText}>Assign To</Text>
+                      <IconComponent name="arrow-drop-down" size={16} color={colors.primary} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+
                 <TouchableOpacity onPress={handleSubmit} disabled={isSubmitting}>
                   <View style={[styles.submitBtn, isSubmitting && styles.submitBtnDisabled]}>
                     {isSubmitting ? (
@@ -427,6 +516,52 @@ export default function CreateEnquiryModal({ visible, onClose, onEnquiryCreated,
           buttons={alertConfig.buttons}
           onClose={hideAlert}
         />
+
+        {/* Assign To User Picker Modal */}
+        <Modal visible={showAssignModal} transparent animationType="slide" onRequestClose={() => setShowAssignModal(false)}>
+          <TouchableOpacity style={styles.assignModalOverlay} activeOpacity={1} onPress={() => setShowAssignModal(false)}>
+            <TouchableOpacity activeOpacity={1} style={styles.assignModalBox} onPress={e => e.stopPropagation()}>
+              <View style={styles.assignModalHeader}>
+                <Text style={styles.assignModalTitle}>Assign To</Text>
+                <TouchableOpacity onPress={() => setShowAssignModal(false)}>
+                  <IconComponent name="close" size={22} color={colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.assignModalSubtitle}>
+                {autoStatus} · {filteredUsers.length} user{filteredUsers.length !== 1 ? 's' : ''}
+              </Text>
+              <ScrollView style={styles.assignUserList} showsVerticalScrollIndicator={false}>
+                {filteredUsers.length === 0 ? (
+                  <Text style={styles.assignNoUsers}>No users available for this status</Text>
+                ) : (
+                  filteredUsers.map(u => {
+                    const uid = u.id || u._id || u.userId;
+                    const uname = String(u.name || u.Name || u.username || u.email || uid || '?');
+                    const isSelected = assignedTo?.id === uid;
+                    return (
+                      <TouchableOpacity
+                        key={uid}
+                        style={[styles.assignUserRow, isSelected && styles.assignUserRowActive]}
+                        onPress={() => {
+                          setAssignedTo({ id: uid, name: uname });
+                          setShowAssignModal(false);
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <View style={styles.assignUserAvatar}>
+                          <Text style={styles.assignUserAvatarText}>{uname.charAt(0).toUpperCase()}</Text>
+                        </View>
+                        <Text style={[styles.assignUserName, isSelected && styles.assignUserNameActive]}>{uname}</Text>
+                        {isSelected && <IconComponent name="check" size={18} color={colors.primary} />}
+                      </TouchableOpacity>
+                    );
+                  })
+                )}
+              </ScrollView>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
+
         <Modal visible={showConfirmModal} transparent animationType="fade" onRequestClose={() => setShowConfirmModal(false)}>
           <View style={styles.confirmOverlay}>
             <View style={styles.confirmBox}>
@@ -687,6 +822,15 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     color: colors.textPrimary,
   },
+  editableField: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: colors.background,
+    marginBottom: 6,
+  },
   confirmOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.55)',
@@ -760,5 +904,128 @@ const styles = StyleSheet.create({
     fontSize: fonts.sm,
     fontFamily: fonts.medium,
     color: colors.textWhite,
+  },
+
+  // Assign To row
+  assignRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+    minHeight: 32,
+  },
+  assignBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.primaryLight || colors.primary,
+    backgroundColor: colors.primaryExtraLight || colors.backgroundSecondary,
+    gap: 2,
+  },
+  assignBtnText: {
+    fontSize: fonts.sm,
+    fontFamily: fonts.medium,
+    color: colors.primary,
+  },
+  assignedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 20,
+  },
+  assignedBadgeText: {
+    fontSize: fonts.sm,
+    fontFamily: fonts.medium,
+    color: colors.textWhite,
+  },
+
+  // Assign user picker modal
+  assignModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  assignModalBox: {
+    backgroundColor: colors.background,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    maxHeight: '60%',
+  },
+  assignModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  assignModalTitle: {
+    fontSize: fonts.lg,
+    fontFamily: fonts.bold,
+    color: colors.textPrimary,
+  },
+  assignModalSubtitle: {
+    fontSize: fonts.xs,
+    fontFamily: fonts.regular,
+    color: colors.textSecondary,
+    marginBottom: 12,
+  },
+  assignUserList: {
+    maxHeight: 320,
+  },
+  assignNoUsers: {
+    textAlign: 'center',
+    color: colors.textSecondary,
+    fontSize: fonts.sm,
+    paddingVertical: 24,
+  },
+  assignUserRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    marginBottom: 4,
+    gap: 12,
+  },
+  assignUserRowActive: {
+    backgroundColor: colors.primaryExtraLight || colors.backgroundSecondary,
+  },
+  assignUserAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  assignUserAvatarText: {
+    fontSize: fonts.base,
+    fontFamily: fonts.bold,
+    color: colors.textWhite,
+  },
+  assignUserInfo: {
+    flex: 1,
+  },
+  assignUserName: {
+    fontSize: fonts.sm,
+    fontFamily: fonts.medium,
+    color: colors.textPrimary,
+  },
+  assignUserNameActive: {
+    color: colors.primary,
+    fontFamily: fonts.bold,
+  },
+  assignUserRole: {
+    fontSize: fonts.xs,
+    fontFamily: fonts.regular,
+    color: colors.textSecondary,
+    marginTop: 2,
+    textTransform: 'capitalize',
   },
 });

@@ -8,6 +8,7 @@ import LoginScreen from '../screens/Auth/LoginScreen';
 import OnboardingScreen from '../screens/Onboarding/OnboardingScreen';
 import BottomTabs from './BottomTabs';
 import EnquiryListScreen from '../screens/Enquiries/EnquiryListScreen';
+import ClientHandlerEnquiryScreen from '../screens/ClientHandler/ClientHandlerEnquiryScreen';
 import SingleEnquiryScreen from '../screens/Enquiries/SingleEnquiryScreen';
 import AddEnquiryStep1Screen from '../screens/AddEnquiry/AddEnquiryStep1Screen';
 import AddEnquiryStep2Screen from '../screens/AddEnquiry/AddEnquiryStep2Screen';
@@ -67,9 +68,12 @@ const StackNavigator = ({ isAuthenticated, showOnboarding, onOnboardingComplete 
           <Stack.Screen
             name="ClientEnquiries"
             component={EnquiryListScreen}
-            options={{
-              headerShown: false,
-            }}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="ClientHandlerEnquiries"
+            component={ClientHandlerEnquiryScreen}
+            options={{ headerShown: false }}
           />
           <Stack.Screen
             name="SingleEnquiry"

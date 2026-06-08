@@ -4,15 +4,58 @@ import { WebView } from 'react-native-webview';
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
 
-const PdfViewer = ({ url, style }) => {
+/**
+ * PdfViewer
+ *
+ * Props (pick one):
+ *   html  {string}  — Raw HTML string. Rendered directly in WebView (no internet needed,
+ *                     works on both iOS & Android for locally-generated content).
+ *   url   {string}  — A REMOTE https:// URL to a PDF. Loaded natively on iOS; wrapped in
+ *                     Google Docs Viewer on Android. Local file:// URLs are NOT supported
+ *                     via this prop — use `html` for local content.
+ *
+ * When `html` is provided it takes priority over `url`.
+ */
+const PdfViewer = ({ url, html, style }) => {
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+  const [error, setError]   = useState(false);
 
-  // Default random PDF if none provided
+  // ── HTML mode: render markup directly (local / generated content) ──────────
+  if (html) {
+    return (
+      <View style={[styles.container, style]}>
+        {loading && !error && (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={colors?.primary || '#D4AF37'} />
+            <Text style={styles.loadingText}>Loading preview…</Text>
+          </View>
+        )}
+        {error ? (
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>Failed to render preview</Text>
+            <Text style={styles.errorSubText}>The content could not be displayed.</Text>
+          </View>
+        ) : (
+          <WebView
+            source={{ html, baseUrl: '' }}
+            style={styles.webview}
+            onLoadEnd={() => setLoading(false)}
+            onError={() => { setLoading(false); setError(true); }}
+            javaScriptEnabled={true}
+            domStorageEnabled={true}
+            startInLoadingState={false}
+            scalesPageToFit={true}
+            originWhitelist={['*']}
+          />
+        )}
+      </View>
+    );
+  }
+
+  // ── URL mode: remote PDF only ──────────────────────────────────────────────
+  // Google Docs Viewer only works for publicly-accessible https:// URLs.
+  // Local file:// URLs will always fail via this path.
   const targetUrl = url || 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf';
-
-  // For Android, WebView cannot render PDF directly natively, so we wrap it in the Google Docs Viewer.
-  // iOS renders PDFs natively inside WebView without the wrapper.
   const viewerUrl = Platform.OS === 'android'
     ? `https://docs.google.com/viewer?url=${encodeURIComponent(targetUrl)}&embedded=true`
     : targetUrl;
@@ -22,7 +65,7 @@ const PdfViewer = ({ url, style }) => {
       {loading && !error && (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors?.primary || '#D4AF37'} />
-          <Text style={styles.loadingText}>Loading PDF...</Text>
+          <Text style={styles.loadingText}>Loading PDF…</Text>
         </View>
       )}
       {error ? (
@@ -35,14 +78,8 @@ const PdfViewer = ({ url, style }) => {
           source={{ uri: viewerUrl }}
           style={styles.webview}
           onLoadEnd={() => setLoading(false)}
-          onError={() => {
-            setLoading(false);
-            setError(true);
-          }}
-          onHttpError={() => {
-            setLoading(false);
-            setError(true);
-          }}
+          onError={() => { setLoading(false); setError(true); }}
+          onHttpError={() => { setLoading(false); setError(true); }}
           javaScriptEnabled={true}
           domStorageEnabled={true}
           startInLoadingState={false}

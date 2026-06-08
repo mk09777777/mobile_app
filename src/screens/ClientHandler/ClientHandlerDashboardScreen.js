@@ -39,12 +39,12 @@ const ClientHandlerDashboardScreen = ({ navigation }) => {
       style={styles.row}
       activeOpacity={0.7}
       onPress={() => {
-        navigation.navigate('ClientEnquiries', {
-          filterType: 'client',
-          filter: client.name,
-          clientId: client.id || client._id,
-          filterSource: 'client_handler',
-          filterAppliedAt: Date.now(),
+        navigation.navigate('ClientHandlerEnquiries', {
+          client: {
+            id:    client.id || client._id,
+            name:  client.name  || 'Unknown Client',
+            email: client.email || '',
+          },
         });
       }}>
       <View style={styles.avatar}>

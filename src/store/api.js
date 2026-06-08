@@ -964,6 +964,7 @@ export const api = createApi({
             AssignedDate: enquiry.AssignedDate,
             CurrentStatus: enquiry.CurrentStatus,
             CreatedDate: enquiry.CreatedDate,
+            Summary: enquiry.Summary,
             ReferenceImages: enquiry.ReferenceImages || [],
             ReferenceVideos: enquiry.ReferenceVideos || [],
             Videos: enquiry.Videos || [],
@@ -1010,7 +1011,20 @@ export const api = createApi({
         }
         return [];
       },
-      transformResponse: async (enquiry, meta, arg) => {
+      transformResponse: async (rawResponse, meta, arg) => {
+        // Unwrap common backend wrapper shapes: { enquiry: {...} } / { data: {...} }
+        let enquiry = rawResponse;
+        if (rawResponse && typeof rawResponse === 'object' && !rawResponse._id && !rawResponse.id) {
+          enquiry = rawResponse.enquiry || rawResponse.data || rawResponse;
+        }
+
+        if (__DEV__) {
+          console.log('📦 [getEnquiryById] raw keys:', Object.keys(rawResponse || {}));
+          console.log('📦 [getEnquiryById] enquiry keys:', Object.keys(enquiry || {}));
+          console.log('📦 [getEnquiryById] Summary:', enquiry?.Summary ? String(enquiry.Summary).slice(0, 80) : 'MISSING');
+          console.log('📦 [getEnquiryById] Checklist:', enquiry?.Checklist ? String(enquiry.Checklist).slice(0, 80) : 'MISSING');
+        }
+
         // Handle null/undefined enquiry or error responses
         if (!enquiry || enquiry === null || typeof enquiry !== 'object') {
           // Return a minimal object structure to prevent crashes
@@ -1261,6 +1275,9 @@ export const api = createApi({
                 : null),
             // Preserve original API fields
             Name: enquiry?.Name,
+            Summary: enquiry?.Summary,
+            // Checklist is a JSON object — preserve as-is
+            Checklist: enquiry?.Checklist || null,
             Remarks: enquiry?.Remarks,
             Priority: enquiry?.Priority,
             Quantity: enquiry?.Quantity,
@@ -2297,7 +2314,7 @@ export const api = createApi({
     // ==================== FILE UPLOAD ====================
     uploadDesign: builder.mutation({
       queryFn: async (
-        { enquiryId, designType, version, images, excel, designCode },
+        { enquiryId, designType, version, images, excel, designCode , cost },
         { dispatch },
         extraOptions,
         baseQuery,
@@ -2310,6 +2327,7 @@ export const api = createApi({
           console.log('🚀 [uploadDesign] Enquiry ID:', enquiryId);
           console.log('🚀 [uploadDesign] Design Type:', designType);
           console.log('🚀 [uploadDesign] Version:', version);
+          console.log('🚀 [uploadDesign] Cost:', cost);
           console.log(
             '🚀 [uploadDesign] Total files received:',
             images?.length || 0,
@@ -2382,6 +2400,7 @@ export const api = createApi({
                   }
                 : null,
               designCode,
+              cost
             });
           }
 
@@ -2419,6 +2438,11 @@ export const api = createApi({
           // Backend determines type from endpoint URL (/upload/coral vs /upload/cad)
           if (designCode && designCode.trim()) {
             formData.append('code', designCode.trim());
+          }
+
+          // Add cost if provided
+          if (cost !== undefined && cost !== null && cost !== '') {
+            formData.append('cost', String(cost));
           }
 
           // Separate images and videos - backend expects them in separate fields
@@ -2630,6 +2654,7 @@ export const api = createApi({
               formDataFields: {
                 version: versionValue.toString(),
                 ...(designCode ? { code: designCode.trim() } : {}),
+                ...(cost !== undefined && cost !== null && cost !== '' ? { cost: String(cost) } : {}),
                 images: `${imageFiles.length + videoFiles.length} file(s) (${
                   imageFiles.length
                 } images + ${videoFiles.length} videos)`,

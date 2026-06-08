@@ -234,9 +234,13 @@ export const getScheduleByDateRange = (startDate, days) => {
   return request('GET', `/schedule?${q}`);
 };
 export const getLiveStages = () => request('GET', '/schedule/live-stages');
-// GET /schedule/today  →  { startToday[], stageLoad[] }
+// GET /schedule/today?date=YYYY-MM-DD  →  { startToday[], stageLoad[] }
 // startToday[] items: { orderNumber, itemCategory, qty, priority }
 // stageLoad[] items: { stage, workerHoursUsed, workerHoursAvailable, utilisation }
-export const getTodaySchedule  = () => request('GET', '/schedule/today');
+// date defaults to today when omitted
+export const getTodaySchedule = (date) => {
+  const q = date ? `?date=${encodeURIComponent(date)}` : '';
+  return request('GET', `/schedule/today${q}`);
+};
 export const getScheduleByPiece = (code) => request('GET', `/schedule/by-piece?code=${encodeURIComponent(code)}`);
 export const getScheduleByStage = (stageCode, days = 14) => request('GET', `/schedule/by-stage/${stageCode}?days=${days}`);

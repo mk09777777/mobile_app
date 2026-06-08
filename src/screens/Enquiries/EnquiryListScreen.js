@@ -19,7 +19,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../../context/AuthContext';
 import { useClients } from '../../features/clients/clientsHooks';
 import { useStatusOptions } from '../../features/statuses/statusesHooks';
-import { useUpdateEnquiryMutation, useDeleteEnquiryMutation, useGetStatusStatisticsQuery } from '../../store/api';
+import { useUpdateEnquiryMutation, useDeleteEnquiryMutation, useGetStatusStatisticsQuery, useGetEnquiryByIdQuery } from '../../store/api';
 import {
   setFilters,
   setSearchQuery,
@@ -128,6 +128,183 @@ const expandStatusesForSearchApi = (status) => {
   }
   return [original];
 };
+
+// ─── Summary / Markdown Renderer ─────────────────────────────────────────────
+// Handles both HTML (tables, h1-h6, li, p) AND pure-markdown responses.
+// Markdown patterns matched:
+//   **text**  on its own line  → heading
+//   ## text                    → heading
+//   *   text  / -   text       → bullet
+//   **Key:** Value             → key/value row
+//   plain lines                → paragraph
+
+// Decode HTML entities
+const decode = (s = '') =>
+  s.replace(/&amp;/g, '&')
+   .replace(/&lt;/g, '<')
+   .replace(/&gt;/g, '>')
+   .replace(/&nbsp;/g, ' ')
+   .replace(/&quot;/g, '"')
+   .replace(/&#39;/g, "'")
+   .replace(/&apos;/g, "'");
+
+// Strip all HTML tags and inline markdown marks from a snippet, return plain text
+const stripInline = (s = '') => {
+  let t = String(s).replace(/<[^>]*>/g, '');
+  t = decode(t);
+  t = t.replace(/\*\*\*(.+?)\*\*\*/g, '$1');
+  t = t.replace(/\*\*(.+?)\*\*/g, '$1');
+  t = t.replace(/\*(.+?)\*/g, '$1');
+  t = t.replace(/___(.+?)___/g, '$1');
+  t = t.replace(/__(.+?)__/g, '$1');
+  t = t.replace(/_(.+?)_/g, '$1');
+  t = t.replace(/~~(.+?)~~/g, '$1');
+  t = t.replace(/`(.+?)`/g, '$1');
+  t = t.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+  return t.trim();
+};
+
+const renderHtmlSummary = (input, styles) => {
+  if (!input) return null;
+  const raw = typeof input === 'string' ? input : String(input);
+  // Normalise literal "\n" sequences that some backends double-escape
+  const text = raw.replace(/\\n/g, '\n');
+
+  const sections = [];
+
+  // ── 1. HTML tables → key/value rows ──────────────────────────────────────
+  const tableMatches = [...text.matchAll(/<table[\s\S]*?<\/table>/gi)];
+  tableMatches.forEach((tbl, ti) => {
+    const rows = [...tbl[0].matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
+    rows.forEach((row, ri) => {
+      const cells = [...row[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)];
+      if (cells.length >= 2) {
+        const label = stripInline(cells[0][1]);
+        const val   = stripInline(cells.slice(1).map(c => c[1]).join(' '));
+        if (label || val) sections.push({ type: 'row', label, val, key: `t${ti}r${ri}` });
+      } else if (cells.length === 1) {
+        const t2 = stripInline(cells[0][1]);
+        if (t2) sections.push({ type: 'text', text: t2, key: `t${ti}r${ri}` });
+      }
+    });
+  });
+
+  // ── 2. HTML list items ────────────────────────────────────────────────────
+  const liMatches = [...text.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)];
+  liMatches.forEach((m, i) => {
+    const t2 = stripInline(m[1]);
+    if (t2) sections.push({ type: 'bullet', text: t2, key: `li${i}` });
+  });
+
+  // ── 3. HTML headings ──────────────────────────────────────────────────────
+  const htmlHeadMatches = [...text.matchAll(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi)];
+  htmlHeadMatches.forEach((m, i) => {
+    const t2 = stripInline(m[2]);
+    if (t2) sections.push({ type: 'heading', level: parseInt(m[1], 10), text: t2, key: `h${i}` });
+  });
+
+  // ── 4. HTML paragraphs ────────────────────────────────────────────────────
+  const strippedForP = text
+    .replace(/<table[\s\S]*?<\/table>/gi, '')
+    .replace(/<[uo]l[\s\S]*?<\/[uo]l>/gi, '');
+  const paraMatches = [...strippedForP.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/gi)];
+  paraMatches.forEach((m, i) => {
+    const t2 = stripInline(m[1]);
+    if (t2) sections.push({ type: 'text', text: t2, key: `p${i}` });
+  });
+
+  // ── 5. Pure-markdown line-by-line parsing ────────────────────────────────
+  if (sections.length === 0) {
+    // Remove any leftover HTML before markdown parsing
+    const md = text.replace(/<[^>]*>/g, '').replace(/\|/g, ' ');
+
+    md.split(/\n/).forEach((rawLine, i) => {
+      const line = rawLine.trimEnd();
+      if (!line.trim()) return; // blank line → skip
+
+      // ## Heading
+      const mdHeading = line.match(/^(#{1,6})\s+(.+)$/);
+      if (mdHeading) {
+        const t2 = stripInline(mdHeading[2]);
+        if (t2) sections.push({ type: 'heading', level: mdHeading[1].length, text: t2, key: `mdh${i}` });
+        return;
+      }
+
+      // **Standalone bold line** = section heading (e.g. "**Key Specs**")
+      const boldHeading = line.match(/^\*\*([^*]+)\*\*\s*[:：]?\s*$/);
+      if (boldHeading) {
+        const t2 = stripInline(boldHeading[1]);
+        if (t2) sections.push({ type: 'heading', level: 2, text: t2, key: `bh${i}` });
+        return;
+      }
+
+      // *   text  /  -   text  /  •  text  bullet list
+      const bullet = line.match(/^[\*\-\+•]\s{1,4}(.+)$/);
+      if (bullet) {
+        // Check if the bullet content is a key: value pair  →  **Key:** Value
+        const kvInBullet = bullet[1].match(/^\*\*([^*]+):\*\*\s*(.*)$/);
+        if (kvInBullet) {
+          const label = stripInline(kvInBullet[1]);
+          const val   = stripInline(kvInBullet[2]);
+          if (label) sections.push({ type: 'row', label, val: val || '—', key: `bkv${i}` });
+        } else {
+          const t2 = stripInline(bullet[1]);
+          if (t2) sections.push({ type: 'bullet', text: t2, key: `bl${i}` });
+        }
+        return;
+      }
+
+      // Standalone **Key:** Value line (not inside a bullet)
+      const kvLine = line.match(/^\*\*([^*]+):\*\*\s*(.+)$/);
+      if (kvLine) {
+        const label = stripInline(kvLine[1]);
+        const val   = stripInline(kvLine[2]);
+        if (label) sections.push({ type: 'row', label, val, key: `kv${i}` });
+        return;
+      }
+
+      // Plain paragraph
+      const t2 = stripInline(line);
+      if (t2) sections.push({ type: 'text', text: t2, key: `pl${i}` });
+    });
+  }
+
+  if (sections.length === 0) return null;
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  return (
+    <View style={styles.summaryContainer}>
+      {sections.map(s => {
+        switch (s.type) {
+          case 'heading':
+            return (
+              <Text key={s.key} style={[styles.summaryHeading, s.level <= 2 && styles.summaryHeadingLarge]}>
+                {s.text}
+              </Text>
+            );
+          case 'row':
+            return (
+              <View key={s.key} style={styles.summaryRow}>
+                <Text style={styles.summaryKey} numberOfLines={2}>{s.label}</Text>
+                <Text style={styles.summaryVal}>{s.val}</Text>
+              </View>
+            );
+          case 'bullet':
+            return (
+              <View key={s.key} style={styles.summaryBulletRow}>
+                <Text style={styles.summaryBulletDot}>•</Text>
+                <Text style={styles.summaryBulletText}>{s.text}</Text>
+              </View>
+            );
+          case 'text':
+          default:
+            return <Text key={s.key} style={styles.summaryPara}>{s.text}</Text>;
+        }
+      })}
+    </View>
+  );
+};
+// ─────────────────────────────────────────────────────────────────────────────
 
 const EnquiryListScreen = ({ navigation }) => {
   const dispatch = useDispatch();
@@ -936,7 +1113,10 @@ const EnquiryListScreen = ({ navigation }) => {
   const [showSortModal, setShowSortModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [previewEnquiry, setPreviewEnquiry] = useState(null);
-  const [summaryEnquiry, setSummaryEnquiry] = useState(null);
+  const [summaryEnquiryId, setSummaryEnquiryId] = useState(null);
+  const { data: summaryEnquiry, isLoading: summaryLoading } = useGetEnquiryByIdQuery(summaryEnquiryId, { skip: !summaryEnquiryId });
+  const [checklistEnquiryId, setChecklistEnquiryId] = useState(null);
+  const { data: checklistEnquiry, isLoading: checklistLoading } = useGetEnquiryByIdQuery(checklistEnquiryId, { skip: !checklistEnquiryId });
   const [refreshing, setRefreshing] = useState(false);
   const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
   const showAlert = (title, message, type = 'info', buttons = []) =>
@@ -1609,7 +1789,7 @@ const EnquiryListScreen = ({ navigation }) => {
 
     try {
       return (
-        <View>
+        <View style={isClientView ? styles.cardWrapper : null}>
           <NewCard
             item={enquiry}
             navigation={navigation}
@@ -1624,21 +1804,40 @@ const EnquiryListScreen = ({ navigation }) => {
             })}
           />
           {isClientView && (
-            <View style={styles.enquiryActions}>
-              <TouchableOpacity
-                style={styles.enquiryActionBtn}
-                onPress={() => setPreviewEnquiry(enquiry)}
-              >
-                <Icon name="remove-red-eye" size={14} color={colors.primary} />
-                <Text style={styles.enquiryActionText}>Preview</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.enquiryActionBtn}
-                onPress={() => setSummaryEnquiry(enquiry)}
-              >
-                <Icon name="assessment" size={14} color={colors.primary} />
-                <Text style={styles.enquiryActionText}>Summary</Text>
-              </TouchableOpacity>
+            <View style={styles.enquiryActionBar}>
+              <View style={styles.enquiryActionDivider} />
+              <View style={styles.enquiryActions}>
+                <TouchableOpacity
+                  style={styles.enquiryActionBtn}
+                  onPress={() => setPreviewEnquiry(enquiry)}
+                  activeOpacity={0.7}
+                >
+                  <Icon name="remove-red-eye" size={15} color={colors.primary} />
+                  <Text style={styles.enquiryActionText}>Preview</Text>
+                </TouchableOpacity>
+
+                <View style={styles.enquiryActionSep} />
+
+                <TouchableOpacity
+                  style={styles.enquiryActionBtn}
+                  onPress={() => setSummaryEnquiryId(enquiry.id || enquiry._id)}
+                  activeOpacity={0.7}
+                >
+                  <Icon name="assessment" size={15} color={colors.primary} />
+                  <Text style={styles.enquiryActionText}>Summary</Text>
+                </TouchableOpacity>
+
+                <View style={styles.enquiryActionSep} />
+
+                <TouchableOpacity
+                  style={styles.enquiryActionBtn}
+                  onPress={() => setChecklistEnquiryId(enquiry.id || enquiry._id)}
+                  activeOpacity={0.7}
+                >
+                  <Icon name="fact-check" size={15} color={colors.primary} />
+                  <Text style={styles.enquiryActionText}>Checklist</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
         </View>
@@ -2531,38 +2730,113 @@ const EnquiryListScreen = ({ navigation }) => {
           </View>
         </View>
       </Modal>
-      <Modal visible={!!summaryEnquiry} transparent animationType="slide" onRequestClose={() => setSummaryEnquiry(null)}>
+      <Modal visible={!!summaryEnquiryId} transparent animationType="slide" onRequestClose={() => setSummaryEnquiryId(null)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox2}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Enquiry Summary</Text>
-              <TouchableOpacity onPress={() => setSummaryEnquiry(null)}>
+              <TouchableOpacity onPress={() => setSummaryEnquiryId(null)}>
                 <Icon name="close" size={24} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
-            {summaryEnquiry && (
-              <ScrollView>
-                <View style={styles.detailCard}>
-                  <Text style={styles.detailCardTitle}>General</Text>
-                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Name</Text><Text style={styles.detailValue}>{summaryEnquiry.Name || summaryEnquiry.title || 'N/A'}</Text></View>
-                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Client</Text><Text style={styles.detailValue}>{summaryEnquiry.clientName || 'N/A'}</Text></View>
-                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Status</Text><Text style={styles.detailValue}>{summaryEnquiry.CurrentStatus || summaryEnquiry.Status || 'N/A'}</Text></View>
-                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Category</Text><Text style={styles.detailValue}>{summaryEnquiry.Category || 'N/A'}</Text></View>
-                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Priority</Text><Text style={styles.detailValue}>{summaryEnquiry.Priority || 'N/A'}</Text></View>
-                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Budget</Text><Text style={styles.detailValue}>{summaryEnquiry.Budget || 'N/A'}</Text></View>
-                </View>
-                <View style={styles.detailCard}>
-                  <Text style={styles.detailCardTitle}>Materials</Text>
-                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Metal</Text><Text style={styles.detailValue}>{summaryEnquiry.Metal?.Quality || ''} {summaryEnquiry.Metal?.Color || ''}</Text></View>
-                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Stone Type</Text><Text style={styles.detailValue}>{summaryEnquiry.StoneType || 'N/A'}</Text></View>
-                  {summaryEnquiry.Stamping && <View style={styles.detailRow}><Text style={styles.detailLabel}>Stamping</Text><Text style={styles.detailValue}>{summaryEnquiry.Stamping}</Text></View>}
-                  {summaryEnquiry.MetalWeight?.Exact && <View style={styles.detailRow}><Text style={styles.detailLabel}>Metal Weight</Text><Text style={styles.detailValue}>{summaryEnquiry.MetalWeight.Exact}g</Text></View>}
-                </View>
-                <View style={styles.detailCard}>
-                  <Text style={styles.detailCardTitle}>Timeline</Text>
-                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Created</Text><Text style={styles.detailValue}>{summaryEnquiry.CreatedDate ? new Date(summaryEnquiry.CreatedDate).toLocaleDateString() : 'N/A'}</Text></View>
+            {summaryLoading ? (
+              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 }}>
+                <ActivityIndicator size="large" color={colors.primary} />
+              </View>
+            ) : (
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 16 }}>
+                {(() => {
+                  if (!summaryEnquiry) {
+                    return (
+                      <View style={styles.detailCard}>
+                        <Text style={styles.detailValue}>Could not load summary. Please try again.</Text>
+                      </View>
+                    );
+                  }
+                  const sm =
+                    (typeof summaryEnquiry.Summary === 'string' && summaryEnquiry.Summary.trim() && summaryEnquiry.Summary) ||
+                    (summaryEnquiry._originalData?.Summary && typeof summaryEnquiry._originalData.Summary === 'string' && summaryEnquiry._originalData.Summary.trim() && summaryEnquiry._originalData.Summary) ||
+                    null;
+                  if (__DEV__) {
+                    console.log('📄 [Summary modal] Summary value:', sm ? sm.slice(0, 120) : 'NULL');
+                  }
+                  const rendered = sm ? renderHtmlSummary(sm, styles) : null;
+                  return rendered || (
+                    <View style={styles.detailCard}>
+                      <Text style={styles.detailValue}>No summary available for this enquiry.</Text>
+                    </View>
+                  );
+                })()}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
 
-                </View>
+      <Modal visible={!!checklistEnquiryId} transparent animationType="slide" onRequestClose={() => setChecklistEnquiryId(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox2}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Checklist</Text>
+              <TouchableOpacity onPress={() => setChecklistEnquiryId(null)}>
+                <Icon name="close" size={24} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            {checklistLoading ? (
+              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 }}>
+                <ActivityIndicator size="large" color={colors.primary} />
+              </View>
+            ) : checklistEnquiry && (
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {(() => {
+                  // Checklist is a JSON object from the backend, not HTML
+                  const cl =
+                    (checklistEnquiry.Checklist && typeof checklistEnquiry.Checklist === 'object' && checklistEnquiry.Checklist) ||
+                    (checklistEnquiry._originalData?.Checklist && typeof checklistEnquiry._originalData.Checklist === 'object' && checklistEnquiry._originalData.Checklist) ||
+                    null;
+                  if (__DEV__) {
+                    console.log('📋 [Checklist modal] Checklist value:', JSON.stringify(cl));
+                  }
+                  if (!cl) {
+                    return (
+                      <View style={styles.detailCard}>
+                        <Text style={styles.detailValue}>No checklist found</Text>
+                      </View>
+                    );
+                  }
+                  // Field label map
+                  const FIELD_LABELS = {
+                    Engraving:           'Engraving',
+                    SizeLength:          'Size (Length)',
+                    SizeRingSize:        'Size (Ring Size)',
+                    DimensionsThickness: 'Dimensions (Thickness)',
+                    DeliveryDate:        'Delivery Date',
+                    EnamelPaintwork:     'Enamel / Paintwork',
+                    RhodiumInstructions: 'Rhodium Instructions',
+                    Components:          'Components',
+                    Findings:            'Findings',
+                  };
+                  const rows = Object.entries(FIELD_LABELS)
+                    .map(([key, label]) => ({ key, label, value: cl[key] }))
+                    .filter(r => r.value !== undefined && r.value !== null);
+                  if (cl.GeneratedAt) {
+                    // append generation date at bottom
+                    rows.push({ key: 'GeneratedAt', label: 'Generated At', value: new Date(cl.GeneratedAt).toLocaleString() });
+                  }
+                  return (
+                    <View style={styles.summaryContainer}>
+                      {rows.map(r => (
+                        <View key={r.key} style={styles.checklistRow}>
+                          <Text style={styles.checklistLabel}>{r.label}</Text>
+                          <Text style={[
+                            styles.checklistValue,
+                            String(r.value).toUpperCase() === 'NA' && styles.checklistValueNA,
+                          ]}>{String(r.value)}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  );
+                })()}
               </ScrollView>
             )}
           </View>
@@ -3116,27 +3390,53 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginLeft: 12,
   },
+  // ── Client-handler enquiry card wrapper ──────────────────────────────────
+  cardWrapper: {
+    // NewCard already has marginHorizontal:10 marginBottom:8
+    // Pull the action bar up flush against the card bottom
+    marginBottom: 4,
+  },
+  enquiryActionBar: {
+    // Sits directly below NewCard — same horizontal inset, no top margin
+    marginHorizontal: 10,
+    marginBottom: 10,
+    backgroundColor: colors.cardBackground || colors.background,
+    borderBottomLeftRadius: 10,
+    borderBottomRightRadius: 10,
+    // Lift slightly above NewCard's elevation so shadow reads as one unit
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    // Pull up to overlap NewCard's marginBottom:8 → seamless join
+    marginTop: -8,
+    overflow: 'hidden',
+  },
+  enquiryActionDivider: {
+    height: 1,
+    backgroundColor: colors.borderLight || colors.border || '#E8E8E8',
+    marginHorizontal: 12,
+  },
   enquiryActions: {
     flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingBottom: 8,
-
-    marginBottom: 8,
+    alignItems: 'center',
   },
   enquiryActionBtn: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: colors.primaryLight || colors.primary,
-    backgroundColor: colors.primaryExtraLight || colors.backgroundSecondary,
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: 10,
+  },
+  enquiryActionSep: {
+    width: 1,
+    height: 18,
+    backgroundColor: colors.borderLight || colors.border || '#E0E0E0',
   },
   enquiryActionText: {
-    fontSize: 11,
+    fontSize: 12,
     fontFamily: fonts.medium,
     color: colors.primary,
   },
@@ -3200,6 +3500,100 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     color: colors.textPrimary,
     lineHeight: 20,
+  },
+
+  // ── HTML Summary renderer styles ──────────────────────────────────────────
+  summaryContainer: {
+    paddingBottom: 8,
+  },
+  summaryHeading: {
+    fontSize: fonts.sm,
+    fontFamily: fonts.bold,
+    color: colors.primary,
+    marginTop: 14,
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  summaryHeadingLarge: {
+    fontSize: fonts.base,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingVertical: 7,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderLight || colors.border,
+  },
+  summaryKey: {
+    flex: 1,
+    fontSize: fonts.sm,
+    fontFamily: fonts.medium,
+    color: colors.textSecondary,
+    paddingRight: 8,
+  },
+  summaryVal: {
+    flex: 1.5,
+    fontSize: fonts.sm,
+    fontFamily: fonts.regular,
+    color: colors.textPrimary,
+    textAlign: 'right',
+  },
+  summaryBulletRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginVertical: 3,
+    paddingLeft: 4,
+  },
+  summaryBulletDot: {
+    fontSize: fonts.base,
+    color: colors.primary,
+    marginRight: 8,
+    lineHeight: 20,
+  },
+  summaryBulletText: {
+    flex: 1,
+    fontSize: fonts.sm,
+    fontFamily: fonts.regular,
+    color: colors.textPrimary,
+    lineHeight: 20,
+  },
+  summaryPara: {
+    fontSize: fonts.sm,
+    fontFamily: fonts.regular,
+    color: colors.textPrimary,
+    lineHeight: 20,
+    marginVertical: 4,
+  },
+
+  // ── Checklist renderer styles ─────────────────────────────────────────────
+  checklistRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderLight || colors.border,
+  },
+  checklistLabel: {
+    flex: 1.2,
+    fontSize: fonts.sm,
+    fontFamily: fonts.medium,
+    color: colors.textSecondary,
+    paddingRight: 8,
+  },
+  checklistValue: {
+    flex: 1,
+    fontSize: fonts.sm,
+    fontFamily: fonts.bold,
+    color: colors.textPrimary,
+    textAlign: 'right',
+  },
+  checklistValueNA: {
+    color: colors.textSecondary,
+    fontFamily: fonts.regular,
   },
 });
 

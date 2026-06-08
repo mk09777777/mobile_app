@@ -65,6 +65,7 @@ const UploadDesignScreen = ({ route, navigation }) => {
   const [selectedExcel, setSelectedExcel] = useState(null);
   const [showVersionDropdown, setShowVersionDropdown] = useState(false);
   const [imageValidated, setImageValidated] = useState(false);
+  const [cost, setCost] = useState(0);
   const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [], checklist: [] });
   const showAlert = (title, message, type = 'info', buttons = [], checklist = []) =>
     setAlertConfig({ visible: true, title, message, type, buttons, checklist });
@@ -407,6 +408,7 @@ const UploadDesignScreen = ({ route, navigation }) => {
                 designCode: designCode.trim(),
                 images: selectedImages,
                 validationResult: result,
+                cost: cost,
               });
             },
           },
@@ -582,12 +584,12 @@ const UploadDesignScreen = ({ route, navigation }) => {
             Add {designType === 'coral' ? 'Coral' : 'CAD'}
           </Text>
 
-          {/* Code Field */}
-          <View style={styles.codeContainer}>
+          {/* Code & Cost Fields */}
+          <View style={styles.codeBlock}>
             <Text style={styles.label}>
               {designType === 'coral' ? 'Coral' : 'CAD'} Code:
             </Text>
-            <View style={styles.codeInputContainer}>
+            <View style={styles.codeInputRow}>
               <Input
                 value={designCode}
                 onChangeText={setDesignCode}
@@ -600,13 +602,27 @@ const UploadDesignScreen = ({ route, navigation }) => {
               <TouchableOpacity
                 style={styles.copyButton}
                 onPress={() => {
-                  // TODO: Copy to clipboard
                   showAlert('Info', 'Code copied to clipboard', 'warning');
                 }}
               >
                 <Icon name="content-copy" size={20} color={colors.primary} />
               </TouchableOpacity>
             </View>
+          </View>
+
+          <View style={styles.costBlock}>
+            <Text style={styles.label}>
+              {designType === 'coral' ? 'Coral' : 'CAD'} Cost:
+            </Text>
+            <Input
+              value={cost}
+              onChangeText={setCost}
+              editable={true}
+              placeholder={`Enter ${
+                designType === 'coral' ? 'Coral' : 'CAD'
+              } Cost`}
+              inputMode="numeric"
+            />
           </View>
 
           {/* Version Dropdown */}
@@ -694,7 +710,10 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     marginBottom: 24,
   },
-  codeContainer: {
+  codeBlock: {
+    marginBottom: 16,
+  },
+  costBlock: {
     marginBottom: 20,
   },
   label: {
@@ -703,7 +722,7 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     marginBottom: 8,
   },
-  codeInputContainer: {
+  codeInputRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },

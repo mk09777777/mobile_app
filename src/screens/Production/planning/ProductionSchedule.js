@@ -26,6 +26,13 @@ function daysBetween(start, end) {
   return days > 0 ? days : 14;
 }
 
+/** Return YYYY-MM-DD for a given offset from baseDate (or today). */
+function getDateISO(offsetDays, baseDate = null) {
+  const d = baseDate ? new Date(baseDate + 'T00:00:00') : new Date();
+  d.setDate(d.getDate() + offsetDays);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function getDayLabelParts(offsetDays, baseDate = null) {
   const d = baseDate ? new Date(baseDate + 'T00:00:00') : new Date();
   d.setDate(d.getDate() + offsetDays);
@@ -218,12 +225,12 @@ export default function ProductionSchedule() {
       );
   }, [analyticsData]);
 
-  const fetchTodaySchedule = useCallback(async () => {
+  const fetchTodaySchedule = useCallback(async (date = null) => {
     setTodayLoading(true);
     try {
-      const res = await getTodaySchedule();
+      const res = await getTodaySchedule(date);
       setTodayScheduleData(res);
-      if (__DEV__) console.log('[ProductionSchedule] today data:', JSON.stringify(res));
+      if (__DEV__) console.log('[ProductionSchedule] schedule for', date || 'today', JSON.stringify(res));
     } catch (e) {
       if (__DEV__) console.error('[ProductionSchedule] today error:', e.message);
     } finally {
@@ -342,7 +349,9 @@ export default function ProductionSchedule() {
                         onPress={() => {
                           setSelectedDayIndex(i);
                           setShowTodayModal(true);
-                          fetchTodaySchedule();
+                          // Pass the actual calendar date for this day card
+                          const dateISO = getDateISO(i, selectedDates.startDate || null);
+                          fetchTodaySchedule(dateISO);
                         }}
                         style={[
                           styles.DayCard,
@@ -452,7 +461,7 @@ export default function ProductionSchedule() {
             {/* Start Today row */}
             <View style={styles.startTodayRow}>
               <Text style={styles.startTodayText}>
-                Start Today — {todayScheduleData?.startToday?.length || 0}
+                Scheduled — {todayScheduleData?.startToday?.length || 0}
               </Text>
               {(todayScheduleData?.startToday?.length || 0) > 2 && (
                 <TouchableOpacity onPress={() => setShowAllToday(v => !v)}>
@@ -514,7 +523,7 @@ export default function ProductionSchedule() {
                 })}
 
                 {(todayScheduleData?.startToday?.length || 0) === 0 && !todayLoading && (
-                  <Text style={styles.emptyText}>No pieces need to start today</Text>
+                  <Text style={styles.emptyText}>No pieces scheduled for this day</Text>
                 )}
               </ScrollView>
             )}
