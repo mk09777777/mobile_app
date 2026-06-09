@@ -47,6 +47,7 @@ import useDeviceLayout from '../../hooks/useDeviceLayout';
 import * as pdfGeneratorModule from '../../utils/pdfGenerator';
 import StatusTabs from '../EnquiryStatusDashboard/Tabs';
 import CreateEnquiryModal from '../EditEnquiry/createEnquiryModal';
+import QuotationModal from '../../components/modals/QuotationModal';
 
 // Debug: Log module import status
 if (__DEV__) {
@@ -323,6 +324,7 @@ const EnquiryListScreen = ({ navigation }) => {
   const [statusCounts, setStatusCounts] = useState({
     coral: 0,
     cad: 0,
+    approvedCad: 0,
     approval: 0,
     order: 0,
     production: 0,
@@ -337,6 +339,7 @@ const EnquiryListScreen = ({ navigation }) => {
       const counts = {
         coral: 0,
         cad: 0,
+        approvedCad: 0,
         approval: 0,
         order: 0,
         production: 0,
@@ -350,6 +353,7 @@ const EnquiryListScreen = ({ navigation }) => {
         const val = Number(item.count) || 0;
         if (name === 'coral' || name === 'coral pending') counts.coral += val;
         else if (name === 'cad' || name === 'cad pending') counts.cad += val;
+        else if (name === 'approved cad') counts.approvedCad += val;
         else if (name === 'design approval pending') counts.approval += val;
         else if (name === 'order placement') counts.order += val;
         else if (name === 'production') counts.production += val;
@@ -435,6 +439,8 @@ const EnquiryListScreen = ({ navigation }) => {
 
   const [isPdfModalVisible, setIsPdfModalVisible] = useState(false);
   const [selectedPdfUrl, setSelectedPdfUrl] = useState(null);
+  const [showQuotationModal,  setShowQuotationModal]  = useState(false);
+  const [quotationEnquiryId,  setQuotationEnquiryId]  = useState(null);
 
   // Local search input value — updates immediately for responsive UI
   // Actual Redux dispatch (which triggers API refetch) is debounced by 2 seconds
@@ -1640,11 +1646,17 @@ const EnquiryListScreen = ({ navigation }) => {
   // }, [isLoadingMore, isInitialLoading, isFetching, hasMore, currentPage, totalPages, displayEnquiries]);
 
   // Render enquiry card item for FlatList
-  const handleViewQuotation = useCallback((pdfUrl) => {
-    // For now, use a dummy URL if none is provided, as requested.
-    const urlToShow = pdfUrl || 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf';
-    setSelectedPdfUrl(urlToShow);
-    setIsPdfModalVisible(true);
+  const handleViewQuotation = useCallback((enquiry) => {
+    if (enquiry && typeof enquiry === 'object') {
+      const id = enquiry?._id || enquiry?.id || enquiry?.Id;
+      setQuotationEnquiryId(id);
+      setShowQuotationModal(true);
+    } else {
+      // Legacy: URL string fallback
+      const urlToShow = enquiry || 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf';
+      setSelectedPdfUrl(urlToShow);
+      setIsPdfModalVisible(true);
+    }
   }, []);
 
   const handleClosePdfModal = useCallback(() => {
@@ -2681,6 +2693,13 @@ const EnquiryListScreen = ({ navigation }) => {
           </View>
         </View>
       </Modal>
+      {/* ══ Quotation Modal ══════════════════════════════════════════════ */}
+      <QuotationModal
+        visible={showQuotationModal}
+        enquiryId={quotationEnquiryId}
+        onClose={() => { setShowQuotationModal(false); setQuotationEnquiryId(null); }}
+      />
+
       <BrandedAlert
         visible={alertConfig.visible}
         title={alertConfig.title}

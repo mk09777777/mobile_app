@@ -3987,10 +3987,10 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
         {renderEnquiryDetails()}
         {renderVersions()}
 
-        {user.role === 'client' && renderClientActions()}
-        {(user.role === 'coral' || user.role === 'cad') &&
-          renderDesignerActions(user.role)}
-        {user.role === 'admin' && renderAdminActions()}
+        {user?.role === 'client' && renderClientActions()}
+        {(user?.role === 'coral' || user?.role === 'cad') &&
+          renderDesignerActions(user?.role)}
+        {user?.role === 'admin' && renderAdminActions()}
       </ScrollView>
 
       {isImageModalVisible && (

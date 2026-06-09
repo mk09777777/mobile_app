@@ -109,7 +109,13 @@ const ClientPricingScreen = ({ route, navigation }) => {
       setSilverAndLabsDuties(pricing.SilverAndLabsDuties?.toString() ?? pricing.silverAndLabsDuties?.toString() ?? '0');
       setLossAndLabourDuties(pricing.LossAndLabourDuties?.toString() ?? pricing.lossAndLabourDuties?.toString() ?? '0');
       setUndercutPrice(pricing.UndercutPrice?.toString() ?? pricing.undercutPrice?.toString() ?? '0');
-      setPricingMessageFormat(pricing.PricingMessageFormat || pricing.pricingMessageFormat || '');
+      setPricingMessageFormat(
+        clientData.PricingMessageFormat ||
+        clientData.pricingMessageFormat ||
+        pricing.PricingMessageFormat ||
+        pricing.pricingMessageFormat ||
+        ''
+      );
 
       const diamondsData = pricing.Diamonds || pricing.diamonds || [];
       setDiamonds(

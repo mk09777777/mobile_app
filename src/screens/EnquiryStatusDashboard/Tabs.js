@@ -75,8 +75,8 @@ export default function StatusTabs({
       NewEnquiry: ['Enquiry Created'],
       CoralPending: ['Coral'],
       CadPending: ['CAD'],
-      Quotation: ['Quotation'],
-      ApprovalPending: ['Design Approval Pending'],
+      ApprovedCad: ['Approved Cad'],
+      Quotation: ['Quotation', 'Design Approval Pending'],
       OrderPlaced: ['Order Placement'],
       Production: ['Production'],
       Shipped: ['Shipped'],
@@ -85,13 +85,16 @@ export default function StatusTabs({
     if (!statusesFromApi.length) return STATUS_MAP;
 
     // Try to find matching status names from the API (preserves exact casing from DB)
+    // A tab may have multiple expected names (e.g. Quotation has both 'Quotation' and 'Design Approval Pending')
     const map = {};
     for (const [tabKey, expectedNames] of Object.entries(STATUS_MAP)) {
-      const found = statusesFromApi.find(s => {
-        const name = (s.name || '').toLowerCase().trim();
-        return expectedNames.some(e => e.toLowerCase() === name);
+      const matched = expectedNames.map(expected => {
+        const apiMatch = statusesFromApi.find(
+          s => (s.name || '').toLowerCase().trim() === expected.toLowerCase()
+        );
+        return apiMatch ? apiMatch.name : expected;
       });
-      map[tabKey] = found ? [found.name] : expectedNames;
+      map[tabKey] = matched;
     }
     return map;
   }, [statusesFromApi]);
@@ -131,8 +134,8 @@ export default function StatusTabs({
         { key: 'NewEnquiry', label: 'New Enquiries' },
         { key: 'CoralPending', label: 'Coral Pending' },
         { key: 'CadPending', label: 'CAD Pending' },
+        { key: 'ApprovedCad', label: 'Approved CAD' },
         { key: 'Quotation', label: 'Quotation' },
-        { key: 'ApprovalPending', label: 'Approval Pending' },
         { key: 'OrderPlaced', label: 'Order Placement' },
         { key: 'Production', label: 'Production' },
         { key: 'Shipped', label: 'Shipped' },
@@ -153,8 +156,8 @@ export default function StatusTabs({
         { key: 'NewEnquiry', label: 'New Enquiries' },
         { key: 'CoralPending', label: 'Coral Pending' },
         { key: 'CadPending', label: 'CAD Pending' },
+        { key: 'ApprovedCad', label: 'Approved CAD' },
         { key: 'Quotation', label: 'Quotation' },
-        { key: 'ApprovalPending', label: 'Approval Pending' },
         { key: 'OrderPlaced', label: 'Order Placement' },
         { key: 'Production', label: 'Production' },
         { key: 'Shipped', label: 'Shipped' },
@@ -224,8 +227,8 @@ export default function StatusTabs({
       case 'NewEnquiry': return statusCounts?.newEnquiry || 0;
       case 'CoralPending': return statusCounts?.coral || 0;
       case 'CadPending': return statusCounts?.cad || 0;
-      case 'Quotation': return statusCounts?.quotation || 0;
-      case 'ApprovalPending': return statusCounts?.approval || 0;
+      case 'ApprovedCad': return statusCounts?.approvedCad || 0;
+      case 'Quotation': return (statusCounts?.quotation || 0) + (statusCounts?.approval || 0);
       case 'OrderPlaced': return statusCounts?.order || 0;
       case 'Production': return statusCounts?.production || 0;
       case 'Shipped': return statusCounts?.shipped || 0;
@@ -549,63 +552,6 @@ export default function StatusTabs({
         </>
       )}
 
-      {activeTab === 'ApprovalPending' && (
-        <>
-          <View style={[styles.header, isTablet && styles.headerTablet]}>
-            <View style={styles.searchRow}>
-              <View style={styles.searchContainer}>
-                <SearchInput
-                  placeholder="Search enquiries..."
-                  value={searchQuery}
-                  onChangeText={onSearchChange}
-                  onClear={onSearchClear}
-                />
-              </View>
-
-              <TouchableOpacity style={styles.sortButton} onPress={onSortPress}>
-                <Icon name="sort" size={20} color={colors.primary} />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.filterButton}
-                onPress={onFilterPress}
-              >
-                <Icon name="tune" size={20} color={colors.primary} />
-              </TouchableOpacity>
-
-              <View style={styles.expandToggleWrapper}>
-                <Text style={styles.expandToggleLabel}>
-                  {isExpandedAll ? 'Collapse' : 'Expand'}
-                </Text>
-                <TouchableOpacity
-                  onPress={() => setIsExpandedAll(v => !v)}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.expandToggleTrack, isExpandedAll && styles.expandToggleTrackOn]}>
-                    <View style={[styles.expandToggleThumb, isExpandedAll && styles.expandToggleThumbOn]} />
-                  </View>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-
-          <AllStatus
-            flatListRef={flatListRef}
-            renderEnquiryItem={renderItemWithActions}
-            renderEmpty={renderEmpty}
-            searchQuery={searchQuery}
-            resolvedFilters={resolvedFilters}
-            sortBy={sortBy}
-            sortOrder={sortOrder}
-            isTablet={isTablet}
-            styles={parentStyles}
-            currentTab="ApprovalPending"
-            user={user}
-            statusValues={tabStatusValues[activeTab]}
-          />
-        </>
-      )}
-
       {activeTab === 'CoralPending' && (
         <>
           <View style={[styles.header, isTablet && styles.headerTablet]}>
@@ -714,6 +660,63 @@ export default function StatusTabs({
             isTablet={isTablet}
             styles={parentStyles}
             currentTab="CadPending"
+            user={user}
+            statusValues={tabStatusValues[activeTab]}
+          />
+        </>
+      )}
+
+      {activeTab === 'ApprovedCad' && (
+        <>
+          <View style={[styles.header, isTablet && styles.headerTablet]}>
+            <View style={styles.searchRow}>
+              <View style={styles.searchContainer}>
+                <SearchInput
+                  placeholder="Search enquiries..."
+                  value={searchQuery}
+                  onChangeText={onSearchChange}
+                  onClear={onSearchClear}
+                />
+              </View>
+
+              <TouchableOpacity style={styles.sortButton} onPress={onSortPress}>
+                <Icon name="sort" size={20} color={colors.primary} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.filterButton}
+                onPress={onFilterPress}
+              >
+                <Icon name="tune" size={20} color={colors.primary} />
+              </TouchableOpacity>
+
+              <View style={styles.expandToggleWrapper}>
+                <Text style={styles.expandToggleLabel}>
+                  {isExpandedAll ? 'Collapse' : 'Expand'}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setIsExpandedAll(v => !v)}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.expandToggleTrack, isExpandedAll && styles.expandToggleTrackOn]}>
+                    <View style={[styles.expandToggleThumb, isExpandedAll && styles.expandToggleThumbOn]} />
+                  </View>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+
+          <AllStatus
+            flatListRef={flatListRef}
+            renderEnquiryItem={renderItemWithActions}
+            renderEmpty={renderEmpty}
+            searchQuery={searchQuery}
+            resolvedFilters={resolvedFilters}
+            sortBy={sortBy}
+            sortOrder={sortOrder}
+            isTablet={isTablet}
+            styles={parentStyles}
+            currentTab="ApprovedCad"
             user={user}
             statusValues={tabStatusValues[activeTab]}
           />

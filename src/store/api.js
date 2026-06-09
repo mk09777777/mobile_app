@@ -878,22 +878,32 @@ export const api = createApi({
           // Normalize status from CurrentStatus field
           let normalizedStatus = 'pending';
           const status = currentStatus.toLowerCase();
-          if (
-            status === 'enquiry created' ||
-            status === 'pending' ||
-            status.includes('pending')
-          ) {
+          if (status === 'enquiry created' || status === 'pending') {
             normalizedStatus = 'pending';
-          } else if (
-            status.includes('completed') ||
-            status.includes('approved')
-          ) {
+          } else if (status.includes('design approval') || (status.includes('approval') && status.includes('pending'))) {
+            normalizedStatus = 'approval_pending';
+          } else if (status.includes('approved') && status.includes('cad')) {
+            normalizedStatus = 'approved_cad';
+          } else if (status.includes('quotation')) {
+            normalizedStatus = 'quotation';
+          } else if (status === 'coral') {
+            normalizedStatus = 'coral';
+          } else if (status === 'cad') {
+            normalizedStatus = 'cad';
+          } else if (status.includes('order')) {
+            normalizedStatus = 'order_placement';
+          } else if (status.includes('production')) {
+            normalizedStatus = 'production';
+          } else if (status.includes('shipped')) {
+            normalizedStatus = 'shipped';
+          } else if (status.includes('completed') || status.includes('approved')) {
             normalizedStatus = 'completed';
           } else if (status.includes('rejected')) {
             normalizedStatus = 'rejected';
-          } else {
-            // For statuses like coral, cad, progress, etc., normalize to pending
+          } else if (status.includes('pending')) {
             normalizedStatus = 'pending';
+          } else {
+            normalizedStatus = 'in_progress';
           }
 
           // Extract metal type info
@@ -1048,12 +1058,15 @@ export const api = createApi({
           let createdAt = new Date().toISOString();
           let updatedAt = new Date().toISOString();
 
-          // Use optional chaining for safe property access
-          if (
+          // Prefer CurrentStatus directly (same field the list endpoint returns)
+          if (enquiry?.CurrentStatus || enquiry?.Status) {
+            currentStatus = enquiry.CurrentStatus || enquiry.Status;
+          } else if (
             enquiry?.StatusHistory &&
             Array.isArray(enquiry.StatusHistory) &&
             enquiry.StatusHistory.length > 0
           ) {
+            // Fallback: derive from StatusHistory sorted newest-first
             const sortedHistory = [...enquiry.StatusHistory].sort(
               (a, b) =>
                 new Date(b.Timestamp || b.timestamp || 0) -
@@ -1088,16 +1101,30 @@ export const api = createApi({
           const status = currentStatus.toLowerCase();
           if (status === 'enquiry created' || status === 'pending') {
             normalizedStatus = 'pending';
-          } else if (
-            status.includes('completed') ||
-            status.includes('approved')
-          ) {
+          } else if (status.includes('design approval') || (status.includes('approval') && status.includes('pending'))) {
+            normalizedStatus = 'approval_pending';
+          } else if (status.includes('approved') && status.includes('cad')) {
+            normalizedStatus = 'approved_cad';
+          } else if (status.includes('quotation')) {
+            normalizedStatus = 'quotation';
+          } else if (status === 'coral') {
+            normalizedStatus = 'coral';
+          } else if (status === 'cad') {
+            normalizedStatus = 'cad';
+          } else if (status.includes('order')) {
+            normalizedStatus = 'order_placement';
+          } else if (status.includes('production')) {
+            normalizedStatus = 'production';
+          } else if (status.includes('shipped')) {
+            normalizedStatus = 'shipped';
+          } else if (status.includes('completed') || status.includes('approved')) {
             normalizedStatus = 'completed';
           } else if (status.includes('rejected')) {
             normalizedStatus = 'rejected';
-          } else {
-            // For statuses like coral, cad, progress, etc., normalize to pending
+          } else if (status.includes('pending')) {
             normalizedStatus = 'pending';
+          } else {
+            normalizedStatus = 'in_progress';
           }
 
           const metalColor =
@@ -1919,22 +1946,32 @@ export const api = createApi({
 
             let normalizedStatus = 'pending';
             const status = currentStatus.toLowerCase();
-            if (
-              status === 'enquiry created' ||
-              status === 'pending' ||
-              status.includes('pending')
-            ) {
+            if (status === 'enquiry created' || status === 'pending') {
               normalizedStatus = 'pending';
-            } else if (
-              status.includes('completed') ||
-              status.includes('approved')
-            ) {
+            } else if (status.includes('design approval') || (status.includes('approval') && status.includes('pending'))) {
+              normalizedStatus = 'approval_pending';
+            } else if (status.includes('approved') && status.includes('cad')) {
+              normalizedStatus = 'approved_cad';
+            } else if (status.includes('quotation')) {
+              normalizedStatus = 'quotation';
+            } else if (status === 'coral') {
+              normalizedStatus = 'coral';
+            } else if (status === 'cad') {
+              normalizedStatus = 'cad';
+            } else if (status.includes('order')) {
+              normalizedStatus = 'order_placement';
+            } else if (status.includes('production')) {
+              normalizedStatus = 'production';
+            } else if (status.includes('shipped')) {
+              normalizedStatus = 'shipped';
+            } else if (status.includes('completed') || status.includes('approved')) {
               normalizedStatus = 'completed';
             } else if (status.includes('rejected')) {
               normalizedStatus = 'rejected';
-            } else {
-              // For statuses like coral, cad, progress, etc., normalize to pending
+            } else if (status.includes('pending')) {
               normalizedStatus = 'pending';
+            } else {
+              normalizedStatus = 'in_progress';
             }
 
             let budget = 0;
@@ -4320,17 +4357,17 @@ export const api = createApi({
     }),
     // ==================== PRICING CALCULATION ====================
     calculatePricing: builder.mutation({
-      query: ({ details, clientId }) => {
+      query: ({ details, clientId, isRecalculate = false }) => {
         if (__DEV__) {
           console.log(
             '💰 [calculatePricing] Payload:',
-            JSON.stringify({ details, clientId }, null, 2),
+            JSON.stringify({ details, clientId, isRecalculate }, null, 2),
           );
         }
         return {
           url: '/api/enquiries/pricingCalculate',
           method: 'POST',
-          body: { details, clientId },
+          body: { details, clientId, isRecalculate },
         };
       },
       transformResponse: response => {
