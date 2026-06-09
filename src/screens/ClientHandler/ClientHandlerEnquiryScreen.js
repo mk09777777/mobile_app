@@ -2,7 +2,7 @@
  * ClientHandlerEnquiryScreen
  * Dedicated enquiry screen for client_handler role.
  *
- * Tabs: All | Assigned▼ | By Status▼ | New | Coral | CAD | Quotation | Shipment
+ * Tabs: All | Assigned▼ | By Status▼ | New | Coral | CAD | Quotation | Shipped
  * Each tab sends status directly to API — no frontend status re-filtering.
  * Default sort: Priority (High → Medium → Low), then newest first.
  */

@@ -202,7 +202,7 @@ const LoginScreen = ({ navigation }) => {
     { role: 'Client', email: 'test@cl.com', password: '123456' },
     { role: 'Coral Designer', email: 'pitbull9792@gmail.com', password: 'sourav84206' },
     { role: 'CAD Designer', email: 'anupampatra386@gmail.com', password: 'anupam97698' },
-    { role: 'Client Handler', email: '', password: '' },
+    { role: 'Client Handler', email: 'mtest@gmail.com', password: 'Mayur@12' },
   ];
 
   const fillDemoCredentials = (email, password) => {
