@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  RefreshControl, TextInput, ActivityIndicator,
+  RefreshControl, TextInput, ActivityIndicator, ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../../../constants/colors';
@@ -12,19 +12,59 @@ import { getOrdersDashboard } from '../../../services/productionApi';
 import { formatDate } from '../../../utils/helpers';
 
 const STATUS_COLORS = {
-  in_progress: colors.info, completed: colors.success,
-  on_hold: colors.warning, cancelled: colors.error,
+  in_progress:           colors.info,
+  completed:             colors.success,
+  on_hold:               colors.warning,
+  cancelled:             colors.error,
+  pending:               colors.textSecondary,
+  proceed_cancel:        '#E53935',
+  proceed_po:            '#7B1FA2',
+  proceed_stock_assign:  '#1565C0',
+  proceed_manufacturer:  '#2E7D32',
+  proceed_pending:       '#F57F17',
+};
+
+const STATUS_LABELS = {
+  in_progress:           'In Progress',
+  completed:             'Completed',
+  on_hold:               'On Hold',
+  cancelled:             'Cancelled',
+  pending:               'Pending',
+  proceed_cancel:        'Proceed Cancel',
+  proceed_po:            'Proceed PO',
+  proceed_stock_assign:  'Proceed Stock',
+  proceed_manufacturer:  'Proceed Mfr',
+  proceed_pending:       'Proceed Pending',
 };
 const PRIORITY_COLORS = { critical: colors.error, urgent: colors.warning, normal: colors.info };
 
+const HOLD_STAGE_CODES_SET = new Set(['HOLD', 'JW']);
+
+/**
+ * If order status is "on_hold" but the stage distribution has active (non-hold) stages,
+ * display "in_progress" instead — on_hold is only meaningful when ALL pieces are held.
+ */
+const resolveOrderDisplayStatus = (order) => {
+  if (!order) return 'pending';
+  if (order.status === 'on_hold') {
+    const dist = order.stageDistribution ?? [];
+    const hasActive = dist.some(s => !HOLD_STAGE_CODES_SET.has(s.stageCode));
+    if (hasActive) return 'in_progress';
+  }
+  return order.status;
+};
+
 const StagePill = ({ stage, qty }) => (
-  <View style={styles.stagePill}>
-    <Text style={styles.stagePillText}>{stage}: {qty}</Text>
+  <View style={[styles.stagePill, HOLD_STAGE_CODES_SET.has(stage) && styles.stagePillHold]}>
+    <Text style={[styles.stagePillText, HOLD_STAGE_CODES_SET.has(stage) && styles.stagePillTextHold]}>
+      {stage}: {qty}
+    </Text>
   </View>
 );
 
-const OrderRow = ({ order, onPress }) => {
-  const statusColor = STATUS_COLORS[order.status] || colors.textSecondary;
+const OrderRow = React.memo(({ order, onPress }) => {
+  const displayStatus = resolveOrderDisplayStatus(order);
+  const statusColor = STATUS_COLORS[displayStatus] || colors.textSecondary;
   const isLate = order.worstLatenessDays > 0;
   const pct = order.totalQty > 0 ? Math.round((order.completedCount / order.totalPieces) * 100) : 0;
 
@@ -41,8 +81,13 @@ const OrderRow = ({ order, onPress }) => {
         </View>
         <View style={styles.orderRight}>
           <View style={[styles.statusBadge, { backgroundColor: statusColor + '22' }]}>
-            <Text style={[styles.statusText, { color: statusColor }]}>{order.status?.replace('_', ' ')}</Text>
+            <Text style={[styles.statusText, { color: statusColor }]}>
+              {STATUS_LABELS[displayStatus] ?? displayStatus?.replace(/_/g, ' ')}
+            </Text>
           </View>
+          {displayStatus !== order.status && (
+            <Text style={styles.holdNote}>some on hold</Text>
+          )}
           {order.priority && order.priority !== 'normal' && (
             <View style={[styles.priorityBadge, { backgroundColor: PRIORITY_COLORS[order.priority] + '22' }]}>
               <Text style={[styles.priorityText, { color: PRIORITY_COLORS[order.priority] }]}>{order.priority?.toUpperCase()}</Text>
@@ -73,9 +118,13 @@ const OrderRow = ({ order, onPress }) => {
       )}
     </TouchableOpacity>
   );
-};
+});
 
-const FILTERS = ['all', 'in_progress', 'completed', 'on_hold'];
+const FILTERS = [
+  'all', 'in_progress', 'on_hold', 'completed',
+  'proceed_cancel', 'proceed_po', 'proceed_stock_assign',
+  'proceed_manufacturer', 'proceed_pending',
+];
 
 const OrdersTrackingScreen = ({ navigation, route }) => {
   const initFilter = route?.params?.filter === 'late' ? 'late' : 'all';
@@ -84,6 +133,8 @@ const OrdersTrackingScreen = ({ navigation, route }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState(initFilter);
   const [search, setSearch] = useState('');
+  const filterScrollRef = useRef(null);
+  const filterOffsets = useRef({});
   const [debouncedSearch, setDebouncedSearch] = useState(search);
   useEffect(() => {
     const handler = setTimeout(() => setDebouncedSearch(search), 500);
@@ -92,13 +143,15 @@ const OrdersTrackingScreen = ({ navigation, route }) => {
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
 
-  const filteredOrders = orders.filter(o => {
-    if (!search) return true;
+  const filteredOrders = useMemo(() => {
+    if (!search) return orders;
     const q = search.toLowerCase();
-    return (o.orderNumber?.toLowerCase().includes(q) ||
-            o.customerCode?.toLowerCase().includes(q) ||
-            o.gatiPieceCode?.toLowerCase().includes(q));
-  });
+    return orders.filter(o =>
+      o.orderNumber?.toLowerCase().includes(q) ||
+      o.customerCode?.toLowerCase().includes(q) ||
+      o.gatiPieceCode?.toLowerCase().includes(q)
+    );
+  }, [orders, search]);
 
   // pageRef lets load() always read the current page without being a dep
   const pageRef = useRef(0);
@@ -160,6 +213,16 @@ const OrdersTrackingScreen = ({ navigation, route }) => {
   );
 
 
+  const handlePressOrder = useCallback(
+    o => navigation.navigate('OrderDetail', { orderNumber: o.orderNumber }),
+    [navigation]
+  );
+
+  const renderOrder = useCallback(
+    ({ item }) => <OrderRow order={item} onPress={handlePressOrder} />,
+    [handlePressOrder]
+  );
+
   if (loading && orders.length === 0) {
     return <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>;
   }
@@ -183,27 +246,36 @@ const OrdersTrackingScreen = ({ navigation, route }) => {
         </TouchableOpacity>
       </View>
 
-      {/* Filter tabs */}
-      <View style={styles.filterRow}>
+      {/* Filter tabs — horizontal scrollable, auto-scrolls to active tab */}
+      <ScrollView
+        ref={filterScrollRef}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.filterScroll}
+        contentContainerStyle={styles.filterRow}
+      >
         {[...FILTERS, 'late'].map(f => (
           <TouchableOpacity
             key={f}
             style={[styles.filterTab, filter === f && styles.filterTabActive]}
-            onPress={() => setFilter(f)}
+            onLayout={e => { filterOffsets.current[f] = e.nativeEvent.layout.x; }}
+            onPress={() => {
+              setFilter(f);
+              const x = filterOffsets.current[f] ?? 0;
+              filterScrollRef.current?.scrollTo({ x: Math.max(0, x - 12), animated: true });
+            }}
           >
             <Text style={[styles.filterText, filter === f && styles.filterTextActive]}>
-              {f === 'in_progress' ? 'In Progress' : f.charAt(0).toUpperCase() + f.slice(1)}
+              {f === 'all' ? 'All' : f === 'late' ? 'Late' : (STATUS_LABELS[f] ?? f.replace(/_/g, ' '))}
             </Text>
           </TouchableOpacity>
         ))}
-      </View>
+      </ScrollView>
 
       <FlatList
         data={filteredOrders}
-        keyExtractor={o => o.orderNumber || String(Math.random())}
-        renderItem={({ item }) => (
-          <OrderRow order={item} onPress={o => navigation.navigate('OrderDetail', { orderNumber: o.orderNumber })} />
-        )}
+        keyExtractor={o => o.orderNumber}
+        renderItem={renderOrder}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); setPage(0); load(true); }} colors={[colors.primary]} />}
         onEndReached={() => hasMore && load()}
         onEndReachedThreshold={0.4}
@@ -229,7 +301,8 @@ const styles = StyleSheet.create({
   searchBox: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: colors.backgroundSecondary, borderRadius: 10, paddingHorizontal: 12, height: 40 },
   searchInput: { flex: 1, marginLeft: 8, fontFamily: fonts.regular, fontSize: fonts.sm, color: colors.textPrimary },
   allPiecesBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.backgroundSecondary, borderRadius: 10 },
-  filterRow: { flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 8, gap: 8, backgroundColor: colors.background, borderBottomWidth: 1, borderBottomColor: colors.border },
+  filterScroll: { backgroundColor: colors.background, borderBottomWidth: 1, borderBottomColor: colors.border, height: 48, flexGrow: 0, flexShrink: 0 },
+  filterRow: { flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 8, gap: 8, alignItems: 'center' },
   filterTab: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: colors.backgroundSecondary },
   filterTabActive: { backgroundColor: colors.primary },
   filterText: { fontFamily: fonts.medium, fontSize: fonts.xs, color: colors.textSecondary },
@@ -257,6 +330,9 @@ const styles = StyleSheet.create({
   stages: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
   stagePill: { backgroundColor: colors.primaryExtraLight, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   stagePillText: { fontFamily: fonts.medium, fontSize: 10, color: colors.primary },
+  stagePillHold: { backgroundColor: colors.warning + '20' },
+  stagePillTextHold: { color: colors.warning },
+  holdNote: { fontFamily: fonts.regular, fontSize: 9, color: colors.warning, fontStyle: 'italic', alignSelf: 'flex-end' },
   empty: { flex: 1, alignItems: 'center', padding: 40, gap: 12, marginTop: 40 },
   emptyText: { fontFamily: fonts.regular, fontSize: fonts.sm, color: colors.textSecondary },
   emptyLink: { color: colors.primary, fontFamily: fonts.medium, fontSize: fonts.sm },

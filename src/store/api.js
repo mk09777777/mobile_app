@@ -52,6 +52,7 @@ export const api = createApi({
     'StoneTypes',
     'Notification',
     'DeviceToken',
+    'Users',
   ],
   // Prevent memory buildup by removing unused data after 60 seconds
   keepUnusedDataFor: 60,
@@ -241,7 +242,7 @@ export const api = createApi({
           const roleString = mapRoleNumberToString(roleNumber);
 
           if (!roleString) {
-            throw new Error(`Unknown role: ${roleNumber}. Expected 1-4.`);
+            throw new Error(`Unknown role: ${roleNumber}. Expected 1-5.`);
           }
 
           // Try different case variations for ID
@@ -311,12 +312,13 @@ export const api = createApi({
 
     // Create user/register endpoint
     createUser: builder.mutation({
-      query: ({ email, password, roleNumber, name }) => ({
+      query: (data) => ({
         url: '/api/users',
         method: 'POST',
-        body: { email, password, roleNumber, name },
+        body: data,
       }),
       transformResponse: response => {
+        console.log('🆕 [createUser] Raw API Response:', JSON.stringify(response, null, 2));
         return {
           success: true,
           user: response.user || response,
@@ -338,6 +340,7 @@ export const api = createApi({
     getUserById: builder.query({
       query: userId => `/api/users/${userId}`,
       transformResponse: response => {
+        console.log('👤 [getUserById] Raw API Response:', JSON.stringify(response, null, 2));
         // Handle different response formats
         const user = response.user || response;
         return {
@@ -363,12 +366,17 @@ export const api = createApi({
 
     // Update user endpoint
     updateUser: builder.mutation({
-      query: ({ userId, ...data }) => ({
-        url: `/api/users/${userId}`,
-        method: 'PUT',
-        body: data,
-      }),
+      query: ({ userId, ...data }) => {
+        console.log('📤 [updateUser] userId:', userId, 'payload:', JSON.stringify(data, null, 2));
+        return {
+          url: `/api/users/${userId}`,
+          method: 'PUT',
+          body: data,
+        };
+      },
+      invalidatesTags: ['Users'],
       transformResponse: response => {
+        console.log('✅ [updateUser] Response:', JSON.stringify(response, null, 2));
         return {
           success: true,
           user: response.user || response,
@@ -376,6 +384,7 @@ export const api = createApi({
         };
       },
       transformErrorResponse: response => {
+        console.log('❌ [updateUser] Error:', JSON.stringify(response, null, 2));
         return {
           success: false,
           error:
@@ -412,6 +421,7 @@ export const api = createApi({
     // Get users list endpoint
     getUsers: builder.query({
       query: () => '/api/users',
+      providesTags: ['Users'],
       transformResponse: data => {
         console.log(
           '🔍 [getUsers] Raw API Response:',
@@ -735,7 +745,7 @@ export const api = createApi({
           }
         } else {
           // Even if no filters, ensure default sort is applied for consistent ordering
-          queryString += `&sortBy=createdAt&sortOrder=asc`;
+          queryString += `&sortBy=CreatedDate&sortOrder=desc`;
         }
 
         const finalUrl = `/api/enquiries/search?${queryString}`;
@@ -954,6 +964,7 @@ export const api = createApi({
             AssignedDate: enquiry.AssignedDate,
             CurrentStatus: enquiry.CurrentStatus,
             CreatedDate: enquiry.CreatedDate,
+            Summary: enquiry.Summary,
             ReferenceImages: enquiry.ReferenceImages || [],
             ReferenceVideos: enquiry.ReferenceVideos || [],
             Videos: enquiry.Videos || [],
@@ -1000,7 +1011,20 @@ export const api = createApi({
         }
         return [];
       },
-      transformResponse: async (enquiry, meta, arg) => {
+      transformResponse: async (rawResponse, meta, arg) => {
+        // Unwrap common backend wrapper shapes: { enquiry: {...} } / { data: {...} }
+        let enquiry = rawResponse;
+        if (rawResponse && typeof rawResponse === 'object' && !rawResponse._id && !rawResponse.id) {
+          enquiry = rawResponse.enquiry || rawResponse.data || rawResponse;
+        }
+
+        if (__DEV__) {
+          console.log('📦 [getEnquiryById] raw keys:', Object.keys(rawResponse || {}));
+          console.log('📦 [getEnquiryById] enquiry keys:', Object.keys(enquiry || {}));
+          console.log('📦 [getEnquiryById] Summary:', enquiry?.Summary ? String(enquiry.Summary).slice(0, 80) : 'MISSING');
+          console.log('📦 [getEnquiryById] Checklist:', enquiry?.Checklist ? String(enquiry.Checklist).slice(0, 80) : 'MISSING');
+        }
+
         // Handle null/undefined enquiry or error responses
         if (!enquiry || enquiry === null || typeof enquiry !== 'object') {
           // Return a minimal object structure to prevent crashes
@@ -1251,6 +1275,9 @@ export const api = createApi({
                 : null),
             // Preserve original API fields
             Name: enquiry?.Name,
+            Summary: enquiry?.Summary,
+            // Checklist is a JSON object — preserve as-is
+            Checklist: enquiry?.Checklist || null,
             Remarks: enquiry?.Remarks,
             Priority: enquiry?.Priority,
             Quantity: enquiry?.Quantity,
@@ -2287,7 +2314,7 @@ export const api = createApi({
     // ==================== FILE UPLOAD ====================
     uploadDesign: builder.mutation({
       queryFn: async (
-        { enquiryId, designType, version, images, excel, designCode },
+        { enquiryId, designType, version, images, excel, designCode , cost },
         { dispatch },
         extraOptions,
         baseQuery,
@@ -2300,6 +2327,7 @@ export const api = createApi({
           console.log('🚀 [uploadDesign] Enquiry ID:', enquiryId);
           console.log('🚀 [uploadDesign] Design Type:', designType);
           console.log('🚀 [uploadDesign] Version:', version);
+          console.log('🚀 [uploadDesign] Cost:', cost);
           console.log(
             '🚀 [uploadDesign] Total files received:',
             images?.length || 0,
@@ -2372,6 +2400,7 @@ export const api = createApi({
                   }
                 : null,
               designCode,
+              cost
             });
           }
 
@@ -2409,6 +2438,11 @@ export const api = createApi({
           // Backend determines type from endpoint URL (/upload/coral vs /upload/cad)
           if (designCode && designCode.trim()) {
             formData.append('code', designCode.trim());
+          }
+
+          // Add cost if provided
+          if (cost !== undefined && cost !== null && cost !== '') {
+            formData.append('cost', String(cost));
           }
 
           // Separate images and videos - backend expects them in separate fields
@@ -2620,6 +2654,7 @@ export const api = createApi({
               formDataFields: {
                 version: versionValue.toString(),
                 ...(designCode ? { code: designCode.trim() } : {}),
+                ...(cost !== undefined && cost !== null && cost !== '' ? { cost: String(cost) } : {}),
                 images: `${imageFiles.length + videoFiles.length} file(s) (${
                   imageFiles.length
                 } images + ${videoFiles.length} videos)`,

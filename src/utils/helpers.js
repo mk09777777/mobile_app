@@ -119,6 +119,7 @@ export const getRoleDisplayName = (role) => {
     client: 'Client',
     coral: 'Coral Designer',
     cad: 'CAD Designer',
+    client_handler: 'Client Handler',
   };
   return roleNames[role] || role;
 };
@@ -233,6 +234,7 @@ const FALLBACK_ROLE_MAP = {
     2: 'coral',
     3: 'cad',
     4: 'client',
+    5: 'client_handler',
 };
 
 /**
@@ -264,6 +266,10 @@ export const setRolesCache = (roles) => {
         roleString = 'cad';
       } else if (roleCode === 'cl') {
         roleString = 'client';
+      } else if (roleCode === 'ch') {
+        roleString = 'client_handler';
+      } else if (roleNumber === 5) {
+        roleString = 'client_handler';
       }
       
       if (roleString) {

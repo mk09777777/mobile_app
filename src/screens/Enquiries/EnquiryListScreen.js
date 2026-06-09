@@ -19,7 +19,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../../context/AuthContext';
 import { useClients } from '../../features/clients/clientsHooks';
 import { useStatusOptions } from '../../features/statuses/statusesHooks';
-import { useUpdateEnquiryMutation, useDeleteEnquiryMutation, useGetStatusStatisticsQuery } from '../../store/api';
+import { useUpdateEnquiryMutation, useDeleteEnquiryMutation, useGetStatusStatisticsQuery, useGetEnquiryByIdQuery } from '../../store/api';
 import {
   setFilters,
   setSearchQuery,
@@ -46,6 +46,7 @@ import useDeviceLayout from '../../hooks/useDeviceLayout';
 // Import PDF generator module
 import * as pdfGeneratorModule from '../../utils/pdfGenerator';
 import StatusTabs from '../EnquiryStatusDashboard/Tabs';
+import CreateEnquiryModal from '../EditEnquiry/createEnquiryModal';
 
 // Debug: Log module import status
 if (__DEV__) {
@@ -128,6 +129,183 @@ const expandStatusesForSearchApi = (status) => {
   return [original];
 };
 
+// ─── Summary / Markdown Renderer ─────────────────────────────────────────────
+// Handles both HTML (tables, h1-h6, li, p) AND pure-markdown responses.
+// Markdown patterns matched:
+//   **text**  on its own line  → heading
+//   ## text                    → heading
+//   *   text  / -   text       → bullet
+//   **Key:** Value             → key/value row
+//   plain lines                → paragraph
+
+// Decode HTML entities
+const decode = (s = '') =>
+  s.replace(/&amp;/g, '&')
+   .replace(/&lt;/g, '<')
+   .replace(/&gt;/g, '>')
+   .replace(/&nbsp;/g, ' ')
+   .replace(/&quot;/g, '"')
+   .replace(/&#39;/g, "'")
+   .replace(/&apos;/g, "'");
+
+// Strip all HTML tags and inline markdown marks from a snippet, return plain text
+const stripInline = (s = '') => {
+  let t = String(s).replace(/<[^>]*>/g, '');
+  t = decode(t);
+  t = t.replace(/\*\*\*(.+?)\*\*\*/g, '$1');
+  t = t.replace(/\*\*(.+?)\*\*/g, '$1');
+  t = t.replace(/\*(.+?)\*/g, '$1');
+  t = t.replace(/___(.+?)___/g, '$1');
+  t = t.replace(/__(.+?)__/g, '$1');
+  t = t.replace(/_(.+?)_/g, '$1');
+  t = t.replace(/~~(.+?)~~/g, '$1');
+  t = t.replace(/`(.+?)`/g, '$1');
+  t = t.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+  return t.trim();
+};
+
+const renderHtmlSummary = (input, styles) => {
+  if (!input) return null;
+  const raw = typeof input === 'string' ? input : String(input);
+  // Normalise literal "\n" sequences that some backends double-escape
+  const text = raw.replace(/\\n/g, '\n');
+
+  const sections = [];
+
+  // ── 1. HTML tables → key/value rows ──────────────────────────────────────
+  const tableMatches = [...text.matchAll(/<table[\s\S]*?<\/table>/gi)];
+  tableMatches.forEach((tbl, ti) => {
+    const rows = [...tbl[0].matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
+    rows.forEach((row, ri) => {
+      const cells = [...row[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)];
+      if (cells.length >= 2) {
+        const label = stripInline(cells[0][1]);
+        const val   = stripInline(cells.slice(1).map(c => c[1]).join(' '));
+        if (label || val) sections.push({ type: 'row', label, val, key: `t${ti}r${ri}` });
+      } else if (cells.length === 1) {
+        const t2 = stripInline(cells[0][1]);
+        if (t2) sections.push({ type: 'text', text: t2, key: `t${ti}r${ri}` });
+      }
+    });
+  });
+
+  // ── 2. HTML list items ────────────────────────────────────────────────────
+  const liMatches = [...text.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)];
+  liMatches.forEach((m, i) => {
+    const t2 = stripInline(m[1]);
+    if (t2) sections.push({ type: 'bullet', text: t2, key: `li${i}` });
+  });
+
+  // ── 3. HTML headings ──────────────────────────────────────────────────────
+  const htmlHeadMatches = [...text.matchAll(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi)];
+  htmlHeadMatches.forEach((m, i) => {
+    const t2 = stripInline(m[2]);
+    if (t2) sections.push({ type: 'heading', level: parseInt(m[1], 10), text: t2, key: `h${i}` });
+  });
+
+  // ── 4. HTML paragraphs ────────────────────────────────────────────────────
+  const strippedForP = text
+    .replace(/<table[\s\S]*?<\/table>/gi, '')
+    .replace(/<[uo]l[\s\S]*?<\/[uo]l>/gi, '');
+  const paraMatches = [...strippedForP.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/gi)];
+  paraMatches.forEach((m, i) => {
+    const t2 = stripInline(m[1]);
+    if (t2) sections.push({ type: 'text', text: t2, key: `p${i}` });
+  });
+
+  // ── 5. Pure-markdown line-by-line parsing ────────────────────────────────
+  if (sections.length === 0) {
+    // Remove any leftover HTML before markdown parsing
+    const md = text.replace(/<[^>]*>/g, '').replace(/\|/g, ' ');
+
+    md.split(/\n/).forEach((rawLine, i) => {
+      const line = rawLine.trimEnd();
+      if (!line.trim()) return; // blank line → skip
+
+      // ## Heading
+      const mdHeading = line.match(/^(#{1,6})\s+(.+)$/);
+      if (mdHeading) {
+        const t2 = stripInline(mdHeading[2]);
+        if (t2) sections.push({ type: 'heading', level: mdHeading[1].length, text: t2, key: `mdh${i}` });
+        return;
+      }
+
+      // **Standalone bold line** = section heading (e.g. "**Key Specs**")
+      const boldHeading = line.match(/^\*\*([^*]+)\*\*\s*[:：]?\s*$/);
+      if (boldHeading) {
+        const t2 = stripInline(boldHeading[1]);
+        if (t2) sections.push({ type: 'heading', level: 2, text: t2, key: `bh${i}` });
+        return;
+      }
+
+      // *   text  /  -   text  /  •  text  bullet list
+      const bullet = line.match(/^[\*\-\+•]\s{1,4}(.+)$/);
+      if (bullet) {
+        // Check if the bullet content is a key: value pair  →  **Key:** Value
+        const kvInBullet = bullet[1].match(/^\*\*([^*]+):\*\*\s*(.*)$/);
+        if (kvInBullet) {
+          const label = stripInline(kvInBullet[1]);
+          const val   = stripInline(kvInBullet[2]);
+          if (label) sections.push({ type: 'row', label, val: val || '—', key: `bkv${i}` });
+        } else {
+          const t2 = stripInline(bullet[1]);
+          if (t2) sections.push({ type: 'bullet', text: t2, key: `bl${i}` });
+        }
+        return;
+      }
+
+      // Standalone **Key:** Value line (not inside a bullet)
+      const kvLine = line.match(/^\*\*([^*]+):\*\*\s*(.+)$/);
+      if (kvLine) {
+        const label = stripInline(kvLine[1]);
+        const val   = stripInline(kvLine[2]);
+        if (label) sections.push({ type: 'row', label, val, key: `kv${i}` });
+        return;
+      }
+
+      // Plain paragraph
+      const t2 = stripInline(line);
+      if (t2) sections.push({ type: 'text', text: t2, key: `pl${i}` });
+    });
+  }
+
+  if (sections.length === 0) return null;
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  return (
+    <View style={styles.summaryContainer}>
+      {sections.map(s => {
+        switch (s.type) {
+          case 'heading':
+            return (
+              <Text key={s.key} style={[styles.summaryHeading, s.level <= 2 && styles.summaryHeadingLarge]}>
+                {s.text}
+              </Text>
+            );
+          case 'row':
+            return (
+              <View key={s.key} style={styles.summaryRow}>
+                <Text style={styles.summaryKey} numberOfLines={2}>{s.label}</Text>
+                <Text style={styles.summaryVal}>{s.val}</Text>
+              </View>
+            );
+          case 'bullet':
+            return (
+              <View key={s.key} style={styles.summaryBulletRow}>
+                <Text style={styles.summaryBulletDot}>•</Text>
+                <Text style={styles.summaryBulletText}>{s.text}</Text>
+              </View>
+            );
+          case 'text':
+          default:
+            return <Text key={s.key} style={styles.summaryPara}>{s.text}</Text>;
+        }
+      })}
+    </View>
+  );
+};
+// ─────────────────────────────────────────────────────────────────────────────
+
 const EnquiryListScreen = ({ navigation }) => {
   const dispatch = useDispatch();
   const { user } = useAuth();
@@ -201,6 +379,13 @@ const EnquiryListScreen = ({ navigation }) => {
     roleLower === 'cl' ||
     user?.roleId === 4 ||
     user?.roleNumber === 4;
+  const isClientHandler = roleLower === 'client_handler';
+
+  // Persist whether this screen was opened from client_handler dashboard (params get cleared after processing)
+  const isClientHandlerViewRef = useRef(route.params?.filterSource === 'client_handler');
+
+  // Check if this screen is being used as a separate client enquiries view (stack screen)
+  const isClientView = route.name === 'ClientEnquiries' || isClientHandlerViewRef.current;
 
   // Get status options from API (cached) - already includes role-based filtering
   const statusOptions = useStatusOptions();
@@ -251,6 +436,30 @@ const EnquiryListScreen = ({ navigation }) => {
   const [isPdfModalVisible, setIsPdfModalVisible] = useState(false);
   const [selectedPdfUrl, setSelectedPdfUrl] = useState(null);
 
+  // Local search input value — updates immediately for responsive UI
+  // Actual Redux dispatch (which triggers API refetch) is debounced by 2 seconds
+  const [localSearchValue, setLocalSearchValue] = useState(searchQuery);
+  const searchDebounceRef = useRef(null);
+
+  const handleSearchChange = useCallback((text) => {
+    setLocalSearchValue(text);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
+      dispatch(setSearchQuery(text));
+    }, 2000);
+  }, [dispatch]);
+
+  const handleSearchClear = useCallback(() => {
+    setLocalSearchValue('');
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    dispatch(setSearchQuery(''));
+  }, [dispatch]);
+
+  // Sync local value if Redux searchQuery changes externally (e.g. filter clear)
+  useEffect(() => {
+    setLocalSearchValue(searchQuery);
+  }, [searchQuery]);
+
   const resolvedFilters = useMemo(() => {
     const normalizedFilters = {
       status: filters.status,
@@ -272,15 +481,17 @@ const EnquiryListScreen = ({ navigation }) => {
     // For Client users (role 4), use ClientId from token
     if ((!normalizedFilters.clientId || normalizedFilters.clientId === 'all') && isClient && clientUserId) {
       normalizedFilters.clientId = clientUserId;
-
     } else if (isClient && !clientUserId) {
-
+      // no-op
     }
 
+    // For Client Handler (role 5) — backend scopes automatically via userScope.service
+    // No extra filter needed here; backend uses the handler's clientsHandled array
+
     if ((!normalizedFilters.assignedTo || normalizedFilters.assignedTo === 'all') && !isAdmin && !isClient && currentUserId) {
-      // Don't auto-assign for coral/cad users during testing
+      // Don't auto-assign for coral/cad/client_handler users
       const role = user?.role?.toLowerCase();
-      if (role !== 'coral' && role !== 'cad') {
+      if (role !== 'coral' && role !== 'cad' && role !== 'client_handler') {
         normalizedFilters.assignedTo = currentUserId;
       }
     }
@@ -370,7 +581,7 @@ const EnquiryListScreen = ({ navigation }) => {
       'clientName': 'ClientId',
     };
 
-    const backendSortField = sortFieldMap[sortBy] || sortBy || 'AssignedDate';
+    const backendSortField = sortFieldMap[sortBy] || sortBy || 'CreatedDate';
     const sortDirection = sortOrder || 'desc';
     params.append('sortBy', backendSortField);
     params.append('sortOrder', sortDirection);
@@ -749,6 +960,8 @@ const EnquiryListScreen = ({ navigation }) => {
       }
       // Reset restore flag so scroll can be restored when returning
       hasRestoredScrollRef.current = false;
+      // Cancel any pending search debounce
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
       // Cleanup function runs when component unmounts
       dispatch(clearFilters());
       dispatch(setSearchQuery(''));
@@ -898,6 +1111,12 @@ const EnquiryListScreen = ({ navigation }) => {
   // Local UI state
   const [showFilters, setShowFilters] = useState(false);
   const [showSortModal, setShowSortModal] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [previewEnquiry, setPreviewEnquiry] = useState(null);
+  const [summaryEnquiryId, setSummaryEnquiryId] = useState(null);
+  const { data: summaryEnquiry, isLoading: summaryLoading } = useGetEnquiryByIdQuery(summaryEnquiryId, { skip: !summaryEnquiryId });
+  const [checklistEnquiryId, setChecklistEnquiryId] = useState(null);
+  const { data: checklistEnquiry, isLoading: checklistLoading } = useGetEnquiryByIdQuery(checklistEnquiryId, { skip: !checklistEnquiryId });
   const [refreshing, setRefreshing] = useState(false);
   const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
   const showAlert = (title, message, type = 'info', buttons = []) =>
@@ -906,8 +1125,9 @@ const EnquiryListScreen = ({ navigation }) => {
   
   // Initialize activeTab based on user role
   const getInitialTab = () => {
-    const role = user?.role?.toLowerCase();    if (role !== 'admin' ) return 'AssignedToYou';
-    return 'all';
+    const role = user?.role?.toLowerCase();
+    if (role === 'admin' || role === 'client_handler') return 'all';
+    return 'AssignedToYou';
   };
   
   const [activeTab, setActiveTab] = useState(getInitialTab());
@@ -1073,8 +1293,8 @@ const EnquiryListScreen = ({ navigation }) => {
 
     let routeFilterHandled = false;
 
-    // When navigating from dashboard, clear all existing filters so only the clicked filter applies
-    if (filterSource === 'dashboard' && rawFilter) {
+    // When navigating from dashboard or client_handler, clear all existing filters so only the clicked filter applies
+    if ((filterSource === 'dashboard' || filterSource === 'client_handler') && rawFilter) {
       if (lastDashboardFilterRef.current !== dashboardToken) {
         dispatch(clearFilters());
         lastDashboardFilterRef.current = dashboardToken;
@@ -1165,8 +1385,8 @@ const EnquiryListScreen = ({ navigation }) => {
       routeFilterHandled = true;
     }
 
-    // Handle client filter from route params
-    if (filterType === 'client' && rawFilter) {
+    // Handle client filter from route params (skip in Enquiries tab to keep it showing all)
+    if (filterType === 'client' && rawFilter && route.name !== 'Enquiries') {
       const clientName = rawFilter;
       const clientId = route.params?.clientId;
       const preSelectedStatuses = route.params?.statuses || route.params?.selectedStatuses || [];
@@ -1559,7 +1779,7 @@ const EnquiryListScreen = ({ navigation }) => {
     });
   }, [deleteEnquiry, fetchEnquiries, refetchStatusStats]);
 
-  const renderEnquiryItem = useCallback(({ item: enquiry, currentTab }) => {
+  const renderEnquiryItem = useCallback(({ item: enquiry, currentTab, isExpandedAll }) => {
     if (!enquiry || !enquiry.id) {
       if (__DEV__) {
         console.warn('Skipping invalid enquiry item:', enquiry);
@@ -1569,18 +1789,58 @@ const EnquiryListScreen = ({ navigation }) => {
 
     try {
       return (
-        <NewCard
-          item={enquiry}
-          navigation={navigation}
-          onViewQuotation={handleViewQuotation}
-          currentTab={currentTab || activeTab}
-          onUpdateEnquiry={handleUpdateEnquiry}
-          onDeleteEnquiry={handleDeleteEnquiry}
-          onPress={() => navigation.navigate('SingleEnquiry', {
-            enquiryId: enquiry.id || enquiry._id,
-            enquiry: enquiry,
-          })}
-        />
+        <View style={isClientView ? styles.cardWrapper : null}>
+          <NewCard
+            item={enquiry}
+            navigation={navigation}
+            onViewQuotation={handleViewQuotation}
+            currentTab={currentTab || activeTab}
+            onUpdateEnquiry={handleUpdateEnquiry}
+            onDeleteEnquiry={handleDeleteEnquiry}
+            isExpandedAll={!!isExpandedAll}
+            onPress={() => navigation.navigate('SingleEnquiry', {
+              enquiryId: enquiry.id || enquiry._id,
+              enquiry: enquiry,
+            })}
+          />
+          {isClientView && (
+            <View style={styles.enquiryActionBar}>
+              <View style={styles.enquiryActionDivider} />
+              <View style={styles.enquiryActions}>
+                <TouchableOpacity
+                  style={styles.enquiryActionBtn}
+                  onPress={() => setPreviewEnquiry(enquiry)}
+                  activeOpacity={0.7}
+                >
+                  <Icon name="remove-red-eye" size={15} color={colors.primary} />
+                  <Text style={styles.enquiryActionText}>Preview</Text>
+                </TouchableOpacity>
+
+                <View style={styles.enquiryActionSep} />
+
+                <TouchableOpacity
+                  style={styles.enquiryActionBtn}
+                  onPress={() => setSummaryEnquiryId(enquiry.id || enquiry._id)}
+                  activeOpacity={0.7}
+                >
+                  <Icon name="assessment" size={15} color={colors.primary} />
+                  <Text style={styles.enquiryActionText}>Summary</Text>
+                </TouchableOpacity>
+
+                <View style={styles.enquiryActionSep} />
+
+                <TouchableOpacity
+                  style={styles.enquiryActionBtn}
+                  onPress={() => setChecklistEnquiryId(enquiry.id || enquiry._id)}
+                  activeOpacity={0.7}
+                >
+                  <Icon name="fact-check" size={15} color={colors.primary} />
+                  <Text style={styles.enquiryActionText}>Checklist</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </View>
       );
     } catch (error) {
       if (__DEV__) {
@@ -1775,7 +2035,7 @@ const EnquiryListScreen = ({ navigation }) => {
         'clientName': 'ClientId',
       };
 
-      const backendSortField = sortFieldMap[sortBy] || sortBy || 'AssignedDate';
+      const backendSortField = sortFieldMap[sortBy] || sortBy || 'CreatedDate';
       const sortDirection = sortOrder || 'desc';
       exportFilters.sortBy = backendSortField;
       exportFilters.sortOrder = sortDirection;
@@ -2311,10 +2571,35 @@ const EnquiryListScreen = ({ navigation }) => {
     <SafeAreaView style={styles.container}>
       <TopNavbar navigation={navigation} />
 
+      {/* Client-specific header for ClientEnquiries stack screen */}
+      {isClientView && (
+        <View style={styles.clientHeader}>
+          <TouchableOpacity
+            style={styles.clientHeaderBack}
+            onPress={() => navigation.goBack()}>
+            <Icon name="arrow-back" size={20} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <View style={styles.clientHeaderInfo}>
+            <Text style={styles.clientHeaderLabel}>Client Enquiries</Text>
+            <Text style={styles.clientHeaderName} numberOfLines={1}>
+              {route.params?.filter || (selectedClient && selectedClient !== 'All' ? selectedClient : null) || 'Selected Client'}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.addEnquiryBtn}
+            onPress={() => {
+              console.log('EnquiryListScreen route params:', JSON.stringify(route.params));
+              setShowCreateModal(true);
+            }}>
+            <Icon name="add" size={22} color={colors.textWhite} />
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Status Tabs */}
       <StatusTabs 
-        activeTab={activeTab} 
-        onTabChange={setActiveTab}
+        activeTab={isClientView ? 'all' : activeTab} 
+        onTabChange={isClientView ? () => {} : setActiveTab}
         displayEnquiries={displayEnquiries}
         flatListRef={flatListRef}
         renderEnquiryItem={renderEnquiryItem}
@@ -2328,9 +2613,9 @@ const EnquiryListScreen = ({ navigation }) => {
         onEndReachedDuringMomentumRef={onEndReachedDuringMomentumRef}
         handleLoadMore={handleLoadMore}
         styles={styles}
-        searchQuery={searchQuery}
-        onSearchChange={(text) => dispatch(setSearchQuery(text))}
-        onSearchClear={() => dispatch(setSearchQuery(''))}
+        searchQuery={localSearchValue}
+        onSearchChange={handleSearchChange}
+        onSearchClear={handleSearchClear}
         onSortPress={() => setShowSortModal(true)}
         onFilterPress={() => setShowFilters(true)}
         onDownloadPress={handleDownloadAllPDF}
@@ -2361,6 +2646,10 @@ const EnquiryListScreen = ({ navigation }) => {
         isAdmin={isAdmin}
         statusCounts={statusCounts}
         onUpdateEnquiry={handleUpdateEnquiry}
+        resolvedFilters={resolvedFilters}
+        sortBy={sortBy}
+        sortOrder={sortOrder}
+        hideHeader={isClientView}
       />
 
       {shouldShowScreenApiLoader && (
@@ -2400,6 +2689,159 @@ const EnquiryListScreen = ({ navigation }) => {
         buttons={alertConfig.buttons}
         onClose={hideAlert}
       />
+      <CreateEnquiryModal
+        visible={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        route={route}
+      />
+      <Modal visible={!!previewEnquiry} transparent animationType="slide" onRequestClose={() => setPreviewEnquiry(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox2}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Enquiry Preview</Text>
+              <TouchableOpacity onPress={() => setPreviewEnquiry(null)}>
+                <Icon name="close" size={24} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            {previewEnquiry && (
+              <ScrollView>
+                <View style={styles.detailCard}>
+                  <Text style={styles.detailCardTitle}>General</Text>
+                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Name</Text><Text style={styles.detailValue}>{previewEnquiry.Name || previewEnquiry.title || 'N/A'}</Text></View>
+                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Client</Text><Text style={styles.detailValue}>{previewEnquiry.clientName || 'N/A'}</Text></View>
+                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Status</Text><Text style={styles.detailValue}>{previewEnquiry.CurrentStatus || previewEnquiry.Status || 'N/A'}</Text></View>
+                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Priority</Text><Text style={styles.detailValue}>{previewEnquiry.Priority || 'N/A'}</Text></View>
+                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Category</Text><Text style={styles.detailValue}>{previewEnquiry.Category || 'N/A'}</Text></View>
+                </View>
+                <View style={styles.detailCard}>
+                  <Text style={styles.detailCardTitle}>Materials</Text>
+                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Metal</Text><Text style={styles.detailValue}>{previewEnquiry.Metal?.Quality || ''} {previewEnquiry.Metal?.Color || ''}</Text></View>
+                  <View style={styles.detailRow}><Text style={styles.detailLabel}>Stone Type</Text><Text style={styles.detailValue}>{previewEnquiry.StoneType || 'N/A'}</Text></View>
+                  {previewEnquiry.Stamping && <View style={styles.detailRow}><Text style={styles.detailLabel}>Stamping</Text><Text style={styles.detailValue}>{previewEnquiry.Stamping}</Text></View>}
+                </View>
+                {previewEnquiry.Remarks && (
+                  <View style={styles.detailCard}>
+                    <Text style={styles.detailCardTitle}>Remarks</Text>
+                    <Text style={styles.detailRemarks}>{previewEnquiry.Remarks}</Text>
+                  </View>
+                )}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
+      <Modal visible={!!summaryEnquiryId} transparent animationType="slide" onRequestClose={() => setSummaryEnquiryId(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox2}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Enquiry Summary</Text>
+              <TouchableOpacity onPress={() => setSummaryEnquiryId(null)}>
+                <Icon name="close" size={24} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            {summaryLoading ? (
+              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 }}>
+                <ActivityIndicator size="large" color={colors.primary} />
+              </View>
+            ) : (
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 16 }}>
+                {(() => {
+                  if (!summaryEnquiry) {
+                    return (
+                      <View style={styles.detailCard}>
+                        <Text style={styles.detailValue}>Could not load summary. Please try again.</Text>
+                      </View>
+                    );
+                  }
+                  const sm =
+                    (typeof summaryEnquiry.Summary === 'string' && summaryEnquiry.Summary.trim() && summaryEnquiry.Summary) ||
+                    (summaryEnquiry._originalData?.Summary && typeof summaryEnquiry._originalData.Summary === 'string' && summaryEnquiry._originalData.Summary.trim() && summaryEnquiry._originalData.Summary) ||
+                    null;
+                  if (__DEV__) {
+                    console.log('📄 [Summary modal] Summary value:', sm ? sm.slice(0, 120) : 'NULL');
+                  }
+                  const rendered = sm ? renderHtmlSummary(sm, styles) : null;
+                  return rendered || (
+                    <View style={styles.detailCard}>
+                      <Text style={styles.detailValue}>No summary available for this enquiry.</Text>
+                    </View>
+                  );
+                })()}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={!!checklistEnquiryId} transparent animationType="slide" onRequestClose={() => setChecklistEnquiryId(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox2}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Checklist</Text>
+              <TouchableOpacity onPress={() => setChecklistEnquiryId(null)}>
+                <Icon name="close" size={24} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            {checklistLoading ? (
+              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 }}>
+                <ActivityIndicator size="large" color={colors.primary} />
+              </View>
+            ) : checklistEnquiry && (
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {(() => {
+                  // Checklist is a JSON object from the backend, not HTML
+                  const cl =
+                    (checklistEnquiry.Checklist && typeof checklistEnquiry.Checklist === 'object' && checklistEnquiry.Checklist) ||
+                    (checklistEnquiry._originalData?.Checklist && typeof checklistEnquiry._originalData.Checklist === 'object' && checklistEnquiry._originalData.Checklist) ||
+                    null;
+                  if (__DEV__) {
+                    console.log('📋 [Checklist modal] Checklist value:', JSON.stringify(cl));
+                  }
+                  if (!cl) {
+                    return (
+                      <View style={styles.detailCard}>
+                        <Text style={styles.detailValue}>No checklist found</Text>
+                      </View>
+                    );
+                  }
+                  // Field label map
+                  const FIELD_LABELS = {
+                    Engraving:           'Engraving',
+                    SizeLength:          'Size (Length)',
+                    SizeRingSize:        'Size (Ring Size)',
+                    DimensionsThickness: 'Dimensions (Thickness)',
+                    DeliveryDate:        'Delivery Date',
+                    EnamelPaintwork:     'Enamel / Paintwork',
+                    RhodiumInstructions: 'Rhodium Instructions',
+                    Components:          'Components',
+                    Findings:            'Findings',
+                  };
+                  const rows = Object.entries(FIELD_LABELS)
+                    .map(([key, label]) => ({ key, label, value: cl[key] }))
+                    .filter(r => r.value !== undefined && r.value !== null);
+                  if (cl.GeneratedAt) {
+                    // append generation date at bottom
+                    rows.push({ key: 'GeneratedAt', label: 'Generated At', value: new Date(cl.GeneratedAt).toLocaleString() });
+                  }
+                  return (
+                    <View style={styles.summaryContainer}>
+                      {rows.map(r => (
+                        <View key={r.key} style={styles.checklistRow}>
+                          <Text style={styles.checklistLabel}>{r.label}</Text>
+                          <Text style={[
+                            styles.checklistValue,
+                            String(r.value).toUpperCase() === 'NA' && styles.checklistValueNA,
+                          ]}>{String(r.value)}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  );
+                })()}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -2407,7 +2849,7 @@ const EnquiryListScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.backgroundSecondary,
+    backgroundColor:"#f9f7f2",
   },
 
   headerActions: {
@@ -2749,7 +3191,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
-    elevation: 10,
+    elevation: 6,
     overflow: 'hidden',
     position: 'relative',
   },
@@ -2913,6 +3355,245 @@ const styles = StyleSheet.create({
     fontFamily: fonts.medium,
     color: colors.textSecondary,
     paddingHorizontal: 4,
+  },
+  clientHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  clientHeaderBack: {
+    padding: 4,
+    marginRight: 12,
+  },
+  clientHeaderInfo: {
+    flex: 1,
+  },
+  clientHeaderLabel: {
+    fontSize: fonts.xs,
+    fontFamily: fonts.regular,
+    color: colors.textWhite + 'CC',
+  },
+  clientHeaderName: {
+    fontSize: fonts.base,
+    fontFamily: fonts.bold,
+    color: colors.textWhite,
+    marginTop: 2,
+  },
+  addEnquiryBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 12,
+  },
+  // ── Client-handler enquiry card wrapper ──────────────────────────────────
+  cardWrapper: {
+    // NewCard already has marginHorizontal:10 marginBottom:8
+    // Pull the action bar up flush against the card bottom
+    marginBottom: 4,
+  },
+  enquiryActionBar: {
+    // Sits directly below NewCard — same horizontal inset, no top margin
+    marginHorizontal: 10,
+    marginBottom: 10,
+    backgroundColor: colors.cardBackground || colors.background,
+    borderBottomLeftRadius: 10,
+    borderBottomRightRadius: 10,
+    // Lift slightly above NewCard's elevation so shadow reads as one unit
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    // Pull up to overlap NewCard's marginBottom:8 → seamless join
+    marginTop: -8,
+    overflow: 'hidden',
+  },
+  enquiryActionDivider: {
+    height: 1,
+    backgroundColor: colors.borderLight || colors.border || '#E8E8E8',
+    marginHorizontal: 12,
+  },
+  enquiryActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  enquiryActionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: 10,
+  },
+  enquiryActionSep: {
+    width: 1,
+    height: 18,
+    backgroundColor: colors.borderLight || colors.border || '#E0E0E0',
+  },
+  enquiryActionText: {
+    fontSize: 12,
+    fontFamily: fonts.medium,
+    color: colors.primary,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'flex-end',
+  },
+  modalBox2: {
+    backgroundColor: colors.background,
+    borderTopRightRadius: 20,
+    borderTopLeftRadius: 20,
+    padding: 24,
+    maxHeight: '70%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: fonts.lg,
+    fontFamily: fonts.bold,
+    color: colors.textPrimary,
+  },
+  detailCard: {
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+  },
+  detailCardTitle: {
+    fontSize: fonts.sm,
+    fontFamily: fonts.bold,
+    color: colors.primary,
+    marginBottom: 10,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  detailLabel: {
+    fontSize: fonts.sm,
+    fontFamily: fonts.medium,
+    color: colors.textSecondary,
+    flex: 1,
+  },
+  detailValue: {
+    fontSize: fonts.sm,
+    fontFamily: fonts.regular,
+    color: colors.textPrimary,
+    flex: 1.5,
+    textAlign: 'right',
+  },
+  detailRemarks: {
+    fontSize: fonts.sm,
+    fontFamily: fonts.regular,
+    color: colors.textPrimary,
+    lineHeight: 20,
+  },
+
+  // ── HTML Summary renderer styles ──────────────────────────────────────────
+  summaryContainer: {
+    paddingBottom: 8,
+  },
+  summaryHeading: {
+    fontSize: fonts.sm,
+    fontFamily: fonts.bold,
+    color: colors.primary,
+    marginTop: 14,
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  summaryHeadingLarge: {
+    fontSize: fonts.base,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingVertical: 7,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderLight || colors.border,
+  },
+  summaryKey: {
+    flex: 1,
+    fontSize: fonts.sm,
+    fontFamily: fonts.medium,
+    color: colors.textSecondary,
+    paddingRight: 8,
+  },
+  summaryVal: {
+    flex: 1.5,
+    fontSize: fonts.sm,
+    fontFamily: fonts.regular,
+    color: colors.textPrimary,
+    textAlign: 'right',
+  },
+  summaryBulletRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginVertical: 3,
+    paddingLeft: 4,
+  },
+  summaryBulletDot: {
+    fontSize: fonts.base,
+    color: colors.primary,
+    marginRight: 8,
+    lineHeight: 20,
+  },
+  summaryBulletText: {
+    flex: 1,
+    fontSize: fonts.sm,
+    fontFamily: fonts.regular,
+    color: colors.textPrimary,
+    lineHeight: 20,
+  },
+  summaryPara: {
+    fontSize: fonts.sm,
+    fontFamily: fonts.regular,
+    color: colors.textPrimary,
+    lineHeight: 20,
+    marginVertical: 4,
+  },
+
+  // ── Checklist renderer styles ─────────────────────────────────────────────
+  checklistRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderLight || colors.border,
+  },
+  checklistLabel: {
+    flex: 1.2,
+    fontSize: fonts.sm,
+    fontFamily: fonts.medium,
+    color: colors.textSecondary,
+    paddingRight: 8,
+  },
+  checklistValue: {
+    flex: 1,
+    fontSize: fonts.sm,
+    fontFamily: fonts.bold,
+    color: colors.textPrimary,
+    textAlign: 'right',
+  },
+  checklistValueNA: {
+    color: colors.textSecondary,
+    fontFamily: fonts.regular,
   },
 });
 

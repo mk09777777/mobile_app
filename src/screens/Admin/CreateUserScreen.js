@@ -13,20 +13,15 @@ import { AnimatedLogoLoader } from '../../components/common';
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
 import { useAuth } from '../../context/AuthContext';
-import { useGetUserByIdQuery, useCreateUserMutation, useUpdateUserMutation, useDeleteUserMutation } from '../../store/api';
-
-const ROLE_OPTIONS = [
-  { label: 'Admin', value: 1 },
-  { label: 'Coral Designer', value: 2 },
-  { label: 'CAD Designer', value: 3 },
-  { label: 'Client', value: 4 },
-];
+import { useGetUserByIdQuery, useCreateUserMutation, useUpdateUserMutation, useDeleteUserMutation, useGetRolesQuery, useGetClientsQuery } from '../../store/api';
 
 const CreateUserScreen = ({ navigation, route }) => {
   const { user: currentUser } = useAuth();
   const isAdmin = currentUser?.role === 'admin' || currentUser?.roleNumber === 1;
   const { userId } = route.params || {};
   const isEditMode = !!userId;
+
+  const CLIENT_HANDLER_ROLE_ID = 5;
 
   const [formData, setFormData] = useState({
     name: '',
@@ -36,6 +31,7 @@ const CreateUserScreen = ({ navigation, route }) => {
     phone: '',
     clientId: '',
     skills: '',
+    clientsHandled: [],
   });
   const [errors, setErrors] = useState({});
   const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
@@ -44,6 +40,11 @@ const CreateUserScreen = ({ navigation, route }) => {
   const hideAlert = () => setAlertConfig(prev => ({ ...prev, visible: false }));
 
   // RTK Query hooks
+  const { data: rolesData = [], isLoading: fetchingRoles } = useGetRolesQuery();
+  const isClientHandler = Number(formData.role) === CLIENT_HANDLER_ROLE_ID;
+  const { data: clientsData = [], isLoading: fetchingClients } = useGetClientsQuery(undefined, {
+    skip: !isClientHandler,
+  });
   const { data: userData, isLoading: fetchingUser } = useGetUserByIdQuery(userId, {
     skip: !isEditMode || !userId,
   });
@@ -52,6 +53,9 @@ const CreateUserScreen = ({ navigation, route }) => {
   const [deleteUser, { isLoading: deleting }] = useDeleteUserMutation();
 
   const loading = creating || updating || deleting;
+
+  // Map API roles to { label, value } shape — fallback to id as value
+  const roleOptions = rolesData.map(r => ({ label: r.name, value: r.id }));
 
   // Populate form when user data is fetched
   useEffect(() => {
@@ -64,6 +68,7 @@ const CreateUserScreen = ({ navigation, route }) => {
         phone: userData.phone || '',
         clientId: userData.clientId || '',
         skills: userData.skills || '',
+        clientsHandled: userData.clientsHandled || [],
       });
     }
   }, [userData, isEditMode]);
@@ -81,7 +86,8 @@ const CreateUserScreen = ({ navigation, route }) => {
   };
 
   const handleSubmit = async () => {
-    if (!isAdmin) {
+    // Allow unauthenticated access (e.g. from login screen setup flow)
+    if (currentUser && !isAdmin) {
       showAlert('Access Denied', 'Only administrators can create/edit users.', 'warning');
       return;
     }
@@ -99,7 +105,9 @@ const CreateUserScreen = ({ navigation, route }) => {
         phone: formData.phone || undefined,
         clientId: formData.clientId || undefined,
         skills: formData.skills || undefined,
+        clientsHandled: isClientHandler ? formData.clientsHandled : undefined,
       };
+      console.log('📤 [CreateUser] Submitting payload:', JSON.stringify(payload, null, 2));
 
       // Only include password for new user creation, not for updates
       if (!isEditMode && formData.password) {
@@ -143,7 +151,7 @@ const CreateUserScreen = ({ navigation, route }) => {
     ]);
   };
 
-  if (loading || fetchingUser) {
+  if (fetchingUser || fetchingRoles || (isClientHandler && fetchingClients)) {
     return <AnimatedLogoLoader size={80} />;
   }
 
@@ -156,8 +164,8 @@ const CreateUserScreen = ({ navigation, route }) => {
             placeholder="Enter user name"
             value={formData.name}
             onChangeText={(text) => {
-              setFormData({ ...formData, name: text });
-              if (errors.name) setErrors({ ...errors, name: null });
+              setFormData(prev => ({ ...prev, name: text }));
+              if (errors.name) setErrors(prev => ({ ...prev, name: null }));
             }}
             error={errors.name}
           />
@@ -167,8 +175,8 @@ const CreateUserScreen = ({ navigation, route }) => {
             placeholder="Enter email address"
             value={formData.email}
             onChangeText={(text) => {
-              setFormData({ ...formData, email: text });
-              if (errors.email) setErrors({ ...errors, email: null });
+              setFormData(prev => ({ ...prev, email: text }));
+              if (errors.email) setErrors(prev => ({ ...prev, email: null }));
             }}
             keyboardType="email-address"
             autoCapitalize="none"
@@ -179,9 +187,7 @@ const CreateUserScreen = ({ navigation, route }) => {
             label="Phone (optional)"
             placeholder="Enter phone number"
             value={formData.phone}
-            onChangeText={(text) => {
-              setFormData({ ...formData, phone: text });
-            }}
+            onChangeText={(text) => setFormData(prev => ({ ...prev, phone: text }))}
             keyboardType="phone-pad"
           />
 
@@ -189,18 +195,14 @@ const CreateUserScreen = ({ navigation, route }) => {
             label="Skills (optional)"
             placeholder="Enter skills (e.g., Design, CAD, 3D Modeling)"
             value={formData.skills}
-            onChangeText={(text) => {
-              setFormData({ ...formData, skills: text });
-            }}
+            onChangeText={(text) => setFormData(prev => ({ ...prev, skills: text }))}
           />
 
           <Input
             label="Client ID (optional)"
             placeholder="Enter client ID"
             value={formData.clientId}
-            onChangeText={(text) => {
-              setFormData({ ...formData, clientId: text });
-            }}
+            onChangeText={(text) => setFormData(prev => ({ ...prev, clientId: text }))}
           />
 
           {!isEditMode && (
@@ -209,8 +211,8 @@ const CreateUserScreen = ({ navigation, route }) => {
               placeholder="Enter password"
               value={formData.password}
               onChangeText={(text) => {
-                setFormData({ ...formData, password: text });
-                if (errors.password) setErrors({ ...errors, password: null });
+                setFormData(prev => ({ ...prev, password: text }));
+                if (errors.password) setErrors(prev => ({ ...prev, password: null }));
               }}
               secureTextEntry
               error={errors.password}
@@ -220,7 +222,7 @@ const CreateUserScreen = ({ navigation, route }) => {
           <View style={styles.roleContainer}>
             <Text style={styles.roleLabel}>Role</Text>
             <View style={styles.roleOptions}>
-              {ROLE_OPTIONS.map((option) => (
+              {roleOptions.map((option) => (
                 <TouchableOpacity
                   key={option.value}
                   style={[
@@ -228,8 +230,8 @@ const CreateUserScreen = ({ navigation, route }) => {
                     formData.role === option.value && styles.roleOptionSelected,
                   ]}
                   onPress={() => {
-                    setFormData({ ...formData, role: option.value });
-                    if (errors.role) setErrors({ ...errors, role: null });
+                    setFormData(prev => ({ ...prev, role: option.value }));
+                    if (errors.role) setErrors(prev => ({ ...prev, role: null }));
                   }}>
                   <Text
                     style={[
@@ -243,6 +245,40 @@ const CreateUserScreen = ({ navigation, route }) => {
             </View>
             {errors.role && <Text style={styles.errorText}>{errors.role}</Text>}
           </View>
+
+          {isClientHandler && (
+            <View style={styles.roleContainer}>
+              <Text style={styles.roleLabel}>
+                Clients Handled ({formData.clientsHandled.length} selected)
+              </Text>
+              {clientsData.length === 0 ? (
+                <Text style={styles.emptyText}>No clients available</Text>
+              ) : (
+                <View style={styles.clientsGrid}>
+                  {clientsData.map(client => {
+                    const selected = formData.clientsHandled.includes(client.id);
+                    return (
+                      <TouchableOpacity
+                        key={client.id}
+                        style={[styles.clientChip, selected && styles.clientChipSelected]}
+                        onPress={() => {
+                          setFormData(prev => ({
+                            ...prev,
+                            clientsHandled: selected
+                              ? prev.clientsHandled.filter(id => id !== client.id)
+                              : [...prev.clientsHandled, client.id],
+                          }));
+                        }}>
+                        <Text style={[styles.clientChipText, selected && styles.clientChipTextSelected]}>
+                          {client.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+          )}
 
           <Button
             title={isEditMode ? 'Update User' : 'Create User'}
@@ -327,6 +363,37 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     color: colors.error,
     marginTop: 4,
+  },
+  clientsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  clientChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+  },
+  clientChipSelected: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  clientChipText: {
+    fontSize: fonts.sm,
+    fontFamily: fonts.medium,
+    color: colors.textPrimary,
+  },
+  clientChipTextSelected: {
+    color: colors.textWhite,
+  },
+  emptyText: {
+    fontSize: fonts.sm,
+    fontFamily: fonts.regular,
+    color: colors.textSecondary,
+    fontStyle: 'italic',
   },
   submitButton: {
     marginTop: 8,

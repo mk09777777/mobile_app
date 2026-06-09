@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   RefreshControl, ActivityIndicator, Modal, TextInput, FlatList,
@@ -60,7 +60,7 @@ const resolveItemCategory = (itemCategory, styleNo) => {
 /** Stage codes that use the setting-time-table formula (mirrors backend) */
 const SETTING_STAGE_CODES = new Set(['DIA_SET', 'SETTING']);
 
-/** Reference table: X pieces of Y diamond carats (NetWeight from diamond row) take Z hours */
+/** Reference table: X pieces of Y carats diamond (NetWeight) take Z hours */
 const SETTING_TIME_TABLE = [
   { diamondCarats: 0.05, baseQty: 10, baseTimeHours: 0.5  },
   { diamondCarats: 0.10, baseQty: 10, baseTimeHours: 1.0  },
@@ -87,87 +87,69 @@ const getTotalDiamondCarats = (diamondSpecs) => {
   return total > 0 ? total : undefined;
 };
 
-/** DEV standby qty — used when PerPc_Pieces and totalQty are both missing */
-const DEV_STANDBY_QTY = 6;
+const resolvePerPcPieces = (jc) => {
+  if (jc.perPcPieces && jc.perPcPieces > 0) return jc.perPcPieces;
+  const fromSpecs = jc.diamondSpecs?.reduce((s, d) => s + (d.stonesPerPiece ?? 0), 0) ?? 0;
+  return fromSpecs > 0 ? fromSpecs : undefined;
+};
 
 /**
- * Calculate setting stage expected hours.
- *
- * Qty resolution: perPcPieces (PerPc_Pieces column) → totalQty → DEV standby 6
- * Formula: perItemTime × qty  (handles qty < baseQty and qty > baseQty)
+ * Setting stage expected hours = NetWeight lookup × PerPc_Pieces qty.
+ *   NetWeight (= totalCaratsPerPiece) → table lookup → perItemTime
+ *   PerPc_Pieces (= stonesPerPiece)  → qty
+ *   stoneTime = perItemTime × qty
  */
-const calculateSettingTimeHours = (perPcPieces, totalQty, diaSizeMM, fallback = 12) => {
-  if (!diaSizeMM || diaSizeMM <= 0) return fallback;
-
-  const qty =
-    (perPcPieces && perPcPieces > 0) ? perPcPieces :
-    (totalQty    && totalQty    > 0) ? totalQty    :
-    (__DEV__ ? DEV_STANDBY_QTY : null);
-
-  if (!qty) return fallback;
-
-  if (__DEV__) {
-    const src = (perPcPieces && perPcPieces > 0) ? 'PerPc_Pieces'
-      : (totalQty && totalQty > 0) ? 'totalQty'
-      : `DEV_STANDBY(${DEV_STANDBY_QTY})`;
-    if (src.startsWith('DEV')) console.log(`[SettingTime] qty missing — using ${src}`);
+const calculateSettingTimeHours = (totalCaratsPerPiece, stonesPerPiece, fallback = 0) => {
+  if (!totalCaratsPerPiece || totalCaratsPerPiece <= 0 || !stonesPerPiece || stonesPerPiece <= 0) {
+    return fallback;
   }
-
   const entry = SETTING_TIME_TABLE.reduce((best, e) =>
-    Math.abs(e.diamondCarats - diaSizeMM) < Math.abs(best.diamondCarats - diaSizeMM) ? e : best
+    Math.abs(e.diamondCarats - totalCaratsPerPiece) < Math.abs(best.diamondCarats - totalCaratsPerPiece) ? e : best
   );
   const perItemTime = entry.baseTimeHours / entry.baseQty;
-  return perItemTime * qty;
+  const result = perItemTime * stonesPerPiece;
+
+  if (__DEV__) {
+    console.log(
+      `[SettingTime] ${entry.baseTimeHours}h/${entry.baseQty}pcs @ ${entry.diamondCarats}ct → ${perItemTime.toFixed(4)}h/pc × ${stonesPerPiece}pcs = ${result.toFixed(2)}h`
+    );
+  }
+
+  return result;
 };
 
 
 /**
  * Mirror of the backend getExpectedHours() helper.
- * Uses stage.durationRules if available, falls back to expectedDurationHours.
+ * Case-insensitive category matching (Excel sends "EARRING", rules saved as "Earring").
  */
-const getExpectedHours = (stage, itemCategory, weightGrams) => {
-  const rules = stage?.durationRules;
+const getExpectedHours = (stage, itemCategory, weightGrams, actualQty) => {
+  const rules  = stage?.durationRules;
   const weight = weightGrams ?? 0;
-  const cat    = itemCategory ?? '';
+  const cat    = (itemCategory ?? '').toLowerCase();
+  const defaultH = stage?.expectedDurationHours ?? 0;
 
-  if (!rules?.length) {
-    if (__DEV__) console.log(
-      `[DelayCalc] getExpectedHours → ${stage?.code} | category="${cat}" weight=${weight}g` +
-      ` | NO rules → fallback ${stage?.expectedDurationHours ?? 0}h`
-    );
-    return stage?.expectedDurationHours ?? 0;
-  }
+  const applyRule = (r) => {
+    if (r.qty && r.qty > 1 && actualQty && actualQty > 0) {
+      return (actualQty / r.qty) * r.hours;
+    }
+    return r.hours;
+  };
 
-  // 1. Category + weight match
+  if (!rules?.length) return defaultH;
+
   const exact = rules.find(r =>
-    r.category === cat && weight >= r.weightMin && weight <= r.weightMax
+    r.category.toLowerCase() === cat &&
+    weight >= r.weightMin && weight <= r.weightMax
   );
-  if (exact) {
-    if (__DEV__) console.log(
-      `[DelayCalc] getExpectedHours → ${stage?.code} | category="${cat}" weight=${weight}g` +
-      ` | RULE MATCH: ${exact.weightLabel || `${exact.weightMin}-${exact.weightMax}g`} → ${exact.hours}h`
-    );
-    return exact.hours;
-  }
+  if (exact) return applyRule(exact);
 
-  // 2. Any-category rule + weight match
   const anyCat = rules.find(r =>
     r.category === '' && weight >= r.weightMin && weight <= r.weightMax
   );
-  if (anyCat) {
-    if (__DEV__) console.log(
-      `[DelayCalc] getExpectedHours → ${stage?.code} | category="${cat}" weight=${weight}g` +
-      ` | ANY-CAT RULE: ${anyCat.weightLabel || `${anyCat.weightMin}-${anyCat.weightMax}g`} → ${anyCat.hours}h`
-    );
-    return anyCat.hours;
-  }
+  if (anyCat) return applyRule(anyCat);
 
-  // 3. Fallback
-  if (__DEV__) console.log(
-    `[DelayCalc] getExpectedHours → ${stage?.code} | category="${cat}" weight=${weight}g` +
-    ` | NO rule match (${rules.length} rules) → fallback ${stage?.expectedDurationHours ?? 0}h`
-  );
-  return stage?.expectedDurationHours ?? 0;
+  return defaultH;
 };
 import { formatDate } from '../../../utils/helpers';
 
@@ -181,7 +163,7 @@ const PRIORITY_COLORS = { critical: colors.error, urgent: colors.warning, normal
 const specToCode = (d) => `${d.gSize}|${d.sieve}|${d.diaSizeMM}`;
 const specLabel = (d) => `${d.gSize} · ${d.sieve} · ${d.diaSizeMM}mm`;
 
-const MovementRow = ({ mv, expectedHours }) => {
+const MovementRow = React.memo(({ mv, expectedHours }) => {
   const isOpen = !mv.exitedAt;
 
   // Live hours = time since enteredAt (our smart-estimated entry time)
@@ -209,9 +191,11 @@ const MovementRow = ({ mv, expectedHours }) => {
 
   const actualHours = hasNoContext ? null : rawActualHours;
 
-  const delayHours = isOpen && expectedHours > 0 && liveHours != null
-    ? liveHours - expectedHours
-    : null;
+  const delayHours = expectedHours > 0 && actualHours != null
+    ? actualHours - expectedHours
+    : isOpen && expectedHours > 0 && liveHours != null
+      ? liveHours - expectedHours
+      : null;
 
   // Progress bar: how far through expected time (capped at 100%)
   const progressPct = expectedHours > 0 && actualHours != null
@@ -219,7 +203,7 @@ const MovementRow = ({ mv, expectedHours }) => {
     : null;
 
   const progressColor = delayHours == null
-    ? colors.primary                           // closed movement
+    ? colors.primary                           // no duration context
     : delayHours > 0 ? colors.error            // overdue
     : delayHours > -expectedHours * 0.1 ? colors.warning  // within 10% of expected
     : colors.success;                           // plenty of time left
@@ -232,12 +216,12 @@ const MovementRow = ({ mv, expectedHours }) => {
         {/* Stage + badges */}
         <View style={styles.mvStageRow}>
           <Text style={styles.mvStage}>{mv.toStageCode}{mv.cellCode ? ` (${mv.cellCode})` : ''}</Text>
-          {isOpen && delayHours > 0 && (
+          {delayHours > 0 && (
             <View style={styles.mvDelayBadge}>
               <Text style={styles.mvDelayText}>+{delayHours.toFixed(1)}h delay</Text>
             </View>
           )}
-          {isOpen && delayHours !== null && delayHours <= 0 && (
+          {delayHours !== null && delayHours <= 0 && (
             <View style={styles.mvOnTimeBadge}>
               <Text style={styles.mvOnTimeText}>on time</Text>
             </View>
@@ -282,7 +266,7 @@ const MovementRow = ({ mv, expectedHours }) => {
             )}
           </View>
         )}
-        {mv.qcResult && (
+        {mv.qcResult != null && (
           <View style={[styles.qcBadge, { backgroundColor: mv.qcResult === 'pass' ? colors.success + '20' : colors.error + '20' }]}>
             <Text style={[styles.qcText, { color: mv.qcResult === 'pass' ? colors.success : colors.error }]}>QC: {mv.qcResult}</Text>
           </View>
@@ -296,7 +280,7 @@ const MovementRow = ({ mv, expectedHours }) => {
       </View>
     </View>
   );
-};
+});
 
 const JobCardDetailScreen = ({ route, navigation }) => {
   const { jobCardId, pieceCode } = route.params || {};
@@ -320,6 +304,7 @@ const JobCardDetailScreen = ({ route, navigation }) => {
   const [manageVisible, setManageVisible] = useState(false);
   const [allocations, setAllocations] = useState([]);
   const [loadingAllocations, setLoadingAllocations] = useState(false);
+  const [showAllSpecs, setShowAllSpecs] = useState(false);
 
   const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
   const showAlert = (title, message, type = 'info', buttons = []) =>
@@ -472,6 +457,342 @@ const JobCardDetailScreen = ({ route, navigation }) => {
     );
   };
 
+  // ── Precomputed memos ─────────────────────────────────────────────────────
+
+  // O(1) stage lookup — rebuilt only when stages list changes
+  const stageMap = useMemo(() => new Map(stages.map(s => [s.code, s])), [stages]);
+
+  // Resolved item category and diamond carats are constant for a given job card
+  const resolvedCategory = useMemo(
+    () => jc ? resolveItemCategory(jc.itemCategory, jc.styleNo) : null,
+    [jc]
+  );
+  // Stage progress analysis — the heavy delay-calculation block, runs only when
+  // jc, movements, or stages change (not on every render).
+  const stageAnalysis = useMemo(() => {
+    if (!stages.length || !jc) return null;
+
+    const flowStages = stages.filter(s => s.displayOrder >= 1 && s.displayOrder < 90);
+    const completedCodes = new Set(movements.filter(m => m.exitedAt).map(m => m.toStageCode));
+    const currentByStage = new Map();
+    jc.currentStageDistribution?.forEach(s => {
+      const e = currentByStage.get(s.stageCode);
+      if (e) { e.qty += s.qty; e.cells.push(s.cellCode); }
+      else currentByStage.set(s.stageCode, { qty: s.qty, cells: [s.cellCode] });
+    });
+
+    const category = resolveItemCategory(jc.itemCategory, jc.styleNo);
+    const sMap = new Map(stages.map(s => [s.code, s]));
+    const delayByStage = new Map();
+    const now = Date.now();
+
+    const sortedMvs = [...movements].sort((a, b) =>
+      new Date(a.enteredAt).getTime() - new Date(b.enteredAt).getTime()
+    );
+
+    // ── Per-stage delay (open movements only, for UI indicators) ────────
+    for (const mv of movements) {
+      if (mv.exitedAt) continue;
+      const stage = sMap.get(mv.toStageCode);
+      if (!stage) continue;
+
+      let expected = getExpectedHours(stage, category, jc.metalWeightPerPiece);
+      if (SETTING_STAGE_CODES.has(mv.toStageCode)) {
+        const nw = getTotalDiamondCarats(jc.diamondSpecs);
+        const pp = resolvePerPcPieces(jc);
+        expected += calculateSettingTimeHours(nw, pp, 0);
+      }
+
+      if (expected > 0) {
+        const enteredMs = new Date(mv.enteredAt).getTime();
+        const hoursInStage = (now - enteredMs) / 3_600_000;
+        const delay = hoursInStage - expected;
+        const existing = delayByStage.get(mv.toStageCode);
+        if (!existing || delay > existing.delay) {
+          delayByStage.set(mv.toStageCode, { hoursInStage, expected, delay });
+        }
+      }
+    }
+
+    const overdueStages = [...delayByStage.entries()]
+      .filter(([, v]) => v.delay > 0)
+      .sort((a, b) => b[1].delay - a[1].delay);
+
+    // ── Stage Delay Calculation (following Stage Delay Calculation Notes) ──
+    if (__DEV__) {
+      (function calcLogger() {
+        const L = (msg) => msg; // just for formatting consistency
+        const lines = [];
+        const push = (s) => lines.push(s);
+
+        push(L(`\n╔══════════════════════════════════════════════════════════════════╗`));
+        push(L(`║     STAGE DELAY CALCULATION  —  ${jc.gatiPieceCode}${' '.repeat(Math.max(0, 46 - jc.gatiPieceCode.length))}║`));
+        push(L(`╚══════════════════════════════════════════════════════════════════╝`));
+
+        // ── 1. STAGE FLOW ──────────────────────────────────────────────────
+        const sortedFlow = [...flowStages].sort((a, b) => a.displayOrder - b.displayOrder);
+
+        const firstMvStage = sortedMvs.length > 0 ? sortedMvs[0].toStageCode : null;
+        const firstStageIdx = firstMvStage
+          ? sortedFlow.findIndex(s => s.code === firstMvStage)
+          : -1;
+
+        const openMvs = sortedMvs.filter(m => !m.exitedAt);
+        const currentMvStage = openMvs.length > 0 ? openMvs[openMvs.length - 1].toStageCode : null;
+        const currentStageIdx = currentMvStage
+          ? sortedFlow.findIndex(s => s.code === currentMvStage)
+          : -1;
+
+        const startIdx = firstStageIdx >= 0 ? firstStageIdx : 0;
+        const currIdx = currentStageIdx >= 0 ? currentStageIdx : sortedFlow.length - 1;
+        const movementSet = new Set(sortedMvs.map(m => m.toStageCode));
+
+        push(L(`\n  ── Step 1: Stage Flow ────────────────────────────────────────`));
+        push(L(`  Start Stage  : ${firstMvStage ?? 'N/A'} (first movement entered)`));
+        push(L(`  Current Stage: ${currentMvStage ?? 'N/A'} (latest open movement)`));
+        push(L(`  Full Stage Flow (Start → Current):`));
+        for (let i = startIdx; i <= currIdx; i++) {
+          const s = sortedFlow[i];
+          const hasMv = movementSet.has(s.code);
+          const isCurrent = s.code === currentMvStage;
+          const isStart = s.code === firstMvStage;
+          const marker = isCurrent ? ' ◀ CURRENT' : isStart ? ' ▶ START' : hasMv ? ' •' : ' (no movement)';
+          push(L(`    ${(i - startIdx + 1).toString().padStart(2)}. ${s.code.padEnd(18)} displayOrder=${s.displayOrder}${marker}`));
+        }
+
+        // ── Job Start Timestamp ────────────────────────────────────────────
+        const firstEntryMs = sortedMvs.length > 0 ? new Date(sortedMvs[0].enteredAt).getTime() : now;
+        const currentEntryMs = currentMvStage
+          ? (() => { const m = openMvs.find(mv => mv.toStageCode === currentMvStage); return m ? new Date(m.enteredAt).getTime() : now; })()
+          : now;
+
+        push(L(`\n  ── Step 2: Job Start & Current Timestamps ────────────────────`));
+        push(L(`  Job Start Timestamp  : ${new Date(firstEntryMs).toLocaleString()} (first movement enteredAt)`));
+        push(L(`  Current Stage Time   : ${new Date(currentEntryMs).toLocaleString()} (current stage enteredAt)`));
+
+        // ── 3. EXPECTED TIME PER STAGE ──────────────────────────────────────
+        push(L(`\n  ── Step 3: Expected Time Per Stage ─────────────────────────`));
+
+        let cumulativeExpected = 0;
+        let expectedTillCurrent = 0;
+        let actualTillCurrent = 0;
+        const stageDetails = [];
+
+        for (let i = startIdx; i <= currIdx; i++) {
+          const s = sortedFlow[i];
+          const mvsForStage = sortedMvs.filter(m => m.toStageCode === s.code);
+          const isSetting = SETTING_STAGE_CODES.has(s.code);
+
+          let expectedH = 0;
+          let calcDetail = '';
+          let ruleRef = '';
+          const weight = jc.metalWeightPerPiece ?? 0;
+
+          const catWtTime = getExpectedHours(s, category, weight);
+          let stoneTime = 0;
+          if (isSetting) {
+            const nw = getTotalDiamondCarats(jc.diamondSpecs);
+            const pp = resolvePerPcPieces(jc);
+            stoneTime = calculateSettingTimeHours(nw, pp, 0);
+          }
+          ruleRef = `cat+wt = ${catWtTime.toFixed(2)}h`;
+          if (stoneTime > 0) ruleRef += ` | stone(NetWeight×PerPc) = ${stoneTime.toFixed(2)}h`;
+
+          expectedH = parseFloat((catWtTime + stoneTime).toFixed(2));
+          calcDetail = ` = ${catWtTime.toFixed(2)}h${stoneTime > 0 ? ` + ${stoneTime.toFixed(2)}h(stone)` : ''}`;
+
+          // Actual time for this stage (for info — not used in spec formula)
+          let actualH = 0;
+          let hasMovements = mvsForStage.length > 0;
+          if (hasMovements) {
+            let stageEntryMs = null;
+            let stageExitMs = null;
+            for (const mv of mvsForStage) {
+              const eMs = new Date(mv.enteredAt).getTime();
+              const xMs = mv.exitedAt ? new Date(mv.exitedAt).getTime() : null;
+              if (stageEntryMs === null || eMs < stageEntryMs) stageEntryMs = eMs;
+              if (xMs !== null && (stageExitMs === null || xMs > stageExitMs)) stageExitMs = xMs;
+            }
+            actualH = stageExitMs !== null
+              ? (stageExitMs - stageEntryMs) / 3_600_000
+              : (now - stageEntryMs) / 3_600_000;
+          }
+
+          cumulativeExpected += expectedH;
+
+          const isStartStage = s.code === firstMvStage;
+          const isCurrStage = s.code === currentMvStage;
+          const stageMarker = isCurrStage ? ' ◀ CURRENT' : isStartStage ? ' ▶ START' : '';
+
+          stageDetails.push({ code: s.code, expectedH, actualH, hasMovement: hasMovements, isSetting, ruleRef, calcDetail, stageMarker });
+        }
+
+        expectedTillCurrent = cumulativeExpected;
+        actualTillCurrent = (currentEntryMs - firstEntryMs) / 3_600_000;
+
+        // Print per-stage details with actual time, individual delay, and cumulative delay
+        // Note: "actual" = time spent in that specific stage (from movement data).
+        // Stages with no movement records show N/A — the piece passed through them
+        // (per the backend stage flow) but WIP snapshots don't capture individual timestamps.
+        // Their expected time IS still counted in the cumulative expected sum.
+        let cumExpected = 0;
+        let cumActual = 0;
+        push(L(`\n    ── Per-Stage Breakdown (flow order) ──────────────`));
+        push(L(`    Stages without movement data show N/A for actual/delay.`));
+        push(L(`    Expected time IS counted in cumulative Σ regardless.`));
+        for (const sd of stageDetails) {
+          cumExpected += sd.expectedH;
+          if (sd.hasMovement) cumActual += sd.actualH;
+          const stageDelay = sd.hasMovement ? sd.actualH - sd.expectedH : null;
+          const delayIcon = stageDelay !== null ? (stageDelay > 0 ? '🔴' : stageDelay > -sd.expectedH * 0.1 ? '🟡' : '🟢') : '⬜';
+          const line = sd.isSetting ? 'Setting' : 'Normal';
+          push(L(`\n    ${sd.code}${sd.stageMarker}`));
+          push(L(`    type       : ${line}`));
+          push(L(`    expected   :${sd.calcDetail}`));
+          if (sd.hasMovement) {
+            push(L(`    actual     : ${sd.actualH.toFixed(2)}h (time spent in this stage)`));
+            push(L(`    stage delay: ${delayIcon} ${stageDelay >= 0 ? '+' : ''}${stageDelay.toFixed(2)}h`));
+          } else {
+            push(L(`    actual     : N/A (no movement data — WIP snapshot covers this)`));
+            push(L(`    stage delay: ⬜ N/A`));
+          }
+          push(L(`    cumulative : Σexp=${cumExpected.toFixed(2)}h  Σact=${cumActual.toFixed(2)}h  Σdelay=${delayIcon} ${(cumActual - cumExpected) >= 0 ? '+' : ''}${(cumActual - cumExpected).toFixed(2)}h`));
+          push(L(`    reference  : ${sd.ruleRef}`));
+        }
+
+        push(L(`\n    ── Expected Time Summary ──`));
+        push(L(`    Σ Expected (Start → Current) = ${expectedTillCurrent.toFixed(2)}h`));
+
+        // ── 4. ACTUAL TIME TILL CURRENT STAGE ─────────────────────────────
+        push(L(`\n  ── Step 4: Actual Time Till Current Stage ───────────────────`));
+        push(L(`  Formula: Current Stage Timestamp - Job Start Timestamp`));
+        push(L(`    = ${new Date(currentEntryMs).toLocaleString()} - ${new Date(firstEntryMs).toLocaleString()}`));
+        push(L(`    = ${actualTillCurrent.toFixed(2)}h`));
+        push(L(`  Note: This is the TOTAL wall-clock time from job start to now.`));
+        push(L(`        Per-stage actual hours above are informational breakdown.`));
+
+        // ── 5. REVERSE STAGE LOGIC ─────────────────────────────────────────
+        push(L(`\n  ── Step 5: Reverse Stage Logic (Rework Detection) ────────────`));
+
+        const displayOrderMap = new Map(flowStages.map(s => [s.code, s.displayOrder]));
+
+        let totalReverseDelay = 0;
+        let foundReverse = false;
+        const reverseSegments = [];
+
+        for (let i = 1; i < sortedMvs.length; i++) {
+          const prev = sortedMvs[i - 1];
+          const curr = sortedMvs[i];
+          const prevOrder = displayOrderMap.get(prev.toStageCode);
+          const currOrder = displayOrderMap.get(curr.toStageCode);
+          if (prevOrder != null && currOrder != null && currOrder < prevOrder) {
+            // Reverse detected: moved backward
+            foundReverse = true;
+            const prevStage = sMap.get(prev.toStageCode);
+            const currStage = sMap.get(curr.toStageCode);
+            const getExpected = (stg) => {
+              if (!stg) return 0;
+              const catWt = getExpectedHours(stg, category, jc.metalWeightPerPiece);
+              if (SETTING_STAGE_CODES.has(stg.code)) {
+                const nw = getTotalDiamondCarats(jc.diamondSpecs);
+                const pp = resolvePerPcPieces(jc);
+                return catWt + calculateSettingTimeHours(nw, pp, 0);
+              }
+              return catWt;
+            };
+            const prevExp = getExpected(prevStage);
+            const currExp = getExpected(currStage);
+            const revDelay = (prevExp || 0) + (currExp || 0);
+            totalReverseDelay += revDelay;
+            reverseSegments.push({
+              fromStage: prev.toStageCode,
+              toStage: curr.toStageCode,
+              prevOrder,
+              currOrder,
+              prevExp: prevExp || 0,
+              currExp: currExp || 0,
+              revDelay,
+            });
+          }
+        }
+
+        if (foundReverse) {
+          push(L(`  ⚠️  Reverse (rework) movements detected:`));
+          for (const rs of reverseSegments) {
+            push(L(`    ${rs.fromStage}(order=${rs.prevOrder}) → ${rs.toStage}(order=${rs.currOrder}) — backward step`));
+            push(L(`    Reverse Delay = Expected(${rs.fromStage}) + Expected(${rs.toStage})`));
+            push(L(`                  = ${rs.prevExp.toFixed(2)}h + ${rs.currExp.toFixed(2)}h = ${rs.revDelay.toFixed(2)}h`));
+          }
+          push(L(`    Total Reverse Delay = ${totalReverseDelay.toFixed(2)}h`));
+        } else {
+          push(L(`  ✅ No reverse movement detected (displayOrder strictly increasing)`));
+        }
+
+        const finalExpected = expectedTillCurrent + totalReverseDelay;
+
+        // ── 6. FINAL EXPECTED TIME ────────────────────────────────────────
+        push(L(`\n  ── Step 6: Final Expected Time ─────────────────────────────`));
+        push(L(`  Formula: Expected Till Current Stage + Reverse Delay`));
+        push(L(`    = ${expectedTillCurrent.toFixed(2)}h + ${totalReverseDelay.toFixed(2)}h`));
+        push(L(`    = ${finalExpected.toFixed(2)}h`));
+
+        // ── 7. STAGE DELAY ──────────────────────────────────────────────────
+        const stageDelay = actualTillCurrent - finalExpected;
+
+        push(L(`\n  ── Step 7: Stage Delay Calculation ─────────────────────────`));
+        push(L(`  Formula: Actual Till Current Stage - Final Expected Time`));
+        push(L(`    = ${actualTillCurrent.toFixed(2)}h - ${finalExpected.toFixed(2)}h`));
+        push(L(`    = ${stageDelay >= 0 ? '+' : ''}${stageDelay.toFixed(2)}h`));
+
+        // ── 8. STATUS ──────────────────────────────────────────────────────
+        let status, statusIcon;
+        if (stageDelay > 0) { status = 'DELAYED'; statusIcon = '🔴'; }
+        else if (stageDelay === 0) { status = 'ON TIME'; statusIcon = '🟢'; }
+        else { status = 'AHEAD OF SCHEDULE'; statusIcon = '🟢'; }
+
+        push(L(`\n  ── Step 8: Delay Status ─────────────────────────────────────`));
+        push(L(`  Stage Delay > 0  → ${statusIcon} ${status}`));
+
+        push(L(`\n  ──────────────────────────────────────────────────────────────`));
+        push(L(`  INPUT SUMMARY:`));
+        push(L(`    Piece           : ${jc.gatiPieceCode}`));
+        push(L(`    Category        : ${category ?? 'N/A'}`));
+        push(L(`    Metal Weight    : ${jc.metalWeightPerPiece ?? 0}g`));
+        push(L(`    Total Qty       : ${jc.totalQty}`));
+        push(L(`  ──────────────────────────────────────────────────────────────`));
+        push(L(`  FULL TIMELINE (past → current):`));
+        for (let ti = 0; ti < stageDetails.length; ti++) {
+          const sd = stageDetails[ti];
+          const sDelay = sd.hasMovement ? sd.actualH - sd.expectedH : null;
+          const icon = sDelay !== null ? (sDelay > 0 ? '🔴' : sDelay > -sd.expectedH * 0.1 ? '🟡' : '🟢') : '⬜';
+          const actStr = sd.hasMovement ? `${sd.actualH.toFixed(2)}h` : 'N/A  ';
+          const delayStr = sDelay !== null ? `${sDelay >= 0 ? '+' : ''}${sDelay.toFixed(2)}h` : 'N/A  ';
+          push(L(`    ${(ti + 1).toString().padStart(2)}. ${sd.code.padEnd(16)} exp=${sd.expectedH.toFixed(2)}h  act=${actStr}  ${icon} ${delayStr}${sd.stageMarker}`));
+        }
+        push(L(`  ──────────────────────────────────────────────────────────────`));
+        push(L(`  FINAL RESULT:`));
+        push(L(`    ${statusIcon}  ${status}`));
+        push(L(`    Actual Till Current   : ${actualTillCurrent.toFixed(2)}h  (wall clock: start→now)`));
+        push(L(`    Expected Till Current : ${expectedTillCurrent.toFixed(2)}h  (Σ stage expectations)`));
+        push(L(`    Reverse Delay         : ${totalReverseDelay.toFixed(2)}h  (rework penalty)`));
+        push(L(`    Final Expected Time   : ${finalExpected.toFixed(2)}h  (expected + reverse)`));
+        push(L(`    Stage Delay           : ${stageDelay >= 0 ? '+' : ''}${stageDelay.toFixed(2)}h  (actual − final expected)`));
+        push(L(`  ══════════════════════════════════════════════════════════════\n`));
+
+        console.log(lines.join('\n'));
+      })();
+    }
+
+    return { flowStages, completedCodes, currentByStage, delayByStage, overdueStages };
+  }, [jc, movements, stages]);
+
+  // Allocation totals — recomputed only when allocations array changes
+  const allocSummary = useMemo(() => {
+    const totalAllocated = allocations.reduce((s, a) => s + (a.quantityAllocated ?? 0), 0);
+    const totalConsumed  = allocations.reduce((s, a) => s + (a.quantityConsumed  ?? 0), 0);
+    return { totalAllocated, totalConsumed, totalRemaining: totalAllocated - totalConsumed };
+  }, [allocations]);
+
   // ─────────────────────────────────────────────────────────────────────────
   if (loading) return <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>;
   if (!jc) return <View style={styles.center}><Text style={styles.errorText}>Job card not found</Text></View>;
@@ -486,14 +807,6 @@ const JobCardDetailScreen = ({ route, navigation }) => {
   const etaDelayDays = eta && due ? Math.ceil((eta - due) / 86_400_000) : null;
   const etaIsDelayed = etaDelayDays !== null && etaDelayDays > 0;
   const etaIsEarly   = etaDelayDays !== null && etaDelayDays < 0;
-
-  if (__DEV__) console.log(
-    `[DelayCalc] ETA Summary for ${jc.gatiPieceCode}:` +
-    `\n  plannedCompletionAt : ${jc.plannedCompletionAt ?? '(not set — refreshAllETAs not run yet)'}` +
-    `\n  expectedDeliveryAt  : ${jc.expectedDeliveryAt ?? '(not set)'}` +
-    `\n  etaDelayDays        : ${etaDelayDays ?? 'n/a'}` +
-    `\n  status              : ${etaIsDelayed ? '⚠️ DELAYED' : etaIsEarly ? '✅ EARLY' : '✅ ON TIME'}`
-  );
 
   return (
     <SafeAreaView style={styles.safe} edges={['left', 'right', 'bottom']}>
@@ -546,304 +859,139 @@ const JobCardDetailScreen = ({ route, navigation }) => {
           </View>
         </View>
 
-        {/* Stage flow + delay summary */}
-        {stages.length > 0 && (() => {
-          const flowStages = stages.filter(s => s.displayOrder >= 1 && s.displayOrder < 90);
-          const completedCodes = new Set(movements.filter(m => m.exitedAt).map(m => m.toStageCode));
-          const currentByStage = new Map();
-          jc.currentStageDistribution?.forEach(s => {
-            const e = currentByStage.get(s.stageCode);
-            if (e) { e.qty += s.qty; e.cells.push(s.cellCode); }
-            else currentByStage.set(s.stageCode, { qty: s.qty, cells: [s.cellCode] });
-          });
-
-          // ── Delay calculation ─────────────────────────────────────────────
-          const resolvedCategory = resolveItemCategory(jc.itemCategory, jc.styleNo);
-
-          if (__DEV__) {
-            console.log('\n[DelayCalc] ═══ EXPECTED HOURS PER STAGE ═══════════════════');
-            console.log(`  Item   : ${jc.gatiPieceCode}`);
-            console.log(`  Category: ${resolvedCategory ?? '(unknown)'} | Weight: ${jc.metalWeightPerPiece ?? 0}g`);
-            console.log('  ─────────────────────────────────────────────────────');
-            stages
-              .filter(s => s.displayOrder >= 1 && s.displayOrder < 90)
-              .forEach(s => {
-                const hrs = getExpectedHours(s, resolvedCategory, jc.metalWeightPerPiece);
-                const rules = s.durationRules ?? [];
-                const ruleSource = (() => {
-                  if (!rules.length) return 'fallback (no rules)';
-                  const exact = rules.find(r =>
-                    r.category === (resolvedCategory ?? '') &&
-                    (jc.metalWeightPerPiece ?? 0) >= r.weightMin &&
-                    (jc.metalWeightPerPiece ?? 0) <= r.weightMax
-                  );
-                  if (exact) return `rule: ${exact.weightLabel || `${exact.weightMin}-${exact.weightMax}g`} (${exact.category})`;
-                  const anyCat = rules.find(r =>
-                    r.category === '' &&
-                    (jc.metalWeightPerPiece ?? 0) >= r.weightMin &&
-                    (jc.metalWeightPerPiece ?? 0) <= r.weightMax
-                  );
-                  if (anyCat) return `rule: ${anyCat.weightLabel || `${anyCat.weightMin}-${anyCat.weightMax}g`} (any category)`;
-                  return `fallback (${rules.length} rules, none matched)`;
-                })();
-                console.log(`  ${s.code.padEnd(16)} → ${String(hrs).padStart(4)}h  [${ruleSource}]`);
-              });
-            console.log('  ═══════════════════════════════════════════════════════\n');
-          }
-
-          if (__DEV__) console.log(
-            `\n[DelayCalc] ── Job Card: ${jc.gatiPieceCode} ──────────────────\n` +
-            `  styleNo            : ${jc.styleNo ?? '(none)'}\n` +
-            `  itemCategory (raw) : ${jc.itemCategory ?? '(not set)'}\n` +
-            `  resolvedCategory   : ${resolvedCategory ?? '(could not resolve)'}\n` +
-            `  metalWeightPerPiece: ${jc.metalWeightPerPiece ?? 0}g\n` +
-            `  open movements     : ${movements.filter(m => !m.exitedAt).length}`
-          );
-
-          const stageMap  = new Map(stages.map(s => [s.code, s]));
-          const flowStagesOrdered = stages
-            .filter(s => s.displayOrder >= 1 && s.displayOrder < 90)
-            .sort((a, b) => a.displayOrder - b.displayOrder);
-          const delayByStage = new Map();
-
-          if (__DEV__) console.log(
-            '\n[DelayCalc] ════════════════════════════════════════════\n' +
-            `[DelayCalc]  Piece    : ${jc.gatiPieceCode}\n` +
-            `[DelayCalc]  Category : ${resolvedCategory ?? '(unknown)'}   Weight: ${jc.metalWeightPerPiece ?? 0}g\n` +
-            '[DelayCalc] ════════════════════════════════════════════'
-          );
-
-          for (const mv of movements) {
-            if (mv.exitedAt) continue;
-            const stage = stageMap.get(mv.toStageCode);
-            if (!stage) {
-              if (__DEV__) console.log(`[DelayCalc]  ❓ ${mv.toStageCode} → stage not in list`);
-              continue;
-            }
-
-            // ── Smart enteredAt verification ───────────────────────────────
-            // Reconstruct what the backend computed so we can verify it here.
-            if (__DEV__ && mv.fromStageCode) {
-              const fromIdx = flowStagesOrdered.findIndex(s => s.code === mv.fromStageCode);
-              const toIdx   = flowStagesOrdered.findIndex(s => s.code === mv.toStageCode);
-              const stagesSkipped = toIdx - fromIdx - 1;
-
-              if (stagesSkipped > 0) {
-                // Skipped stages — show the full proportional calculation
-                let E_before = 0;
-                const skippedNames = [];
-                for (let i = fromIdx; i < toIdx; i++) {
-                  E_before += flowStagesOrdered[i]?.expectedDurationHours ?? 0;
-                  skippedNames.push(`${flowStagesOrdered[i]?.code}(${flowStagesOrdered[i]?.expectedDurationHours ?? 0}h)`);
-                }
-                const E_total = E_before + (stage?.expectedDurationHours ?? 0);
-                const fraction = E_total > 0 ? E_before / E_total : 0;
-
-                console.log(
-                  `\n[DelayCalc]  ┌─ Stage: ${mv.toStageCode}  [${'SKIPPED ' + stagesSkipped + ' stage(s)'}]\n` +
-                  `             │  From          : ${mv.fromStageCode}\n` +
-                  `             │  Skipped       : ${skippedNames.join(' → ')}\n` +
-                  `             │  E_before       : ${E_before}h  (all skipped stages)\n` +
-                  `             │  E_current      : ${stage.expectedDurationHours}h  (${mv.toStageCode})\n` +
-                  `             │  E_total        : ${E_total}h\n` +
-                  `             │  fraction       : ${fraction.toFixed(4)}  (${E_before}/${E_total})\n` +
-                  `             │\n` +
-                  `             │  enteredAt (backend smart estimate): ${new Date(mv.enteredAt).toLocaleString()}\n` +
-                  `             │  [formula: prevConfirmedAt + elapsed × ${fraction.toFixed(3)}]\n` +
-                  `             └─`
-                );
-              } else if (toIdx <= fromIdx) {
-                // Rework — backward movement
-                // Total expected hrs for all stages from start UP TO and including rework stage
-                const totalExpectedToRework = flowStagesOrdered
-                  .slice(0, toIdx + 1)
-                  .reduce((sum, s) => sum + (s?.expectedDurationHours ?? 0), 0);
-                // All closed movements give us first enteredAt (approximate piece start)
-                const firstMovement = movements
-                  .filter(m => m.enteredAt)
-                  .sort((a, b) => new Date(a.enteredAt) - new Date(b.enteredAt))[0];
-                const pieceStartedAt = firstMovement ? new Date(firstMovement.enteredAt) : null;
-                const totalElapsedH = pieceStartedAt
-                  ? (Date.now() - pieceStartedAt.getTime()) / 3_600_000
-                  : null;
-                const totalDelay = totalElapsedH != null
-                  ? totalElapsedH - totalExpectedToRework
-                  : null;
-
-                console.log(
-                  `\n[DelayCalc]  ┌─ Stage: ${mv.toStageCode}  [🔄 REWORK from ${mv.fromStageCode}]\n` +
-                  `             │  enteredAt (fresh timer) : ${new Date(mv.enteredAt).toLocaleString()}\n` +
-                  `             │\n` +
-                  `             │  ── Total order delay ───────────────────────────\n` +
-                  `             │  Total expected to ${mv.toStageCode.padEnd(14)}: ${totalExpectedToRework}h\n` +
-                  `             │  Total elapsed since start    : ${totalElapsedH != null ? totalElapsedH.toFixed(2) + 'h' : 'unknown'}\n` +
-                  `             │  Total order delay            : ${
-                    totalDelay == null ? 'unknown' :
-                    totalDelay > 0 ? `+${totalDelay.toFixed(2)}h  ⚠️  piece is behind schedule` :
-                    `${totalDelay.toFixed(2)}h  ✅  still within schedule`
-                  }\n` +
-                  `             │  [formula: elapsed(${totalElapsedH?.toFixed(1)}h) - expected(${totalExpectedToRework}h)]\n` +
-                  `             └─`
-                );
-              }
-            }
-
-            // ── Delay computation ──────────────────────────────────────────
-            // DIA_SET / SETTING: use qty × diaSizeMM formula
-            // All other stages: durationRules → fallback flat default
-            let expected;
-            if (SETTING_STAGE_CODES.has(mv.toStageCode)) {
-              const diaCarats = getTotalDiamondCarats(jc.diamondSpecs);
-              expected = parseFloat(calculateSettingTimeHours(jc.perPcPieces, jc.totalQty, diaCarats, stage.expectedDurationHours).toFixed(2));
-              if (__DEV__) console.log(
-                `[DelayCalc]  [SettingFormula] ${mv.toStageCode}` +
-                ` | PerPc_Pieces=${jc.perPcPieces ?? 'n/a'}  totalQty=${jc.totalQty ?? 'n/a'}  diamondCarats=${diaCarats ?? 'n/a'}ct` +
-                ` → expected=${expected.toFixed(2)}h`
-              );
-            } else {
-              expected = getExpectedHours(stage, resolvedCategory, jc.metalWeightPerPiece);
-            }
-            const hoursInStage = (Date.now() - new Date(mv.enteredAt).getTime()) / 3_600_000;
-            const delay = expected > 0 ? hoursInStage - expected : null;
-
-            if (__DEV__) {
-              const delayStr = delay == null    ? 'n/a (no expected set)'
-                : delay > 0  ? `+${delay.toFixed(2)}h  ⚠️  OVERDUE`
-                : `${delay.toFixed(2)}h  ✅ on time`;
-              console.log(
-                `[DelayCalc]  Stage       : ${mv.toStageCode}  (cell: ${mv.cellCode ?? '-'})\n` +
-                `             Entered At  : ${new Date(mv.enteredAt).toLocaleString()}\n` +
-                `             In Stage    : ${hoursInStage.toFixed(2)}h\n` +
-                `             Expected    : ${expected > 0 ? expected + 'h' : '(not set)'}\n` +
-                `             Delay       : ${delayStr}\n`
-              );
-            }
-
-            if (expected > 0) {
-              const existing = delayByStage.get(mv.toStageCode);
-              if (!existing || delay > existing.delay) {
-                delayByStage.set(mv.toStageCode, { hoursInStage, expected, delay });
-              }
-            }
-          }
-
-          if (__DEV__) {
-            const allEntries = [...delayByStage.entries()];
-            const overdue    = allEntries.filter(([, v]) => v.delay > 0);
-            const onTime     = allEntries.filter(([, v]) => v.delay <= 0);
-            console.log('[DelayCalc]  ── SUMMARY ─────────────────────────────────────────');
-            console.log(`[DelayCalc]  Open stages : ${allEntries.length}   On time: ${onTime.length} ✅   Overdue: ${overdue.length} ${overdue.length > 0 ? '⚠️' : '✅'}`);
-            overdue.forEach(([code, v]) =>
-              console.log(`[DelayCalc]    ⚠️  ${code.padEnd(16)} in stage ${v.hoursInStage.toFixed(2)}h  |  expected ${v.expected}h  |  delay +${v.delay.toFixed(2)}h`)
-            );
-            onTime.forEach(([code, v]) =>
-              console.log(`[DelayCalc]    ✅ ${code.padEnd(16)} in stage ${v.hoursInStage.toFixed(2)}h  |  expected ${v.expected}h  |  ${v.delay.toFixed(2)}h remaining`)
-            );
-            console.log('[DelayCalc]  ════════════════════════════════════════════════════\n');
-          }
-          const overdueStages = [...delayByStage.entries()]
-            .filter(([, v]) => v.delay > 0)
-            .sort((a, b) => b[1].delay - a[1].delay);
-
-          return (
-            <>
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Stage Progress</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.stageFlow}>
-                  {flowStages.map((stage, idx) => {
-                    const cur = currentByStage.get(stage.code);
-                    const isCurrent = !!cur;
-                    const isDone = completedCodes.has(stage.code) && !isCurrent;
-                    const delayInfo = isCurrent ? delayByStage.get(stage.code) : null;
-                    const isOverdue = delayInfo && delayInfo.delay > 0;
-                    return (
-                      <React.Fragment key={stage.code}>
-                        {idx > 0 && (
-                          <View style={[
-                            styles.sfConnector,
-                            isDone ? styles.sfConnectorDone : isCurrent ? styles.sfConnectorCurrent : null,
-                          ]} />
-                        )}
-                        <View style={styles.sfWrap}>
-                          <View style={[
-                            styles.sfDot,
-                            isDone ? styles.sfDotDone
-                              : isOverdue ? styles.sfDotOverdue
-                              : isCurrent ? styles.sfDotCurrent
-                              : null,
-                          ]}>
-                            {isDone
-                              ? <Icon name="check" size={12} color="#fff" />
-                              : isCurrent
-                                ? <Text style={styles.sfDotQty}>{cur.qty}</Text>
-                                : null
-                            }
-                          </View>
-                          <Text style={[
-                            styles.sfCode,
-                            isDone ? styles.sfCodeDone
-                              : isOverdue ? styles.sfCodeOverdue
-                              : isCurrent ? styles.sfCodeCurrent
-                              : null,
-                          ]} numberOfLines={1}>
-                            {stage.code}
-                          </Text>
-                          {isCurrent && cur.cells?.length > 0 && (
-                            <Text style={styles.sfCell} numberOfLines={1}>{cur.cells[0]}</Text>
-                          )}
-                          {isOverdue && (
-                            <Text style={styles.sfDelay} numberOfLines={1}>
-                              +{delayInfo.delay.toFixed(1)}h
-                            </Text>
-                          )}
+        {/* Stage flow + delay summary — driven by stageAnalysis useMemo */}
+        {stageAnalysis && (
+          <>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Stage Progress</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.stageFlow}>
+                {stageAnalysis.flowStages.map((stage, idx) => {
+                  const cur = stageAnalysis.currentByStage.get(stage.code);
+                  const isCurrent = !!cur;
+                  const isDone = stageAnalysis.completedCodes.has(stage.code) && !isCurrent;
+                  const delayInfo = isCurrent ? stageAnalysis.delayByStage.get(stage.code) : null;
+                  const isOverdue = delayInfo && delayInfo.delay > 0;
+                  return (
+                    <React.Fragment key={stage.code}>
+                      {idx > 0 && (
+                        <View style={[
+                          styles.sfConnector,
+                          isDone ? styles.sfConnectorDone : isCurrent ? styles.sfConnectorCurrent : null,
+                        ]} />
+                      )}
+                      <View style={styles.sfWrap}>
+                        <View style={[
+                          styles.sfDot,
+                          isDone ? styles.sfDotDone
+                            : isOverdue ? styles.sfDotOverdue
+                            : isCurrent ? styles.sfDotCurrent
+                            : null,
+                        ]}>
+                          {isDone
+                            ? <Icon name="check" size={12} color="#fff" />
+                            : isCurrent
+                              ? <Text style={styles.sfDotQty}>{cur.qty}</Text>
+                              : null
+                          }
                         </View>
-                      </React.Fragment>
-                    );
-                  })}
-                </ScrollView>
-              </View>
-
-              {/* Delay detail cards — only shown when a stage is overdue */}
-              {overdueStages.length > 0 && (
-                <View style={styles.delaySection}>
-                  <Text style={styles.delaySectionTitle}>⏱ Stage Delays</Text>
-                  {overdueStages.map(([code, info]) => (
-                    <View key={code} style={styles.delayRow}>
-                      <View style={styles.delayLeft}>
-                        <Text style={styles.delayStage}>{code}</Text>
-                        <Text style={styles.delaySub}>
-                          In stage {info.hoursInStage.toFixed(1)}h · Expected {parseFloat(info.expected.toFixed(2))}h
+                        <Text style={[
+                          styles.sfCode,
+                          isDone ? styles.sfCodeDone
+                            : isOverdue ? styles.sfCodeOverdue
+                            : isCurrent ? styles.sfCodeCurrent
+                            : null,
+                        ]} numberOfLines={1}>
+                          {stage.code}
                         </Text>
+                        {isCurrent && cur.cells?.length > 0 && (
+                          <Text style={styles.sfCell} numberOfLines={1}>{cur.cells[0]}</Text>
+                        )}
+                        {isOverdue && (
+                          <Text style={styles.sfDelay} numberOfLines={1}>
+                            +{delayInfo.delay.toFixed(1)}h
+                          </Text>
+                        )}
                       </View>
-                      <View style={styles.delayBadge}>
-                        <Text style={styles.delayBadgeText}>+{info.delay.toFixed(1)}h late</Text>
-                      </View>
+                    </React.Fragment>
+                  );
+                })}
+              </ScrollView>
+            </View>
+
+            {stageAnalysis.overdueStages.length > 0 && (
+              <View style={styles.delaySection}>
+                <Text style={styles.delaySectionTitle}>⏱ Stage Delays</Text>
+                {stageAnalysis.overdueStages.map(([code, info]) => (
+                  <View key={code} style={styles.delayRow}>
+                    <View style={styles.delayLeft}>
+                      <Text style={styles.delayStage}>{code}</Text>
+                      <Text style={styles.delaySub}>
+                        In stage {info.hoursInStage.toFixed(1)}h · Expected {parseFloat(info.expected.toFixed(2))}h
+                      </Text>
                     </View>
-                  ))}
-                </View>
-              )}
-            </>
-          );
-        })()}
+                    <View style={styles.delayBadge}>
+                      <Text style={styles.delayBadgeText}>+{info.delay.toFixed(1)}h late</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
+          </>
+        )}
 
         {/* Diamond Specs */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Diamond Specs</Text>
-          {specs.map((d, i) => (
-            <View key={i} style={styles.specRow}>
-              <Text style={styles.specLabel}>Spec {i + 1}</Text>
-              <View style={styles.specDetails}>
-                <Text style={styles.specText}>{d.gSize} · {d.sieve} · {d.diaSizeMM}mm</Text>
-                <Text style={styles.specText}>{d.pointer}ct ea · {d.stonesPerPiece} stones/pc · {d.totalCaratsPerPiece}ct total</Text>
+        {(() => {
+          if (__DEV__ && specs.length > 0) {
+            const lines = specs.map((d, i) => {
+              return (
+                `  Spec ${i+1}:\n` +
+                `    gSize            : ${d.gSize}\n` +
+                `    sieve            : ${d.sieve}\n` +
+                `    diaSizeMM        : ${d.diaSizeMM}mm\n` +
+                `    pointer          : ${d.pointer}ct`
+              );
+            }).join('\n');
+            console.log(
+              `\n[DiamondSpec] ── Job Card: ${jc.gatiPieceCode} ──────────────────\n` +
+              lines + '\n'
+            );
+          }
+          return (
+            <View style={styles.section}>
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionTitle}>Diamond Specs</Text>
+                {specs.length > 1 && (
+                  <TouchableOpacity onPress={() => setShowAllSpecs(s => !s)} style={styles.sectionAddBtn}>
+                    <Text style={styles.sectionAddText}>
+                      {showAllSpecs ? 'Show less' : `View all ${specs.length}`}
+                    </Text>
+                    <Icon name={showAllSpecs ? 'expand-less' : 'expand-more'} size={14} color={colors.primary} />
+                  </TouchableOpacity>
+                )}
               </View>
+              {(showAllSpecs ? specs : specs.slice(0, 1)).map((d, i) => (
+                <View key={i} style={styles.diaSpecCard}>
+                  <View style={styles.diaSpecHeader}>
+                    <Text style={styles.diaSpecTitle}>Spec {i + 1}</Text>
+                    <Text style={styles.diaSpecSize}>{d.diaSizeMM}mm</Text>
+                  </View>
+                  <View style={styles.diaSpecRow}>
+                    <Text style={styles.diaSpecLabel}>GSize</Text>
+                    <Text style={styles.diaSpecVal}>{d.gSize}</Text>
+                  </View>
+                  <View style={styles.diaSpecRow}>
+                    <Text style={styles.diaSpecLabel}>Sieve</Text>
+                    <Text style={styles.diaSpecVal}>{d.sieve}</Text>
+                  </View>
+                  <View style={styles.diaSpecRow}>
+                    <Text style={styles.diaSpecLabel}>Pointer</Text>
+                    <Text style={styles.diaSpecVal}>{d.pointer}ct / stone</Text>
+                  </View>
+                </View>
+              ))}
             </View>
-          ))}
-          <View style={styles.divider} />
-          <View style={styles.specRow}>
-            <Text style={styles.specLabel}>Total Stones</Text>
-            <Text style={styles.specValue}>{jc.totalStones}</Text>
-          </View>
-        </View>
+          );
+        })()}
 
         {/* Stone Allocations */}
         <View style={styles.section}>
@@ -865,27 +1013,20 @@ const JobCardDetailScreen = ({ route, navigation }) => {
           ) : (
             <>
               {/* Summary row */}
-              {(() => {
-                const totalAllocated = allocations.reduce((s, a) => s + (a.quantityAllocated ?? 0), 0);
-                const totalConsumed  = allocations.reduce((s, a) => s + (a.quantityConsumed  ?? 0), 0);
-                const totalRemaining = totalAllocated - totalConsumed;
-                return (
-                  <View style={styles.allocSummaryRow}>
-                    <View style={styles.allocSummaryChip}>
-                      <Text style={styles.allocSummaryNum}>{totalAllocated}</Text>
-                      <Text style={styles.allocSummaryLbl}>Allocated</Text>
-                    </View>
-                    <View style={[styles.allocSummaryChip, { borderColor: colors.success + '50' }]}>
-                      <Text style={[styles.allocSummaryNum, { color: colors.success }]}>{totalConsumed}</Text>
-                      <Text style={styles.allocSummaryLbl}>Consumed</Text>
-                    </View>
-                    <View style={[styles.allocSummaryChip, { borderColor: (totalRemaining > 0 ? colors.warning : colors.textSecondary) + '50' }]}>
-                      <Text style={[styles.allocSummaryNum, { color: totalRemaining > 0 ? colors.warning : colors.textSecondary }]}>{totalRemaining}</Text>
-                      <Text style={styles.allocSummaryLbl}>Remaining</Text>
-                    </View>
-                  </View>
-                );
-              })()}
+              <View style={styles.allocSummaryRow}>
+                <View style={styles.allocSummaryChip}>
+                  <Text style={styles.allocSummaryNum}>{allocSummary.totalAllocated}</Text>
+                  <Text style={styles.allocSummaryLbl}>Allocated</Text>
+                </View>
+                <View style={[styles.allocSummaryChip, { borderColor: colors.success + '50' }]}>
+                  <Text style={[styles.allocSummaryNum, { color: colors.success }]}>{allocSummary.totalConsumed}</Text>
+                  <Text style={styles.allocSummaryLbl}>Consumed</Text>
+                </View>
+                <View style={[styles.allocSummaryChip, { borderColor: (allocSummary.totalRemaining > 0 ? colors.warning : colors.textSecondary) + '50' }]}>
+                  <Text style={[styles.allocSummaryNum, { color: allocSummary.totalRemaining > 0 ? colors.warning : colors.textSecondary }]}>{allocSummary.totalRemaining}</Text>
+                  <Text style={styles.allocSummaryLbl}>Remaining</Text>
+                </View>
+              </View>
 
               {/* Per-SKU breakdown */}
               {allocations.map((alloc, i) => {
@@ -954,12 +1095,46 @@ const JobCardDetailScreen = ({ route, navigation }) => {
             <Text style={styles.emptyText}>No stage movements yet</Text>
           ) : (
             <View style={styles.timeline}>
+              {(() => { if (__DEV__) {
+                const sorted = [...movements].sort((a, b) => new Date(a.enteredAt) - new Date(b.enteredAt));
+                const now = Date.now();
+                console.log('═══════════ Stage Timeline ═══════════');
+                sorted.forEach((mv, i) => {
+                  const s = stageMap.get(mv.toStageCode);
+                  const catWt = s ? getExpectedHours(s, resolvedCategory, jc.metalWeightPerPiece) : 0;
+                  let stoneT = 0;
+                  if (s && SETTING_STAGE_CODES.has(s.code)) {
+                    const nw = getTotalDiamondCarats(jc.diamondSpecs);
+                    const pp = resolvePerPcPieces(jc);
+                    stoneT = calculateSettingTimeHours(nw, pp, 0);
+                  }
+                  const expH = catWt + stoneT;
+                  const enteredMs = new Date(mv.enteredAt).getTime();
+                  const exitedMs = mv.exitedAt ? new Date(mv.exitedAt).getTime() : null;
+                  const actualH = exitedMs ? (exitedMs - enteredMs) / 3600000 : (now - enteredMs) / 3600000;
+                  const delay = expH > 0 ? actualH - expH : 0;
+                  const status = !mv.exitedAt ? 'OPEN' : 'CLOSED';
+                  console.log(
+                    `[Timeline] #${i} ${mv.toStageCode}${mv.cellCode ? `(${mv.cellCode})` : ''} ${status}` +
+                    `  entered=${new Date(mv.enteredAt).toLocaleString()}` +
+                    `${mv.exitedAt ? '  exited=' + new Date(mv.exitedAt).toLocaleString() : ''}` +
+                    `  actual=${actualH.toFixed(2)}h  expected=${expH.toFixed(2)}h  delay=${delay >= 0 ? '+' : ''}${delay.toFixed(2)}h`
+                  );
+                });
+                console.log('══════════════════════════════════════');
+              }})()}
               {movements.map((mv, i) => {
-                const mvStage = stages.find(s => s.code === mv.toStageCode);
+                const mvStage = stageMap.get(mv.toStageCode);
                 const mvExpected = mvStage
-                  ? SETTING_STAGE_CODES.has(mv.toStageCode)
-                    ? calculateSettingTimeHours(jc.perPcPieces, jc.totalQty, getTotalDiamondCarats(jc.diamondSpecs), mvStage?.expectedDurationHours ?? 12)
-                    : getExpectedHours(mvStage, resolveItemCategory(jc.itemCategory, jc.styleNo), jc.metalWeightPerPiece)
+                  ? (() => {
+                      const catWt = getExpectedHours(mvStage, resolvedCategory, jc.metalWeightPerPiece);
+                      if (SETTING_STAGE_CODES.has(mvStage.code)) {
+                        const nw = getTotalDiamondCarats(jc.diamondSpecs);
+                        const pp = resolvePerPcPieces(jc);
+                        return catWt + calculateSettingTimeHours(nw, pp, 0);
+                      }
+                      return catWt;
+                    })()
                   : 0;
                 return (
                   <MovementRow
@@ -1034,7 +1209,7 @@ const JobCardDetailScreen = ({ route, navigation }) => {
                         {specLabel(d)}
                       </Text>
                       <Text style={[styles.specPillSub, selectedSpec === d && { color: colors.primary + 'CC' }]}>
-                        {d.stonesPerPiece} stones/pc
+                        {d.diaSizeMM}mm
                       </Text>
                     </TouchableOpacity>
                   ))}
@@ -1047,7 +1222,7 @@ const JobCardDetailScreen = ({ route, navigation }) => {
                 value={allocateQty}
                 onChangeText={setAllocateQty}
                 keyboardType="number-pad"
-                placeholder={specs.length > 0 && selectedSpec ? `e.g. ${selectedSpec.stonesPerPiece * (jc?.totalQty ?? 1)}` : 'Number of stones'}
+                placeholder="Number of stones"
                 placeholderTextColor={colors.textSecondary}
               />
 
@@ -1191,6 +1366,16 @@ const styles = StyleSheet.create({
   specValue: { fontFamily: fonts.bold, fontSize: fonts.sm, color: colors.textPrimary, flex: 1, textAlign: 'right' },
   specText: { fontFamily: fonts.regular, fontSize: fonts.xs, color: colors.textPrimary, flex: 1, textAlign: 'right' },
   specDetails: { flex: 1, alignItems: 'flex-end' },
+  // Diamond spec card
+  diaSpecCard: { backgroundColor: colors.backgroundSecondary, borderRadius: 10, padding: 12, marginBottom: 8 },
+  diaSpecHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  diaSpecTitle: { fontFamily: fonts.bold, fontSize: fonts.sm, color: colors.primary },
+  diaSpecSize: { fontFamily: fonts.bold, fontSize: fonts.sm, color: colors.textPrimary },
+  diaSpecRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 },
+  diaSpecHighlight: { backgroundColor: colors.primaryExtraLight, borderRadius: 6, paddingHorizontal: 6, marginVertical: 2 },
+  diaSpecLabel: { fontFamily: fonts.medium, fontSize: fonts.xs, color: colors.textSecondary },
+  diaSpecVal: { fontFamily: fonts.regular, fontSize: fonts.xs, color: colors.textPrimary },
+  diaSpecMuted: { fontFamily: fonts.regular, fontSize: 10, color: colors.textSecondary },
   divider: { height: 1, backgroundColor: colors.borderLight, marginVertical: 8 },
   emptyText: { fontFamily: fonts.regular, fontSize: fonts.sm, color: colors.textSecondary, textAlign: 'center', paddingVertical: 16 },
   emptySubText: { fontFamily: fonts.regular, fontSize: fonts.xs, color: colors.textSecondary, textAlign: 'center' },

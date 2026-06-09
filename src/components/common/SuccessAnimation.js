@@ -1,40 +1,39 @@
 import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet, Modal, Text, TouchableOpacity } from 'react-native';
-import LottieView from 'lottie-react-native';
+import { View, StyleSheet, Modal, Text, TouchableOpacity, Animated } from 'react-native';
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
 import IconComponent from './Icon';
 
 const SuccessAnimation = ({ visible, onComplete, title = 'Success!', message = 'Your enquiry has been created successfully!' }) => {
-  const animationRef = useRef(null);
+  const scaleAnim = useRef(new Animated.Value(0)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    if (visible && animationRef.current) {
-      // Play animation when modal becomes visible
-      animationRef.current.play();
+    if (visible) {
+      // Reset
+      scaleAnim.setValue(0);
+      opacityAnim.setValue(0);
+      // Bounce-in animation
+      Animated.parallel([
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          friction: 4,
+          tension: 80,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacityAnim, {
+          toValue: 1,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        // Auto-complete after 2 seconds
+        setTimeout(() => {
+          if (onComplete) onComplete();
+        }, 2000);
+      });
     }
   }, [visible]);
-
-  const handleAnimationFinish = () => {
-    // Animation completed, call onComplete callback
-    if (onComplete) {
-      // Small delay to show the final frame
-      setTimeout(() => {
-        onComplete();
-      }, 500);
-    }
-  };
-
-  // Load the Chandra.lottie animation file
-  let animationSource = null;
-  try {
-    animationSource = require('../../assets/animations/Chandra.lottie');
-  } catch (error) {
-    // Animation file not found, will use icon instead
-    if (__DEV__) {
-      console.warn('⚠️ Lottie animation file not found. Using icon fallback.');
-    }
-  }
 
   if (!visible) return null;
 
@@ -46,30 +45,13 @@ const SuccessAnimation = ({ visible, onComplete, title = 'Success!', message = '
       onRequestClose={onComplete}
     >
       <View style={styles.overlay}>
-        <View style={styles.container}>
-          {/* Lottie Animation or Icon Fallback */}
-          {animationSource ? (
-            <View style={styles.animationContainer}>
-              <LottieView
-                ref={animationRef}
-                source={animationSource}
-                style={styles.animation}
-                loop={false}
-                autoPlay={true}
-                onAnimationFinish={handleAnimationFinish}
-                onLayout={() => {
-                  // Ensure animation plays
-                  if (animationRef.current) {
-                    animationRef.current.play();
-                  }
-                }}
-              />
+        <Animated.View style={[styles.container, { opacity: opacityAnim }]}>
+          {/* Success Icon with bounce animation */}
+          <Animated.View style={[styles.iconContainer, { transform: [{ scale: scaleAnim }] }]}>
+            <View style={styles.iconCircle}>
+              <IconComponent name="check" size={56} color="#fff" />
             </View>
-          ) : (
-            <View style={styles.iconContainer}>
-              <IconComponent name="check-circle" size={80} color={colors.success || colors.primary} />
-            </View>
-          )}
+          </Animated.View>
 
           {/* Success Message */}
           <View style={styles.messageContainer}>
@@ -85,7 +67,7 @@ const SuccessAnimation = ({ visible, onComplete, title = 'Success!', message = '
           >
             <Text style={styles.buttonText}>Continue</Text>
           </TouchableOpacity>
-        </View>
+        </Animated.View>
       </View>
     </Modal>
   );
@@ -101,7 +83,7 @@ const styles = StyleSheet.create({
   container: {
     backgroundColor: colors.background,
     borderRadius: 20,
-    padding: 24,
+    padding: 32,
     alignItems: 'center',
     width: '85%',
     maxWidth: 400,
@@ -111,25 +93,25 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 8,
   },
-  animationContainer: {
-    width: 200,
-    height: 200,
-    marginBottom: 16,
+  iconContainer: {
+    marginBottom: 20,
   },
-  animation: {
-    width: '100%',
-    height: '100%',
+  iconCircle: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: colors.success || '#4CAF50',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: colors.success || '#4CAF50',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 6,
   },
   messageContainer: {
     alignItems: 'center',
     marginBottom: 24,
-    marginTop: 8,
-  },
-  iconContainer: {
-    marginBottom: 16,
-    marginTop: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   title: {
     fontSize: fonts.xl,
@@ -148,7 +130,7 @@ const styles = StyleSheet.create({
   button: {
     backgroundColor: colors.primary,
     paddingVertical: 12,
-    paddingHorizontal: 32,
+    paddingHorizontal: 40,
     borderRadius: 12,
     minWidth: 120,
   },
@@ -161,4 +143,3 @@ const styles = StyleSheet.create({
 });
 
 export default SuccessAnimation;
-

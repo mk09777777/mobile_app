@@ -42,6 +42,7 @@ export default function NewEnquiryCard({
   currentTab,
   onUpdateEnquiry,
   onDeleteEnquiry,
+  isExpandedAll = false,
 }) {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
@@ -53,11 +54,13 @@ export default function NewEnquiryCard({
 
   // console.log('User Data is:', users);
   const [imagesData, setImagesData] = useState([]);
-  const [imageLoading, setImageLoading] = useState(true);
+  const [imageLoading, setImageLoading] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
+  // isExpandedAll is now controlled globally via the isExpandedAll prop from Tabs.js
   const [isImageModalVisible, setImageModalVisible] = useState(false);
   const [modalCurrentIndex, setModalCurrentIndex] = useState(0);
   const [zoomedImageIndex, setZoomedImageIndex] = useState(null);
+  const modalFlatListRef = useRef(null);
   const [showStatusDropdown, setShowStatusDropdown] = useState(false);
   const [showAssignDropdown, setShowAssignDropdown] = useState(false);
   const [assignDropDownUsers, setAssignDropDownUsers] = useState([]);
@@ -66,10 +69,40 @@ export default function NewEnquiryCard({
   const [isRemarkExpanded, setIsRemarkExpanded] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const modalFlatListRef = useRef(null);
-  const screenHeight = Dimensions.get('window').height;
-  const navigate = useNavigation();
   const referenceImages = item?.ReferenceImages || [];
+
+  useEffect(() => {
+    if (!isExpandedAll || !referenceImages.length) return;
+    let cancelled = false;
+    const loadAllImages = async () => {
+      setImageLoading(true);
+      try {
+        const token = await AsyncStorage.getItem('token');
+        const results = await Promise.all(referenceImages.map(async img => {
+          const imageKey = img?.Key;
+          if (!imageKey) return null;
+          try {
+            const res = await fetch(`${FILE_BASE_URL}/api/enquiries/files/${encodeURIComponent(imageKey)}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!res.ok) return null;
+            const ct = res.headers.get('content-type') || '';
+            if (ct.includes('application/json')) {
+              const j = await res.json();
+              return j.url || j.imageUrl || null;
+            }
+            const buf = await res.arrayBuffer();
+            const b64 = btoa(new Uint8Array(buf).reduce((d, b) => d + String.fromCharCode(b), ''));
+            return `data:${ct};base64,${b64}`;
+          } catch { return null; }
+        }));
+        if (!cancelled) setImagesData(results.filter(Boolean));
+      } catch { }
+      finally { if (!cancelled) setImageLoading(false); }
+    };
+    loadAllImages();
+    return () => { cancelled = true; };
+  }, [isExpandedAll]);
   const priority = (item?.Priority || 'medium').toLowerCase();
   const status = (item?.CurrentStatus || 'pending').toLowerCase();
   const isCoral = user?.role === 'coral';
@@ -125,11 +158,36 @@ export default function NewEnquiryCard({
   // Check if item already has an assigned user
   const raw = item._originalData || item;
   const assignedVal = item.AssignedTo || item.assignedTo || raw.AssignedTo || raw.assignedTo;
-  const hasAssignedUser = assignedVal
-    ? (typeof assignedVal === 'object'
-        ? !!(assignedVal.id || assignedVal.Id || assignedVal._id || assignedVal.userId)
-        : String(assignedVal).trim().length > 0)
-    : false;
+
+  // Extract the raw ID string from whatever shape assignedVal is
+  const assignedIdStr = useMemo(() => {
+    if (!assignedVal) return '';
+    if (typeof assignedVal === 'object') {
+      return String(assignedVal.id || assignedVal.Id || assignedVal._id || assignedVal.userId || '').trim();
+    }
+    const s = String(assignedVal).trim();
+    // Reject garbage values
+    if (!s || s === 'null' || s === 'undefined' || s === '0' || s === 'false') return '';
+    return s;
+  }, [assignedVal]);
+
+  const hasAssignedUser = assignedIdStr.length > 0;
+
+  // Resolve assigned user's display name
+  const assignedUserName = useMemo(() => {
+    if (!assignedIdStr) return null;
+    // If assignedVal is an object that already carries a name, use it directly
+    if (typeof assignedVal === 'object') {
+      const name = assignedVal.name || assignedVal.Name || assignedVal.username || assignedVal.email;
+      if (name) return name;
+    }
+    // Look up by ID in users list
+    if (users) {
+      const found = users.find(u => String(u.id || u._id || '').trim() === assignedIdStr);
+      return found?.name || found?.Name || found?.username || found?.email || null;
+    }
+    return null;
+  }, [assignedIdStr, assignedVal, users]);
 
   // Button visibility based on user role and status
   const shouldShowActionButtons = isAdmin && isJustCreated;
@@ -144,106 +202,47 @@ export default function NewEnquiryCard({
 
   // Log bearer token on component mount
 
-  useEffect(() => {
-    if (!referenceImages || referenceImages.length === 0) {
-      setImageLoading(false);
-      return;
-    }
+  // ── Image loading commented out ──────────────────────────────────────────
+  // useEffect(() => {
+  //   if (!referenceImages || referenceImages.length === 0) { setImageLoading(false); return; }
+  //   let cancelled = false;
+  //   const loadAllImages = async () => {
+  //     try {
+  //       setImageLoading(true);
+  //       const token = await AsyncStorage.getItem('token');
+  //       const imagePromises = referenceImages.map(async img => {
+  //         const imageKey = img?.Key;
+  //         if (!imageKey) return null;
+  //         const imageUrl = `${FILE_BASE_URL}/api/enquiries/files/${encodeURIComponent(imageKey)}`;
+  //         try {
+  //           const response = await fetch(imageUrl, { method: 'GET', headers: { Authorization: `Bearer ${token}` } });
+  //           if (!response.ok) return null;
+  //           const contentType = response.headers.get('content-type') || '';
+  //           if (contentType.includes('application/json')) {
+  //             const jsonData = await response.json();
+  //             return jsonData.url || jsonData.imageUrl || jsonData.Url || null;
+  //           } else {
+  //             const arrayBuffer = await response.arrayBuffer();
+  //             const base64 = btoa(new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), ''));
+  //             return `data:${contentType};base64,${base64}`;
+  //           }
+  //         } catch (error) { return null; }
+  //       });
+  //       const loadedImages = await Promise.all(imagePromises);
+  //       const validImages = loadedImages.filter(img => img !== null);
+  //       if (!cancelled) { setImagesData(validImages); setImageLoading(false); }
+  //     } catch (error) { if (!cancelled) { setImageLoading(false); } }
+  //   };
+  //   loadAllImages();
+  //   return () => { cancelled = true; };
+  // }, [referenceImages.length]);
 
-    let cancelled = false;
-
-    const loadAllImages = async () => {
-      try {
-        setImageLoading(true);
-        const token = await AsyncStorage.getItem('token');
-
-        const imagePromises = referenceImages.map(async img => {
-          const imageKey = img?.Key;
-          if (!imageKey) return null;
-
-          const imageUrl = `${FILE_BASE_URL}/api/enquiries/files/${encodeURIComponent(
-            imageKey,
-          )}`;
-
-          try {
-            const response = await fetch(imageUrl, {
-              method: 'GET',
-              headers: {
-                Authorization: `Bearer ${token}`,
-              },
-            });
-
-            if (!response.ok) return null;
-
-            const contentType = response.headers.get('content-type') || '';
-
-            if (contentType.includes('application/json')) {
-              const jsonData = await response.json();
-              return jsonData.url || jsonData.imageUrl || jsonData.Url || null;
-            } else {
-              const arrayBuffer = await response.arrayBuffer();
-              const base64 = btoa(
-                new Uint8Array(arrayBuffer).reduce(
-                  (data, byte) => data + String.fromCharCode(byte),
-                  '',
-                ),
-              );
-              return `data:${contentType};base64,${base64}`;
-            }
-          } catch (error) {
-            return null;
-          }
-        });
-
-        const loadedImages = await Promise.all(imagePromises);
-        const validImages = loadedImages.filter(img => img !== null);
-
-        if (!cancelled) {
-          setImagesData(validImages);
-          setImageLoading(false);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setImageLoading(false);
-        }
-      }
-    };
-
-    loadAllImages();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [referenceImages.length]);
-
-  const handleScroll = event => {
-    const scrollPosition = event.nativeEvent.contentOffset.x;
-    const index = Math.round(scrollPosition / screenWidth);
-    setCurrentIndex(index);
-  };
-
-  const handleImagePress = useCallback(index => {
-    // Set the starting index for the modal
-    setModalCurrentIndex(index);
-    // Open modal - all images from imagesData will be rendered
-    setImageModalVisible(true);
+  const handleScroll = e => setCurrentIndex(Math.round(e.nativeEvent.contentOffset.x / screenWidth));
+  const handleImagePress = useCallback(index => { setModalCurrentIndex(index); setImageModalVisible(true); }, []);
+  const closeImageModal = useCallback(() => { setImageModalVisible(false); setZoomedImageIndex(null); }, []);
+  const handleDoubleTap = useCallback(index => {
+    setZoomedImageIndex(prev => prev === index ? null : index);
   }, []);
-
-  const closeImageModal = useCallback(() => {
-    setImageModalVisible(false);
-    setZoomedImageIndex(null);
-  }, []);
-
-  const handleDoubleTap = useCallback(
-    index => {
-      if (zoomedImageIndex === index) {
-        setZoomedImageIndex(null);
-      } else {
-        setZoomedImageIndex(index);
-      }
-    },
-    [zoomedImageIndex],
-  );
 
   const DropDownStatus = useMemo(() => {
     if (!statusesData) return [];
@@ -330,181 +329,140 @@ export default function NewEnquiryCard({
 
  
   return (
-    <View style={[styles.mainContainer, { borderLeftWidth: isPendingStatus ? 6 : 0, borderLeftColor: pendingShadeColor }]}>
-      <TouchableOpacity onPress={onPress} activeOpacity={0.8}>
-        <View style={styles.ImageContainer}>
-          {imageLoading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="small" color={colors.primary} />
-            </View>
-          ) : imagesData && imagesData.length > 0 ? (
-            <View style={styles.carouselContainer}>
-              <ScrollView
-                horizontal
-                pagingEnabled
-                showsHorizontalScrollIndicator={false}
-                onScroll={handleScroll}
-                scrollEventThrottle={16}
-              >
-                {imagesData.map((imageUri, index) => (
-                  <TouchableOpacity
-                    key={`image-${index}`}
-                    activeOpacity={0.9}
-                    onPress={() => handleImagePress(index)}
-                  >
-                    <ImageBackground
-                      source={{ uri: imageUri }}
-                      style={styles.carouselImage}
-                    >
-                      <View style={styles.StatusContainerStart}>
-                        <View
-                          style={[
-                            styles.PriortyContainer,
-                            { backgroundColor: getPriorityColor(priority) },
-                          ]}
-                        >
-                          <Text style={styles.PriorityText} numberOfLines={1} ellipsizeMode="tail">
-                            {priority.toUpperCase()} Priority
-                          </Text>
-                        </View>
-                        <View style={styles.StatusContainerEnd}>
-                          <View
-                            style={[
-                              styles.statusContainer,
-                              { backgroundColor: getStatusColor(status) },
-                            ]}
-                          >
-                            <Text style={styles.StatusText} numberOfLines={1} ellipsizeMode="tail">
-                              {status.toUpperCase()}
-                            </Text>
-                          </View>
-                          {isAdmin && (
-                            <TouchableOpacity
-                              style={styles.moreOptionsButton}
-                              onPress={() => setShowMoreOptions(true)}
-                            >
-                              <Icon name="more-vert" size={20} color={colors.textWhite} />
-                            </TouchableOpacity>
-                          )}
-                        </View>
-                      </View>
-                    </ImageBackground>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-              {imagesData.length > 1 && (
-                <View style={styles.paginationContainer}>
-                  <Text style={styles.paginationText}>
-                    {currentIndex + 1} / {imagesData.length}
-                  </Text>
-                </View>
-              )}
-            </View>
-          ) : (
-            <View style={styles.placeholderContainer}>
-              <View style={[styles.StatusContainerStart, { position: 'absolute', top: 0, left: 0, right: 0 }]}>
-                <View
-                  style={[
-                    styles.PriortyContainer,
-                    { backgroundColor: getPriorityColor(priority) },
-                  ]}
-                >
-                  <Text style={styles.PriorityText} numberOfLines={1} ellipsizeMode="tail">
-                    {priority.toUpperCase()} Priority
-                  </Text>
-                </View>
-                <View style={styles.StatusContainerEnd}>
-                  <View
-                    style={[
-                      styles.statusContainer,
-                      { backgroundColor: getStatusColor(status) },
-                    ]}
-                  >
-                    <Text style={styles.StatusText} numberOfLines={1} ellipsizeMode="tail">
-                      {status.toUpperCase()}
-                    </Text>
-                  </View>
-                  {isAdmin && (
-                    <TouchableOpacity
-                      style={styles.moreOptionsButton}
-                      onPress={() => setShowMoreOptions(true)}
-                    >
-                      <Icon name="more-vert" size={20} color={colors.textWhite} />
-                    </TouchableOpacity>
-                  )}
-                </View>
+    <View style={[styles.mainContainer, { borderLeftWidth: isPendingStatus ? 4 : 0, borderLeftColor: pendingShadeColor }]}>
+
+      {/* ── Expanded: original image section ────────────────────────────── */}
+      {isExpandedAll && (
+        <TouchableOpacity onPress={onPress} activeOpacity={0.8}>
+          <View style={styles.ImageContainer}>
+            {imageLoading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="small" color={colors.primary} />
               </View>
-              <Text style={styles.placeholderText}>No Image</Text>
+            ) : imagesData.length > 0 ? (
+              <View style={styles.carouselContainer}>
+                <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} onScroll={handleScroll} scrollEventThrottle={16}>
+                  {imagesData.map((imageUri, index) => (
+                    <TouchableOpacity key={`image-${index}`} activeOpacity={0.9} onPress={() => handleImagePress(index)}>
+                      <ImageBackground source={{ uri: imageUri }} style={styles.carouselImage}>
+                        <View style={styles.StatusContainerStart}>
+                          <View style={[styles.PriortyContainer, { backgroundColor: getPriorityColor(priority) }]}>
+                            <Text style={styles.PriorityText} numberOfLines={1} ellipsizeMode="tail">{priority.toUpperCase()} Priority</Text>
+                          </View>
+                          <View style={styles.StatusContainerEnd}>
+                            <View style={[styles.statusContainer, { backgroundColor: getStatusColor(status) }]}>
+                              <Text style={styles.StatusText} numberOfLines={1} ellipsizeMode="tail">{status.toUpperCase()}</Text>
+                            </View>
+                            {isAdmin && (
+                              <TouchableOpacity style={styles.moreOptionsButton} onPress={() => setShowMoreOptions(true)}>
+                                <Icon name="more-vert" size={20} color={colors.textWhite} />
+                              </TouchableOpacity>
+                            )}
+                          </View>
+                        </View>
+                      </ImageBackground>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+                {imagesData.length > 1 && (
+                  <View style={styles.paginationContainer}>
+                    <Text style={styles.paginationText}>{currentIndex + 1} / {imagesData.length}</Text>
+                  </View>
+                )}
+              </View>
+            ) : (
+              <View style={styles.placeholderContainer}>
+                <View style={[styles.StatusContainerStart, { position: 'absolute', top: 0, left: 0, right: 0 }]}>
+                  <View style={[styles.PriortyContainer, { backgroundColor: getPriorityColor(priority) }]}>
+                    <Text style={styles.PriorityText} numberOfLines={1} ellipsizeMode="tail">{priority.toUpperCase()} Priority</Text>
+                  </View>
+                  <View style={styles.StatusContainerEnd}>
+                    <View style={[styles.statusContainer, { backgroundColor: getStatusColor(status) }]}>
+                      <Text style={styles.StatusText} numberOfLines={1} ellipsizeMode="tail">{status.toUpperCase()}</Text>
+                    </View>
+                    {isAdmin && (
+                      <TouchableOpacity style={styles.moreOptionsButton} onPress={() => setShowMoreOptions(true)}>
+                        <Icon name="more-vert" size={20} color={colors.textWhite} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+                <Text style={styles.placeholderText}>No Image</Text>
+              </View>
+            )}
+          </View>
+        </TouchableOpacity>
+      )}
+
+      {/* ── Always visible: compact info ─────────────────────────────────── */}
+      <TouchableOpacity onPress={onPress} activeOpacity={0.8}>
+        <View style={styles.titleRow}>
+          <Text style={styles.Heading} numberOfLines={1}>{item?.Name || 'Untitled Enquiry'}</Text>
+          <View style={styles.badgesRow}>
+            <View style={[styles.badge, { backgroundColor: getPriorityColor(priority) }]}>
+              <Text style={styles.badgeText}>{priority.toUpperCase()}</Text>
+
             </View>
-          )}
+            
+            <View style={[styles.badge, { backgroundColor: getStatusColor(status) }]}>
+              <Text style={styles.badgeText} numberOfLines={1}>{status.toUpperCase()}</Text>
+            </View>
+            {/* {isAdmin && (
+              <TouchableOpacity style={styles.moreOptionsButton} onPress={() => setShowMoreOptions(true)}>
+                <Icon name="more-vert" size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+            )} */}
+          </View>
         </View>
-        <Text style={styles.Heading}>{item?.Name || 'Untitled Enquiry'}</Text>
-        <View style={styles.remarkContainer}>
-          <Text style={styles.placeholderText2} numberOfLines={isRemarkExpanded ? undefined : 2}>
-            {item?.Remarks || 'No description available.'}
-          </Text>
-          {item?.Remarks && (item.Remarks.length > 60 || item.Remarks.includes('\n')) && (
-            <TouchableOpacity 
-              style={styles.expandButton}
-              onPress={() => setIsRemarkExpanded(!isRemarkExpanded)}
-            >
-              <Icon 
-                name={isRemarkExpanded ? "keyboard-arrow-up" : "keyboard-arrow-down"} 
-                size={24} 
-                color={colors.textLight} 
-              />
-            </TouchableOpacity>
-          )}
+        <Text style={styles.remarkText} numberOfLines={1}>
+          {item?.Remarks || 'No description available.'}
+        </Text>
+        <View style={styles.metaRow}>
+          <Icon name="person" size={12} color={colors.textSecondary} />
+          <Text style={styles.metaText}>{item?.clientName || 'Unknown'}</Text>
+          <Text style={styles.metaDot}>·</Text>
+          <Icon name="schedule" size={12} color={colors.textSecondary} />
+          <Text style={styles.metaText}>{formatDate(item?.CreatedDate) || '—'}</Text>
         </View>
+        {hasAssignedUser && (
+          <View style={styles.AssignedRow}>
+            <Icon name="person-add" size={13} color={colors.background} />
+            <Text style={styles.AssignedName} numberOfLines={1}>
+              Assigned: {assignedUserName || 'User assigned'}
+            </Text>
+          </View>
+        )}
       </TouchableOpacity>
-      <View style={styles.ButtonContainer}>
-        <View style={styles.ClientTimeContainer}>
-          <View style={styles.ClientRow}>
-            <Icon name="person" size={16} color={colors.textSecondary} />
-            <Text style={styles.ClientName}>
-              Client:{item?.clientName || 'Unknown Client'}
+
+      {/* ── Expanded: original action buttons ───────────────────────────── */}
+      {isExpandedAll && (
+        <View style={styles.ButtonContainer}>
+          {/* Description with its own expand/collapse toggle */}
+          <View style={styles.remarkContainer}>
+            <Text style={styles.placeholderText2} numberOfLines={isRemarkExpanded ? undefined : 2}>
+              {item?.Remarks || 'No description available.'}
             </Text>
+            {item?.Remarks && (item.Remarks.length > 60 || item.Remarks.includes('\n')) && (
+              <TouchableOpacity
+                style={styles.expandButton}
+                onPress={() => setIsRemarkExpanded(v => !v)}
+              >
+                <Icon
+                  name={isRemarkExpanded ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
+                  size={22}
+                  color={colors.textSecondary}
+                />
+              </TouchableOpacity>
+            )}
           </View>
-          <View style={styles.TimeRow}>
-            <Icon name="schedule" size={14} color={colors.textSecondary} />
-            <Text style={styles.ClientTime}>
-              {formatDate(item?.CreatedDate) || 'Unknown Date'}
-            </Text>
-          </View>
-        </View>
 
         {shouldShowActionButtons ? (
           <View style={styles.QuickButtonContainer}>
-            <TouchableOpacity
-              style={styles.DropdownButton}
-              onPress={() => setShowStatusDropdown(true)}
-            >
+            <TouchableOpacity style={styles.DropdownButton} onPress={() => setShowStatusDropdown(true)}>
               <Icon name="tune" size={16} color={colors.primaryDark} />
-              <Text style={styles.DropdownButtonText}>
-                {selectedStatus ? selectedStatus.label : 'Move to Status'}
-              </Text>
-              <Icon
-                name="arrow-drop-down"
-                size={16}
-                color={colors.primaryDark}
-              />
+              <Text style={styles.DropdownButtonText}>{selectedStatus ? selectedStatus.label : 'Move to Status'}</Text>
+              <Icon name="arrow-drop-down" size={16} color={colors.primaryDark} />
             </TouchableOpacity>
-            {!hasAssignedUser && (
-              <TouchableOpacity
-                style={styles.ActionButton}
-                onPress={() => {
-                  if (assignDropDownUsers.length > 0) {
-                    setShowAssignDropdown(true);
-                  } else {
-                    console.log('Please select a status first');
-                  }
-                }}
-              >
-                <Icon name="person-add" size={16} color={colors.textWhite} />
-                <Text style={styles.ActionButtonText}>Assign To</Text>
-                <Icon name="arrow-drop-down" size={16} color={colors.textWhite} />
-              </TouchableOpacity>
-            )}
           </View>
         ) : shouldShowAdminCoralUpload ? (
           <View style={styles.QuickButtonContainer}>
@@ -688,7 +646,8 @@ export default function NewEnquiryCard({
           </TouchableOpacity>
         </View>
         ) : null}
-      </View>
+        </View>
+      )}
       <Modal
         visible={showStatusDropdown}
         transparent
@@ -777,77 +736,39 @@ export default function NewEnquiryCard({
         </TouchableOpacity>
       </Modal>
 
-      <Modal
-        visible={isImageModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={closeImageModal}
-      >
+      {/* ── Image fullscreen modal ───────────────────────────────────────── */}
+      <Modal visible={isImageModalVisible} transparent animationType="fade" onRequestClose={closeImageModal}>
         <View style={styles.fullscreenImageBackdrop}>
-          <TouchableOpacity
-            style={styles.fullscreenImageCloseButton}
-            onPress={closeImageModal}
-            activeOpacity={0.7}
-          >
+          <TouchableOpacity style={styles.fullscreenImageCloseButton} onPress={closeImageModal} activeOpacity={0.7}>
             <Icon name="close" size={24} color={colors.textWhite} />
           </TouchableOpacity>
-
           {imagesData.length > 1 && (
             <View style={styles.modalImageCounter}>
-              <Text style={styles.modalImageCounterText}>
-                {modalCurrentIndex + 1} / {imagesData.length}
-              </Text>
+              <Text style={styles.modalImageCounterText}>{modalCurrentIndex + 1} / {imagesData.length}</Text>
             </View>
           )}
-
           <FlatList
             ref={modalFlatListRef}
             data={imagesData}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
+            horizontal pagingEnabled showsHorizontalScrollIndicator={false}
             initialScrollIndex={modalCurrentIndex}
-            getItemLayout={(data, index) => ({
-              length: screenWidth,
-              offset: screenWidth * index,
-              index,
-            })}
-            onMomentumScrollEnd={event => {
-              const scrollPosition = event.nativeEvent.contentOffset.x;
-              const index = Math.round(scrollPosition / screenWidth);
+            getItemLayout={(_, index) => ({ length: screenWidth, offset: screenWidth * index, index })}
+            onMomentumScrollEnd={e => {
+              const index = Math.round(e.nativeEvent.contentOffset.x / screenWidth);
               setModalCurrentIndex(index);
-              // Reset zoom when changing images
               setZoomedImageIndex(null);
             }}
             scrollEventThrottle={16}
             scrollEnabled={zoomedImageIndex === null}
-            keyExtractor={(item, index) => `modal-img-${index}`}
+            keyExtractor={(_, index) => `modal-img-${index}`}
             renderItem={({ item: imageUri, index }) => (
               <View style={styles.modalImageContainer}>
-                <TouchableOpacity
-                  activeOpacity={1}
-                  onPress={() => handleDoubleTap(index)}
-                  style={{
-                    flex: 1,
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                  }}
-                >
-                  <Image
-                    source={{ uri: imageUri }}
-                    style={[
-                      styles.fullscreenImage,
-                      zoomedImageIndex === index &&
-                        styles.fullscreenImageZoomed,
-                    ]}
-                    resizeMode="contain"
-                  />
+                <TouchableOpacity activeOpacity={1} onPress={() => handleDoubleTap(index)} style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                  <Image source={{ uri: imageUri }} style={[styles.fullscreenImage, zoomedImageIndex === index && styles.fullscreenImageZoomed]} resizeMode="contain" />
                 </TouchableOpacity>
                 {zoomedImageIndex === index && (
                   <View style={styles.zoomHintContainer}>
-                    <Text style={styles.zoomHintText}>
-                      Tap again to zoom out
-                    </Text>
+                    <Text style={styles.zoomHintText}>Tap again to zoom out</Text>
                   </View>
                 )}
               </View>
@@ -896,365 +817,152 @@ const formatDate = dateString => {
 
 const styles = StyleSheet.create({
   mainContainer: {
-    flex: 1,
-    flexDirection: 'column',
-    justifyContent: 'space-between',
-    padding: 10,
     backgroundColor: colors.cardBackground,
     borderRadius: 10,
-    marginBottom: 10,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    margin: 10,
-  },
-
-  ImageContainer: {
-    width: '100%',
+    marginHorizontal: 10,
+    marginBottom: 8,
     padding: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 2,
   },
-
-  StatusContainerStart: {
-    marginTop: 5,
+  titleRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    marginLeft: 5,
+    marginBottom: 4,
   },
-
-  PriortyContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 5,
-    flexShrink: 1,
-    maxWidth: '45%',
-  },
-
-  PriorityText: {
-    fontSize: 12,
-    color: colors.textWhite,
-    fontFamily: fonts.regular,
-  },
-
-  statusContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 5,
-    flexShrink: 1,
-    maxWidth: 120,
-  },
-
-  StatusText: {
-    fontSize: 12,
-    color: colors.textWhite,
-    fontFamily: fonts.regular,
-  },
-
-  StatusContainerEnd: {
-    marginRight: 5,
+  badgesRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexShrink: 1,
-    maxWidth: '55%',
+    gap: 4,
+    flexShrink: 0,
   },
-
-  moreOptionsButton: {
-    marginLeft: 5,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-    borderRadius: 5,
-    paddingHorizontal: 4,
-    paddingVertical: 4,
-    justifyContent: 'center',
-    alignItems: 'center',
+  badge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
-
-  loadingContainer: {
-    width: '100%',
-    height: 200,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: colors.backgroundSecondary,
-  },
-
-  placeholderContainer: {
-    width: '100%',
-    height: 200,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: colors.backgroundSecondary,
-  },
-
-  placeholderText: {
-    fontSize: 14,
-    color: colors.textLight,
-    fontFamily: fonts.regular,
-    paddingHorizontal: 10,
-  },
-  placeholderText2: {
-    fontSize: 14,
-    color: colors.textLight,
-    fontFamily: fonts.regular,
-    paddingHorizontal: 10,
-    lineHeight: 16,
-  },
-  remarkContainer: {
-    marginBottom: 5,
-  },
-  expandButton: {
-    alignItems: 'flex-end',
-    marginTop: 2,
-    paddingHorizontal: 10,
+  badgeText: {
+    fontSize: 10,
+    color: colors.textWhite,
+    fontFamily: fonts.medium,
   },
   Heading: {
     fontFamily: fonts.semiBold,
-    fontSize: 16,
+    fontSize: 14,
     color: colors.textPrimary,
-    marginBottom: 5,
-    marginTop: 5,
-    paddingHorizontal: 10,
+    flex: 1,
+    marginRight: 6,
   },
-
-  carouselContainer: {
-    width: '100%',
-    height: 200,
-    position: 'relative',
-  },
-
-  carouselImage: {
-    width: Dimensions.get('window').width - 60,
-    height: '100%',
-    // marginLeft: 10,
-    marginRight: 3,
-  },
-
-  paginationContainer: {
-    position: 'absolute',
-    bottom: 10,
-    right: 10,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-
-  paginationText: {
+  remarkText: {
     fontSize: 12,
-    color: colors.textWhite,
-    fontFamily: fonts.medium,
-  },
-
-  ButtonContainer: {
-    borderTopColor: colors.border,
-    borderTopWidth: 1,
-    marginTop: 10,
-    paddingTop: 8,
-    flexDirection: 'column',
-  },
-
-  ClientTimeContainer: {
-    flexDirection: 'row',
-    marginBottom: 5,
-    justifyContent: 'space-between',
-  },
-
-  ClientRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-
-  TimeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-
-  ClientName: {
-    fontFamily: fonts.medium,
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-
-  ClientTime: {
+    color: colors.textLight,
     fontFamily: fonts.regular,
-    fontSize: 12,
+    marginBottom: 6,
+    lineHeight: 16,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flexWrap: 'wrap',
+  },
+  metaText: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontFamily: fonts.regular,
+  },
+  metaDot: {
+    fontSize: 11,
     color: colors.textSecondary,
   },
-
-  QuickButtonContainer: {
+  assignedChip: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 10,
-  },
-
-  ChatButton: {
-    flex: 1,
-    backgroundColor: colors.background,
-    borderColor: colors.primaryDark,
-    borderWidth: 1,
-    flexDirection: 'row',
-    justifyContent: 'center',
     alignItems: 'center',
-    gap: 6,
-    borderRadius: 5,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    gap: 3,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
-
-  ChatButtonText: {
+  assignedChipText: {
+    fontSize: 10,
+    color: colors.background,
     fontFamily: fonts.medium,
-    fontSize: 14,
-    color: colors.primaryDark,
+  },
+  moreOptionsButton: {
+    padding: 2,
+  },
+  toggleBtn: { flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 8 },
+  // toggleDivider: { flex: 1, height: 1, backgroundColor: colors.border },
+  toggleTrack: { width: 36, height: 20, borderRadius: 10, backgroundColor: colors.border, justifyContent: 'center', paddingHorizontal: 2 },
+  toggleTrackOn: { backgroundColor: colors.primary },
+  toggleThumb: { width: 16, height: 16, borderRadius: 8, backgroundColor: '#fff', elevation: 2, alignSelf: 'flex-start' },
+  toggleThumbOn: { alignSelf: 'flex-end' },
+  ImageContainer: { width: '100%', padding: 10 },
+  StatusContainerStart: { marginTop: 5, flexDirection: 'row', justifyContent: 'space-between', marginLeft: 5 },
+  PriortyContainer: { justifyContent: 'center', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 5, flexShrink: 1, maxWidth: '45%' },
+  PriorityText: { fontSize: 12, color: colors.textWhite, fontFamily: fonts.regular },
+  statusContainer: { justifyContent: 'center', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 5, flexShrink: 1, maxWidth: 120 },
+  StatusText: { fontSize: 12, color: colors.textWhite, fontFamily: fonts.regular },
+  StatusContainerEnd: { marginRight: 5, flexDirection: 'row', alignItems: 'center', flexShrink: 1, maxWidth: '55%' },
+  moreOptionsButton: { marginLeft: 5, backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: 5, paddingHorizontal: 4, paddingVertical: 4, justifyContent: 'center', alignItems: 'center' },
+  loadingContainer: { width: '100%', height: 200, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.backgroundSecondary },
+  placeholderContainer: { width: '100%', height: 200, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.backgroundSecondary },
+  placeholderText: { fontSize: 14, color: colors.textLight, fontFamily: fonts.regular, paddingHorizontal: 10 },
+  carouselContainer: { width: '100%', height: 200, position: 'relative' },
+  carouselImage: { width: Dimensions.get('window').width - 60, height: '100%', marginRight: 3 },
+  paginationContainer: { position: 'absolute', bottom: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
+  paginationText: { fontSize: 12, color: colors.textWhite, fontFamily: fonts.medium },
+  ButtonContainer: { borderTopColor: colors.border, borderTopWidth: 1, marginTop: 10, paddingTop: 8, flexDirection: 'column' },
+  remarkContainer: {
+    marginBottom: 8,
   },
 
-  QuickActionButton: {
-    flex: 1,
-    backgroundColor: colors.primaryDark,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 6,
-    borderRadius: 5,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-  },
-
-  QuickActionButtonText: {
-    fontFamily: fonts.medium,
-    fontSize: 14,
-    color: colors.textWhite,
-    textAlign: 'center',
-  },
-
-  DropdownButton: {
-    flex: 1,
-    backgroundColor: colors.background,
-    borderColor: colors.primaryDark,
-    borderWidth: 1,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 4,
-    borderRadius: 5,
-    paddingVertical: 8,
-    paddingHorizontal: 8,
-  },
-
-  DropdownButtonText: {
-    fontFamily: fonts.medium,
+  placeholderText2: {
+    fontFamily: fonts.regular,
     fontSize: 13,
-    color: colors.primaryDark,
+    color: colors.textSecondary,
+    lineHeight: 18,
   },
 
-  ActionButton: {
-    flex: 1,
-    backgroundColor: colors.primaryDark,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 4,
-    borderRadius: 5,
-    paddingVertical: 8,
-    paddingHorizontal: 8,
+  expandButton: {
+    alignSelf: 'flex-end',
+    marginTop: 2,
+    padding: 2,
   },
 
-  ActionButtonText: {
-    fontFamily: fonts.medium,
-    fontSize: 13,
-    color: colors.textWhite,
-  },
-
-  QuotationContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: colors.backgroundSecondary,
-    borderRadius: 5,
-  },
-
-  QuotationText: {
-    fontFamily: fonts.medium,
-    fontSize: 14,
-    color: colors.info,
-  },
-  fullscreenImageBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.95)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    position: 'relative',
-  },
-  fullscreenImageCloseButton: {
-    position: 'absolute',
-    top: 40,
-    right: 20,
-    padding: 12,
-    borderRadius: 24,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    zIndex: 1000,
-  },
-  modalImageCounter: {
-    position: 'absolute',
-    top: 50,
-    left: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    zIndex: 10,
-  },
-  modalImageCounterText: {
-    color: colors.textWhite,
-    fontSize: 14,
-    fontFamily: fonts.medium,
-  },
-  modalImageContainer: {
-    width: Dimensions.get('window').width,
-    height: Dimensions.get('window').height,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  fullscreenImage: {
-    width: Dimensions.get('window').width,
-    height: Dimensions.get('window').height * 0.8,
-  },
-  fullscreenImageZoomed: {
-    width: Dimensions.get('window').width * 2.5,
-    height: Dimensions.get('window').height * 2.5,
-  },
-  zoomScrollContent: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  zoomHintContainer: {
-    position: 'absolute',
-    bottom: 100,
-    alignSelf: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  zoomHintText: {
-    color: colors.textWhite,
-    fontSize: 12,
-    fontFamily: fonts.medium,
-  },
+  ClientTimeContainer: { flexDirection: 'row', marginBottom: 5, justifyContent: 'space-between' },
+  ClientRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  TimeRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  ClientName: { fontFamily: fonts.medium, fontSize: 14, color: colors.textSecondary },
+  ClientTime: { fontFamily: fonts.regular, fontSize: 12, color: colors.textSecondary },
+  AssignedRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4, paddingHorizontal: 6, paddingVertical: 3, backgroundColor: colors.primary, borderRadius: 6, alignSelf: 'flex-start', marginBottom: 9 },
+  AssignedName: { fontFamily: fonts.medium, fontSize: 12, color: colors.textWhite, flexShrink: 1 },
+  QuickButtonContainer: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
+  ChatButton: { flex: 1, backgroundColor: colors.background, borderColor: colors.primaryDark, borderWidth: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, borderRadius: 5, paddingVertical: 8, paddingHorizontal: 12 },
+  ChatButtonText: { fontFamily: fonts.medium, fontSize: 14, color: colors.primaryDark },
+  QuickActionButton: { flex: 1, backgroundColor: colors.primaryDark, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, borderRadius: 5, paddingVertical: 8, paddingHorizontal: 12 },
+  QuickActionButtonText: { fontFamily: fonts.medium, fontSize: 14, color: colors.textWhite, textAlign: 'center' },
+  DropdownButton: { flex: 1, backgroundColor: colors.background, borderColor: colors.primaryDark, borderWidth: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 4, borderRadius: 5, paddingVertical: 8, paddingHorizontal: 8 },
+  DropdownButtonText: { fontFamily: fonts.medium, fontSize: 13, color: colors.primaryDark },
+  ActionButton: { flex: 1, backgroundColor: colors.primaryDark, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 4, borderRadius: 5, paddingVertical: 8, paddingHorizontal: 8 },
+  ActionButtonText: { fontFamily: fonts.medium, fontSize: 13, color: colors.textWhite },
+  fullscreenImageBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center', alignItems: 'center' },
+  fullscreenImageCloseButton: { position: 'absolute', top: 40, right: 20, padding: 12, borderRadius: 24, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 1000 },
+  modalImageCounter: { position: 'absolute', top: 50, left: 20, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, zIndex: 10 },
+  modalImageCounterText: { color: colors.textWhite, fontSize: 14, fontFamily: fonts.medium },
+  modalImageContainer: { width: Dimensions.get('window').width, height: Dimensions.get('window').height, justifyContent: 'center', alignItems: 'center' },
+  fullscreenImage: { width: Dimensions.get('window').width, height: Dimensions.get('window').height * 0.8 },
+  fullscreenImageZoomed: { width: Dimensions.get('window').width * 2.5, height: Dimensions.get('window').height * 2.5 },
+  zoomHintContainer: { position: 'absolute', bottom: 100, alignSelf: 'center', backgroundColor: 'rgba(0,0,0,0.7)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
+  zoomHintText: { color: colors.textWhite, fontSize: 12, fontFamily: fonts.medium },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1267,23 +975,23 @@ const styles = StyleSheet.create({
   },
   dropdownModalTitle: {
     fontFamily: fonts.semiBold,
-    fontSize: 18,
+    fontSize: 16,
     color: colors.textPrimary,
-    marginBottom: 15,
+    marginBottom: 12,
     textAlign: 'center',
   },
   dropdownModalItem: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     borderRadius: 5,
     backgroundColor: colors.background,
-    marginBottom: 10,
+    marginBottom: 8,
     borderBottomColor: colors.border,
     borderBottomWidth: 1,
   },
   dropdownModalItemText: {
     fontFamily: fonts.medium,
-    fontSize: 14,
+    fontSize: 13,
     color: colors.textPrimary,
     textAlign: 'center',
   },

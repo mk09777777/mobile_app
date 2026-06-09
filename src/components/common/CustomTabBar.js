@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, TouchableOpacity, Text, Image, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { CommonActions } from '@react-navigation/native';
 import Icon from './Icon';
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
@@ -14,7 +15,12 @@ const CustomTabBar = ({ state, descriptors, navigation, currentApp }) => {
 
   const handleQuickSwitch = () => {
     if (navigationRef.isReady()) {
-      navigationRef.navigate('AppSelection');
+      // CommonActions.navigate traverses up the entire navigator tree to find
+      // 'AppSelection' regardless of current history. This is necessary because
+      // AppSelectionScreen uses navigation.replace() when picking an app, which
+      // removes it from rootState.routes — a direct routes check always fails.
+      // For coral/cad roles that don't register AppSelection, this silently no-ops.
+      navigationRef.dispatch(CommonActions.navigate({ name: 'AppSelection' }));
     }
   };
 

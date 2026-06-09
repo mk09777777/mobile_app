@@ -285,6 +285,7 @@ const ProductionDashboardScreen = ({ navigation }) => {
               { icon: 'layers', label: 'Stages', screen: 'StagesSettings' },
               { icon: 'event', label: 'Calendar', screen: 'Calendar' },
               { icon: 'map', label: 'Column Maps', screen: 'ColumnMaps' },
+              {icon:"calendar-view-week", label:"Schedule", screen:"ScheduleView" },
             ].map(({ icon, label, screen }) => (
               <TouchableOpacity
                 key={label}

@@ -7,6 +7,7 @@ import {
 } from 'react-native';
 import { useGetEnquiriesQuery } from '../../store/api';
 import { useAuth } from '../../context/AuthContext';
+import { useClients } from '../../features/clients/clientsHooks';
 import { colors } from '../../constants/colors';
 
 const PAGE_SIZE = 50;
@@ -37,7 +38,11 @@ export default function AllStatus({
   currentTab,
   user: propUser,
   statusValues,
-  displayEnquiries: parentDisplayEnquiries, // Add this prop from parent
+  displayEnquiries: parentDisplayEnquiries,
+  searchQuery,
+  resolvedFilters,
+  sortBy,
+  sortOrder,
 }) {
   const { user: authUser } = useAuth();
   const user = propUser || authUser;
@@ -52,26 +57,32 @@ export default function AllStatus({
 
   useEffect(() => {
     setPage(1);
-  }, [currentTab]);
+    setAllItems([]);
+  }, [currentTab, searchQuery, resolvedFilters, sortBy, sortOrder]);
 
   const queryParams = useMemo(() => {
-    const params = { role: user?.role, page, limit: PAGE_SIZE };
+    // Base params
+    const params = {
+      role: user?.role,
+      page,
+      limit: PAGE_SIZE,
+      search: searchQuery && searchQuery.trim() ? searchQuery.trim() : undefined,
+    };
 
-    console.log('🔍 [Query Params] Building params for tab:', currentTab);
-    console.log('🔍 [Query Params] User:', { id: user?.id, _id: user?._id, role: user?.role });
-
-    if (!currentTab || currentTab === 'all') {
-      console.log('🔍 [Query Params] Tab is "all", returning basic params:', params);
-      return params;
-    }
+    // Build shared filters from resolvedFilters (priority, clientId, dates, etc.)
+    // sortBy/sortOrder are appended via the filters object (api.js reads filters.sortBy)
+    const baseFilters = {
+      ...(resolvedFilters || {}),
+      sortBy: sortBy || 'CreatedDate',
+      sortOrder: sortOrder || 'desc',
+    };
 
     if (currentTab === 'AssignedToYou') {
       params.assignedTo = user?.id || user?._id;
       params.AssignedTo = user?.id || user?._id;
-      params.filters = { assignedTo: user?.id || user?._id };
-      console.log('🔍 [Query Params] Tab is "AssignedToYou", params:', params);
-    } else if (statusValues) {
-      // Send common case variants so backend matches regardless of DB casing
+      params.filters = { ...baseFilters, assignedTo: user?.id || user?._id };
+    } else if (statusValues && statusValues.length > 0) {
+      // Tab-specific status filter — send common case variants
       const expanded = [...new Set(
         statusValues.flatMap(s => [
           s,
@@ -80,17 +91,46 @@ export default function AllStatus({
           s.charAt(0).toUpperCase() + s.slice(1).toLowerCase(),
         ]),
       )];
-      params.filters = { status: expanded };
-      console.log('🔍 [Query Params] Tab has status filter:', { currentTab, statusValues, expanded });
+      params.filters = { ...baseFilters, status: expanded };
+    } else {
+      // "All" tab or no status filter — still apply base filters + sort
+      params.filters = baseFilters;
     }
 
     return params;
-  }, [user, page, currentTab, statusValues]);
+  }, [user, page, currentTab, statusValues, searchQuery, resolvedFilters, sortBy, sortOrder]);
 
   const { data, isLoading, isFetching, refetch } = useGetEnquiriesQuery(
     queryParams,
     { skip: !user },
   );
+
+  // Fetch clients for name resolution (uses RTK Query cache — no extra network calls)
+  const { clients: clientsData = [] } = useClients({ skip: !user });
+  const clients = Array.isArray(clientsData) ? clientsData : [];
+
+  const clientNameMap = useMemo(() => {
+    const map = new Map();
+    clients.forEach(client => {
+      const clientId = client.id || client._id || client.Id;
+      const clientName = client.name || client.Name;
+      if (clientId && clientName && clientName !== 'Unknown Client') {
+        const idStr = String(clientId).trim();
+        map.set(idStr, clientName);
+        map.set(idStr.toLowerCase(), clientName);
+      }
+    });
+    return map;
+  }, [clients]);
+
+  const resolveClientName = useCallback((enquiry) => {
+    const existing = enquiry.clientName || enquiry.ClientName;
+    if (existing && existing !== 'Unknown Client') return existing;
+    const rawId = enquiry.clientId || enquiry.ClientId;
+    if (!rawId) return 'Unknown Client';
+    const idStr = String(rawId).trim();
+    return clientNameMap.get(idStr) || clientNameMap.get(idStr.toLowerCase()) || 'Unknown Client';
+  }, [clientNameMap]);
 
   // Frontend filtering fallback (backend may not filter by multi-word statuses or assignedTo correctly)
   useEffect(() => {
@@ -142,8 +182,9 @@ export default function AllStatus({
       const normalized = filtered.map(item => ({
         ...item,
         id: item.id || item._id || item.Id || item.EnquiryId || item.enquiryId,
+        clientName: resolveClientName(item),
       }));
-      
+
       setAllItems(normalized);
       return;
     }
@@ -199,9 +240,9 @@ export default function AllStatus({
           }
           
           if (assignedId && typeof assignedId === 'object') {
-            assignedId = assignedId.id || assignedId._id || '';
+            assignedId = assignedId.id || assignedId.Id || assignedId._id || '';
           }
-          
+
           const assignedIdStr = String(assignedId || '').trim();
           const matches = assignedIdStr === userId;
           
@@ -226,10 +267,11 @@ export default function AllStatus({
       }
     }
 
-    // Normalize item ids
+    // Normalize item ids and enrich client names
     const normalized = filtered.map(item => ({
       ...item,
       id: item.id || item._id || item.Id || item.EnquiryId || item.enquiryId,
+      clientName: resolveClientName(item),
     }));
 
     setAllItems(prev => {
@@ -238,7 +280,18 @@ export default function AllStatus({
       const newItems = normalized.filter(item => !existingIds.has(item.id));
       return [...prev, ...newItems];
     });
-  }, [data, page, statusValues, currentTab, user, parentDisplayEnquiries]);
+  }, [data, page, statusValues, currentTab, user, parentDisplayEnquiries, resolveClientName]);
+
+  // Re-enrich client names when the client map loads after enquiries
+  useEffect(() => {
+    if (clientNameMap.size === 0) return;
+    setAllItems(prev =>
+      prev.map(item => ({
+        ...item,
+        clientName: resolveClientName(item),
+      })),
+    );
+  }, [clientNameMap, resolveClientName]);
 
   const refreshFetchSeenRef = useRef(false);
   const refreshTimerRef = useRef(null);

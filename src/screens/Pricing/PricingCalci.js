@@ -12,6 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import BrandedAlert from '../../components/common/BrandedAlert';
+import PdfViewer from '../../components/common/PdfViewer';
 import RNFS from 'react-native-fs';
 import Share from 'react-native-share';
 import { launchImageLibrary } from 'react-native-image-picker';
@@ -58,6 +59,8 @@ export default function PricingCalci() {
   const [showStoneModal, setShowStoneModal] = useState(false);
   const [showMetalModal, setShowMetalModal] = useState(false);
   const [showAllPricesModal, setShowAllPricesModal] = useState(false);
+  const [pdfHtml, setPdfHtml] = useState(null);   // raw HTML for in-app preview
+  const [showPdfModal, setShowPdfModal] = useState(false);
 
   // API Data
   const { clients = [] } = useClients();
@@ -104,9 +107,10 @@ export default function PricingCalci() {
     
     // If no valid data at all, show error and clear
     if (!hasStones && !hasExtractedStones && !hasMetal && !hasExtractedMetal && !hasTotalPieces) {
-      Alert.alert(
+      showAlert(
         'No Data Found',
         'No pricing data was extracted from the image. Please reupload a clear image with visible pricing information.',
+        'warning',
         [
           {
             text: 'OK',
@@ -116,6 +120,7 @@ export default function PricingCalci() {
               setEditableStones([]);
               setEditableMetal({ Weight: 0, Quality: '18K', Rate: 0 });
               setPricingResult(null);
+              hideAlert();
             }
           }
         ]
@@ -961,7 +966,7 @@ export default function PricingCalci() {
             )}
 
             {/* ---- Stones Table (fixed width, no horizontal scroll) ---- */}
-            <Text style={styles.subSectionTitle}>Stones ({editableStones.length})</Text>
+            <Text style={styles.subSectionTitle}>Missing Stones Data</Text>
             <View style={styles.compactTableWrapper}>
               {/* Header */}
               <View style={styles.compactTableHeader}>
@@ -978,35 +983,61 @@ export default function PricingCalci() {
               
               {/* Body */}
               <ScrollView style={styles.compactTableBody} nestedScrollEnabled>
-                {editableStones.map((stone, i) => (
-                  <View key={i} style={styles.compactTableRowWrapper}>
-                    <TouchableOpacity
-                      style={styles.compactTableRow}
-                      onPress={() => { setEditingStoneIndex(i); setEditModalVisible(true); }}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={[styles.compactTableCell, { width: 45 }]}>{stone.MmSize || '-'}</Text>
-                      <Text style={[styles.compactTableCell, { width: 40 }]}>{stone.Color || '-'}</Text>
-                      <Text style={[styles.compactTableCell, { width: 40 }]}>{stone.Shape || '-'}</Text>
-                      <Text style={[styles.compactTableCell, { width: 45 }]}>{stone.SieveSize || '-'}</Text>
-                      <Text style={[styles.compactTableCell, { width: 45 }]}>{stone.Weight ?? 0}</Text>
-                      <Text style={[styles.compactTableCell, { width: 40 }]}>{stone.Pcs ?? 0}</Text>
-                      <Text style={[styles.compactTableCell, { width: 45 }]}>{stone.CtWeight ?? 0}</Text>
-                      <Text style={[styles.compactTableCell, { width: 50, color: (!stone.Price || parseFloat(stone.Price) <= 0) ? colors.error : colors.textPrimary, fontFamily: (!stone.Price || parseFloat(stone.Price) <= 0) ? fonts.bold : fonts.regular }]}>{stone.Price ?? 0}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                      style={styles.deleteIconButton} 
-                      onPress={() => deleteStone(i)}
-                    >
-                      <Icon name="delete" size={14} color={colors.error} />
-                    </TouchableOpacity>
+                {editableStones
+                  .filter(stone => !stone.MmSize || !stone.Color || !stone.Shape || !stone.SieveSize || !stone.Weight || !stone.Pcs || !stone.CtWeight || !stone.Price || parseFloat(stone.Price) <= 0)
+                  .map((stone, i) => {
+                    const originalIndex = editableStones.indexOf(stone);
+                    return (
+                      <View key={i} style={styles.compactTableRowWrapper}>
+                        <TouchableOpacity
+                          style={styles.compactTableRow}
+                          onPress={() => { setEditingStoneIndex(originalIndex); setEditModalVisible(true); }}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[styles.compactTableCell, { width: 45, color: !stone.MmSize ? colors.error : colors.textPrimary, fontFamily: !stone.MmSize ? fonts.bold : fonts.regular }]}>{stone.MmSize || '-'}</Text>
+                          <Text style={[styles.compactTableCell, { width: 40, color: !stone.Color ? colors.error : colors.textPrimary, fontFamily: !stone.Color ? fonts.bold : fonts.regular }]}>{stone.Color || '-'}</Text>
+                          <Text style={[styles.compactTableCell, { width: 40, color: !stone.Shape ? colors.error : colors.textPrimary, fontFamily: !stone.Shape ? fonts.bold : fonts.regular }]}>{stone.Shape || '-'}</Text>
+                          <Text style={[styles.compactTableCell, { width: 45, color: !stone.SieveSize ? colors.error : colors.textPrimary, fontFamily: !stone.SieveSize ? fonts.bold : fonts.regular }]}>{stone.SieveSize || '-'}</Text>
+                          <Text style={[styles.compactTableCell, { width: 45, color: !stone.Weight ? colors.error : colors.textPrimary, fontFamily: !stone.Weight ? fonts.bold : fonts.regular }]}>{stone.Weight ?? 0}</Text>
+                          <Text style={[styles.compactTableCell, { width: 40, color: !stone.Pcs ? colors.error : colors.textPrimary, fontFamily: !stone.Pcs ? fonts.bold : fonts.regular }]}>{stone.Pcs ?? 0}</Text>
+                          <Text style={[styles.compactTableCell, { width: 45, color: !stone.CtWeight ? colors.error : colors.textPrimary, fontFamily: !stone.CtWeight ? fonts.bold : fonts.regular }]}>{stone.CtWeight ?? 0}</Text>
+                          <Text style={[styles.compactTableCell, { width: 50, color: (!stone.Price || parseFloat(stone.Price) <= 0) ? colors.error : colors.textPrimary, fontFamily: (!stone.Price || parseFloat(stone.Price) <= 0) ? fonts.bold : fonts.regular }]}>{stone.Price ?? 0}</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                          style={styles.deleteIconButton} 
+                          onPress={() => deleteStone(originalIndex)}
+                        >
+                          <Icon name="delete" size={14} color={colors.error} />
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  })}
+                {editableStones.filter(stone => !stone.MmSize || !stone.Color || !stone.Shape || !stone.SieveSize || !stone.Weight || !stone.Pcs || !stone.CtWeight || !stone.Price || parseFloat(stone.Price) <= 0).length === 0 && (
+                  <View style={{ padding: 16, alignItems: 'center' }}>
+                    <Text style={{ color: colors.textSecondary, fontSize: fonts.sm }}>All stones data is complete</Text>
                   </View>
-                ))}
+                )}
               </ScrollView>
             </View>
             <TouchableOpacity style={styles.addStoneButton} onPress={addStone}>
               <Icon name="add" size={18} color={colors.textWhite} />
               <Text style={styles.addStoneButtonText}>Add Stone</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.addStoneButton, { backgroundColor: colors.border, marginTop: 8 }]} disabled>
+              <Icon name="refresh" size={18} color={colors.textWhite} />
+              <Text style={styles.addStoneButtonText}>Recalculate</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.addStoneButton, { backgroundColor: colors.primary, marginTop: 8 }]} onPress={() => {
+              const html = buildPricingHtml();
+              if (html) {
+                setPdfHtml(html);
+                setShowPdfModal(true);
+              } else {
+                showAlert('Error', 'No pricing data to preview', 'warning');
+              }
+            }}>
+              <Icon name="picture-as-pdf" size={18} color={colors.textWhite} />
+              <Text style={styles.addStoneButtonText}>Show Pricing</Text>
             </TouchableOpacity>
 
             {/* ---- Metal ---- */}
@@ -1313,6 +1344,34 @@ export default function PricingCalci() {
             <TouchableOpacity style={styles.editModalSaveButton} onPress={() => setEditModalVisible(false)}>
               <Text style={styles.editModalSaveText}>Done</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showPdfModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => { setShowPdfModal(false); setPdfHtml(null); }}
+      >
+        <View style={styles.pdfModalOverlay}>
+          <View style={styles.pdfModalContent}>
+            {/* Pass html= so PdfViewer renders locally — no file:// or Google Docs needed */}
+            <PdfViewer html={pdfHtml} style={styles.pdfViewer} />
+            <View style={styles.pdfModalToolbar}>
+              <TouchableOpacity style={styles.pdfToolbarBtn} onPress={handleSharePDF} activeOpacity={0.8}>
+                <Icon name="share" size={20} color="#fff" />
+                <Text style={styles.pdfToolbarBtnText}>Share PDF</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.pdfToolbarBtn, { backgroundColor: 'rgba(0,0,0,0.5)' }]}
+                onPress={() => { setShowPdfModal(false); setPdfHtml(null); }}
+                activeOpacity={0.8}
+              >
+                <Icon name="close" size={20} color="#fff" />
+                <Text style={styles.pdfToolbarBtnText}>Close</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -1963,5 +2022,44 @@ const styles = StyleSheet.create({
     fontSize: fonts.xs,
     fontFamily: fonts.regular,
     color: '#E65100',
+  },
+  pdfModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  pdfModalContent: {
+    width: '100%',
+    height: '80%',
+    backgroundColor: colors.background,
+    borderRadius: 12,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  pdfViewer: {
+    flex: 1,
+  },
+  pdfModalToolbar: {
+    flexDirection: 'row',
+    gap: 10,
+    padding: 10,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+  },
+  pdfToolbarBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: colors.primary,
+  },
+  pdfToolbarBtnText: {
+    color: '#fff',
+    fontFamily: fonts.medium,
+    fontSize: fonts.sm,
   },
 });

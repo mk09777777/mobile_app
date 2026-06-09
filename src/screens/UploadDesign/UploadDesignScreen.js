@@ -65,9 +65,10 @@ const UploadDesignScreen = ({ route, navigation }) => {
   const [selectedExcel, setSelectedExcel] = useState(null);
   const [showVersionDropdown, setShowVersionDropdown] = useState(false);
   const [imageValidated, setImageValidated] = useState(false);
-  const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
-  const showAlert = (title, message, type = 'info', buttons = []) =>
-    setAlertConfig({ visible: true, title, message, type, buttons });
+  const [cost, setCost] = useState(0);
+  const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [], checklist: [] });
+  const showAlert = (title, message, type = 'info', buttons = [], checklist = []) =>
+    setAlertConfig({ visible: true, title, message, type, buttons, checklist });
   const hideAlert = () => setAlertConfig(prev => ({ ...prev, visible: false }));
 
   const [validateImageUpload, { isLoading: isUploading }] =
@@ -385,16 +386,16 @@ const UploadDesignScreen = ({ route, navigation }) => {
       // Display validation results
       const summary = result?.summary || 'Validation completed';
       const issues = result?.issues;
-      
-      let message = `${summary}`;
-      if (issues && Array.isArray(issues) && issues.length > 0) {
-        message += `\n\nIssues found:\n${issues.map((issue, i) => `${i + 1}. ${issue}`).join('\n')}`;
-      }
+      const hasIssues = Array.isArray(issues) && issues.length > 0;
+
+      const checklist = hasIssues
+        ? issues.map(issue => ({ text: issue, status: 'fail' }))
+        : [{ text: summary, status: 'pass' }];
 
       showAlert(
         'Validation Result',
-        message,
-        'info',
+        hasIssues ? summary : '',
+        hasIssues ? 'warning' : 'success',
         [
           {
             text: 'Continue',
@@ -407,6 +408,7 @@ const UploadDesignScreen = ({ route, navigation }) => {
                 designCode: designCode.trim(),
                 images: selectedImages,
                 validationResult: result,
+                cost: cost,
               });
             },
           },
@@ -419,6 +421,7 @@ const UploadDesignScreen = ({ route, navigation }) => {
             style: 'cancel',
           },
         ],
+        checklist,
       );
     } catch (error) {
       if (__DEV__) {
@@ -581,12 +584,12 @@ const UploadDesignScreen = ({ route, navigation }) => {
             Add {designType === 'coral' ? 'Coral' : 'CAD'}
           </Text>
 
-          {/* Code Field */}
-          <View style={styles.codeContainer}>
+          {/* Code & Cost Fields */}
+          <View style={styles.codeBlock}>
             <Text style={styles.label}>
               {designType === 'coral' ? 'Coral' : 'CAD'} Code:
             </Text>
-            <View style={styles.codeInputContainer}>
+            <View style={styles.codeInputRow}>
               <Input
                 value={designCode}
                 onChangeText={setDesignCode}
@@ -599,13 +602,27 @@ const UploadDesignScreen = ({ route, navigation }) => {
               <TouchableOpacity
                 style={styles.copyButton}
                 onPress={() => {
-                  // TODO: Copy to clipboard
                   showAlert('Info', 'Code copied to clipboard', 'warning');
                 }}
               >
                 <Icon name="content-copy" size={20} color={colors.primary} />
               </TouchableOpacity>
             </View>
+          </View>
+
+          <View style={styles.costBlock}>
+            <Text style={styles.label}>
+              {designType === 'coral' ? 'Coral' : 'CAD'} Cost:
+            </Text>
+            <Input
+              value={cost}
+              onChangeText={setCost}
+              editable={true}
+              placeholder={`Enter ${
+                designType === 'coral' ? 'Coral' : 'CAD'
+              } Cost`}
+              inputMode="numeric"
+            />
           </View>
 
           {/* Version Dropdown */}
@@ -664,6 +681,7 @@ const UploadDesignScreen = ({ route, navigation }) => {
         title={alertConfig.title}
         message={alertConfig.message}
         type={alertConfig.type}
+        checklist={alertConfig.checklist}
         buttons={alertConfig.buttons}
         onClose={hideAlert}
       />
@@ -692,7 +710,10 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     marginBottom: 24,
   },
-  codeContainer: {
+  codeBlock: {
+    marginBottom: 16,
+  },
+  costBlock: {
     marginBottom: 20,
   },
   label: {
@@ -701,7 +722,7 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     marginBottom: 8,
   },
-  codeInputContainer: {
+  codeInputRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
