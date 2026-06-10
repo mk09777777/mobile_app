@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+﻿import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -542,8 +542,6 @@ const PricingScreen = ({ route, navigation }) => {
       };
       
       console.log('🔵 CALCULATE BUTTON - Client ID Status:');
-      console.log('❌ Client ID is NOT being sent (clientId: null)');
-      console.log('📦 Payload clientId:', payload.clientId);
       
       // Final payload validation - check for any invalid values
       if (!isFinite(payload.details.Metal.Weight) ||
@@ -623,12 +621,10 @@ const PricingScreen = ({ route, navigation }) => {
         
         // Update total price if in response
         if (response.TotalPrice !== undefined) {
-          console.log('✅ TotalPrice found in response, updating formData');
           console.log('TotalPrice before update:', response.TotalPrice);
           console.log('TotalPrice after toString:', response.TotalPrice.toString());
           updates.totalPrice = response.TotalPrice.toString();
         } else {
-          console.log('❌ TotalPrice NOT found in response!');
         }
         
         // Update metal weight from response if provided
@@ -1229,12 +1225,6 @@ const PricingScreen = ({ route, navigation }) => {
         pricingData: pricingArray,
       }).unwrap();
       
-      if (__DEV__) {
-        console.log('✅ [handleSave] Save pricing API success:', {
-          result: saveResult,
-          timeTaken: `${Date.now() - startTime}ms`,
-        });
-      }
 
       // Refetch enquiry data to get updated pricing before navigating back
       if (finalEnquiryId) {
@@ -1616,20 +1606,17 @@ const PricingScreen = ({ route, navigation }) => {
   // Calculate pricing for a specific entry
   const handleCalculateForEntry = async (entryIndex) => {
     // Log immediately when function is called
-    console.log('🚀 CALCULATE FUNCTION CALLED');
     console.log('Entry Index:', entryIndex);
     console.log('Pricing Entries State Length:', pricingEntriesState.length);
     console.log('Entry Exists:', pricingEntriesState[entryIndex] ? 'YES' : 'NO');
     
     if (entryIndex === null || !pricingEntriesState[entryIndex]) {
-      console.log('❌ ERROR: Invalid pricing entry');
       console.log('Entry Index is null:', entryIndex === null);
       console.log('Entry exists:', !!pricingEntriesState[entryIndex]);
       showAlert('Error', 'Invalid pricing entry', 'error');
       return;
     }
 
-    console.log('✅ Entry validation passed, starting calculation...');
     // Note: isCalculating comes from the mutation hook, no need to set it manually
     
     try {
@@ -1709,8 +1696,6 @@ const PricingScreen = ({ route, navigation }) => {
       };
 
       console.log('🔵 CALCULATE BUTTON (Entry-Specific) - Client ID Status:');
-      console.log('❌ Client ID is NOT being sent (clientId: null)');
-      console.log('📦 Payload clientId:', payload.clientId);
       console.log('=== PAYLOAD BEING SENT ===');
       console.log('Payload:', JSON.stringify(payload, null, 2));
       console.log('Metal Payload:', JSON.stringify(metalPayload, null, 2));
@@ -1724,11 +1709,9 @@ const PricingScreen = ({ route, navigation }) => {
       try {
         console.log('⏳ Waiting for API response...');
         response = await calculatePricing(payload).unwrap();
-        console.log('✅ API call successful - response received');
         console.log('Response type:', typeof response);
         console.log('Response:', response);
       } catch (apiError) {
-        console.log('❌ API call failed with error:');
         console.log('Error object:', apiError);
         console.log('Error type:', typeof apiError);
         console.log('Error message:', apiError?.message);
@@ -1790,13 +1773,11 @@ const PricingScreen = ({ route, navigation }) => {
           // Metal Price
           if (response.MetalPrice !== undefined && response.MetalPrice !== null) {
             updatedFormData.metalPrice = parseFloat(response.MetalPrice).toFixed(2);
-            console.log('✅ Updated metalPrice:', updatedFormData.metalPrice, 'from', response.MetalPrice);
           }
           
           // Diamonds Price
           if (response.DiamondsPrice !== undefined && response.DiamondsPrice !== null) {
             updatedFormData.diamondPrice = parseFloat(response.DiamondsPrice).toFixed(2);
-            console.log('✅ Updated diamondPrice:', updatedFormData.diamondPrice, 'from', response.DiamondsPrice);
           }
           
           // Total Price - use directly from response (includes all calculations)
@@ -1804,12 +1785,10 @@ const PricingScreen = ({ route, navigation }) => {
             const totalPriceValue = parseFloat(response.TotalPrice);
             const totalPriceFormatted = totalPriceValue.toFixed(2);
             updatedFormData.totalPrice = totalPriceFormatted;
-            console.log('✅ Updated totalPrice123123:', response);
             console.log('   - Original value:', response.TotalPrice);
             console.log('   - Parsed value:', totalPriceValue);
             console.log('   - Formatted value:', totalPriceFormatted);
           } else {
-            console.log('❌ TotalPrice is undefined or null - NOT updating formData');
             console.log('   - TotalPrice value:', response.TotalPrice);
             console.log('   - TotalPrice undefined?', response.TotalPrice === undefined);
             console.log('   - TotalPrice null?', response.TotalPrice === null);
@@ -1820,13 +1799,11 @@ const PricingScreen = ({ route, navigation }) => {
             // Metal Weight
             if (response.Metal.Weight !== undefined && response.Metal.Weight !== null) {
               updatedFormData.metalWeight = parseFloat(response.Metal.Weight).toString();
-              console.log('✅ Updated metalWeight:', updatedFormData.metalWeight, 'from', response.Metal.Weight);
             }
             
             // Metal Quality
             if (response.Metal.Quality) {
               updatedFormData.metalQuality = response.Metal.Quality;
-              console.log('✅ Updated metalQuality:', updatedFormData.metalQuality, 'from', response.Metal.Quality);
             }
             
             // Metal Rate - update the override field with the calculated rate
@@ -1836,14 +1813,12 @@ const PricingScreen = ({ route, navigation }) => {
                 ? parseFloat(response.Metal.Rate) 
                 : response.Metal.Rate;
               updatedFormData.metalRateOverride = rateValue.toString();
-              console.log('✅ Updated metalRateOverride:', updatedFormData.metalRateOverride, 'from', response.Metal.Rate);
             }
           }
           
           // Diamond Weight
           if (response.DiamondWeight !== undefined && response.DiamondWeight !== null) {
             updatedFormData.diamondWeight = parseFloat(response.DiamondWeight).toString();
-            console.log('✅ Updated diamondWeight:', updatedFormData.diamondWeight, 'from', response.DiamondWeight);
           }
           
           // Update Client pricing fields from response.Client - OVERWRITE with calculated values
@@ -1891,7 +1866,6 @@ const PricingScreen = ({ route, navigation }) => {
             // Update dutiesAmount in formData
             updatedFormData.dutiesAmount = parseFloat(dutiesAmountValue).toFixed(2);
             if (__DEV__) {
-              console.log('✅ Updated dutiesAmount:', updatedFormData.dutiesAmount, 'from', dutiesAmountValue);
             }
           } else {
             if (__DEV__) {
@@ -1931,7 +1905,6 @@ const PricingScreen = ({ route, navigation }) => {
           
           console.log('=== STATE UPDATE COMPLETE ===');
           console.log('Final Entry State:', JSON.stringify(updated[entryIndex], null, 2));
-          console.log('✅ ALL FIELDS REPLACED WITH CALCULATED VALUES');
           console.log('Display Values:');
           console.log('  Metal Price:', updatedFormData.metalPrice);
           console.log('  Diamonds Price:', updatedFormData.diamondPrice);
@@ -2039,8 +2012,6 @@ const PricingScreen = ({ route, navigation }) => {
       };
 
       console.log('🟢 SYNC CLIENT PRICING - Client ID Status:');
-      console.log('✅ Client ID IS being sent');
-      console.log('📦 Payload clientId:', payload.clientId);
       console.log('📋 Full payload:', JSON.stringify(payload, null, 2));
 
       // Call API to sync client pricing
@@ -2048,17 +2019,14 @@ const PricingScreen = ({ route, navigation }) => {
 
       console.log('🟢 SYNC PRICING - API Response:');
       console.log('📥 Full Response:', JSON.stringify(response, null, 2));
-      console.log('💰 MetalPrice:', response?.MetalPrice);
       console.log('💎 DiamondsPrice:', response?.DiamondsPrice);
       console.log('💎 DiamondPrice (alternative):', response?.DiamondPrice);
-      console.log('📊 TotalPrice:', response?.TotalPrice);
       console.log('💎 DiamondWeight:', response?.DiamondWeight);
 
       // Update the specific entry's form data with response
       if (response) {
         // Update metal price - handle 0 as valid value
         if (response.MetalPrice !== undefined && response.MetalPrice !== null) {
-          console.log('✅ Updating MetalPrice:', response.MetalPrice);
           updatePricingEntryFormData(entryIndex, 'metalPrice', parseFloat(response.MetalPrice).toFixed(2));
         } else {
           console.log('⚠️ MetalPrice is undefined or null in response');
@@ -2066,23 +2034,19 @@ const PricingScreen = ({ route, navigation }) => {
 
         // Update diamonds price - handle 0 as valid value
         if (response.DiamondsPrice !== undefined && response.DiamondsPrice !== null) {
-          console.log('✅ Updating DiamondsPrice:', response.DiamondsPrice);
           updatePricingEntryFormData(entryIndex, 'diamondPrice', parseFloat(response.DiamondsPrice).toFixed(2));
         } else {
           console.log('⚠️ DiamondsPrice is undefined or null in response');
           // Check for alternative field names
           if (response.DiamondPrice !== undefined && response.DiamondPrice !== null) {
-            console.log('✅ Found DiamondPrice (alternative), updating:', response.DiamondPrice);
             updatePricingEntryFormData(entryIndex, 'diamondPrice', parseFloat(response.DiamondPrice).toFixed(2));
           } else {
-            console.log('❌ No diamond price found in response. Setting to 0.');
             updatePricingEntryFormData(entryIndex, 'diamondPrice', '0.00');
           }
         }
 
         // Update total price - handle 0 as valid value
         if (response.TotalPrice !== undefined && response.TotalPrice !== null) {
-          console.log('✅ Updating TotalPrice:', response.TotalPrice);
           updatePricingEntryFormData(entryIndex, 'totalPrice', parseFloat(response.TotalPrice).toFixed(2));
         } else {
           // Calculate total if not provided
@@ -3340,10 +3304,8 @@ const PricingScreen = ({ route, navigation }) => {
                     console.log('Editing Entry Index:', editingEntryIndex);
                     console.log('Entry Exists:', pricingEntriesState[editingEntryIndex] ? 'YES' : 'NO');
                     if (editingEntryIndex !== null && pricingEntriesState[editingEntryIndex]) {
-                      console.log('✅ Calling handleCalculateForEntry...');
                       await handleCalculateForEntry(editingEntryIndex);
                     } else {
-                      console.log('❌ Cannot calculate - invalid entry index or entry does not exist');
                       showAlert('Error', 'Please select a valid pricing entry to calculate', 'error');
                     }
                   }}
@@ -3468,10 +3430,8 @@ const PricingScreen = ({ route, navigation }) => {
                     console.log('Editing Entry Index:', editingEntryIndex);
                     console.log('Entry Exists:', pricingEntriesState[editingEntryIndex] ? 'YES' : 'NO');
                     if (editingEntryIndex !== null && pricingEntriesState[editingEntryIndex]) {
-                      console.log('✅ Calling handleCalculateForEntry...');
                       await handleCalculateForEntry(editingEntryIndex);
                     } else {
-                      console.log('❌ Cannot calculate - invalid entry index or entry does not exist');
                       showAlert('Error', 'Please select a valid pricing entry to calculate', 'error');
                     }
                   }}

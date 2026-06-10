@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import {
   TouchableOpacity,
   Text,
@@ -105,24 +105,11 @@ export default function StatusTabs({
   const [activeEnquiryStatus, setActiveEnquiryStatus] = React.useState(null);
 
   const updateEnquiryStatusWrapper = async (updateData) => {
-    if (!onUpdateEnquiry) {
-      console.log('⚠️ onUpdateEnquiry is not available');
-      return false;
-    }
-    
-    const payload = {
-      id: activeEnquiryId,
-      ...updateData,
-    };
-    
-    console.log('📦 Calling onUpdateEnquiry with payload:', payload);
-    
+    if (!onUpdateEnquiry) return false;
+    const payload = { id: activeEnquiryId, ...updateData };
     try {
-      const result = await onUpdateEnquiry(payload);
-      console.log('✅ onUpdateEnquiry result:', result);
-      return result;
-    } catch (error) {
-      console.error('❌ onUpdateEnquiry error:', error);
+      return await onUpdateEnquiry(payload);
+    } catch {
       return false;
     }
   };
@@ -148,7 +135,8 @@ export default function StatusTabs({
     } else if (userRole === 'cad') {
       return [
         { key: 'AssignedToYou', label: 'Assigned to You' },
-        { key: 'CadPending', label: 'CAD Pending' }
+        { key: 'CadPending', label: 'CAD Pending' },
+        { key: 'ApprovedCad', label: 'Approved CAD' },
       ];
     } else if (userRole === 'client_handler') {
       return [
@@ -175,52 +163,7 @@ export default function StatusTabs({
     }
   }, [tabs, activeTab, onTabChange]);
 
-  const assignedToYouCount = React.useMemo(() => {
-    const userId = String(user?.id || user?._id).trim();
-    console.log('🔢 [Count] Calculating assignedToYouCount for userId:', userId);
-    console.log('🔢 [Count] Total displayEnquiries:', displayEnquiries.length);
-    
-    const filtered = displayEnquiries.filter((enquiry, index) => {
-      let assignedToId = enquiry.AssignedTo || enquiry.assignedTo || enquiry._originalData?.AssignedTo || enquiry._originalData?.assignedTo;
-      
-      // Log first 5 items
-      if (index < 5) {
-        console.log(`🔢 [Count] Enquiry ${index}:`, {
-          id: enquiry.id || enquiry._id || enquiry.Id,
-          name: enquiry.Name || enquiry.name,
-          assignedToRaw: assignedToId,
-          assignedToType: typeof assignedToId,
-        });
-      }
-      
-      if (assignedToId && typeof assignedToId === 'object') {
-        assignedToId = assignedToId.id || assignedToId._id || assignedToId.toString();
-      }
-      
-      const assignedToIdStr = String(assignedToId).trim();
-      const matches = assignedToIdStr === userId;
-      
-      // Log first 5 comparisons
-      if (index < 5) {
-        console.log(`🔢 [Count] Enquiry ${index} comparison:`, {
-          assignedToIdStr,
-          userId,
-          matches,
-        });
-      }
-      
-      return matches;
-    });
-    
-    console.log('🔢 [Count] Filtered count:', filtered.length);
-    console.log('🔢 [Count] Filtered enquiries:', filtered.map(e => ({
-      id: e.id || e._id || e.Id,
-      name: e.Name || e.name,
-      assignedTo: e.AssignedTo || e.assignedTo,
-    })));
-    
-    return filtered.length;
-  }, [displayEnquiries, user]);
+  const [assignedToYouCount, setAssignedToYouCount] = React.useState(0);
   const getCountForTab = React.useCallback((tabKey) => {
     switch (tabKey) {
       case 'all': return displayEnquiries.length;
@@ -302,20 +245,6 @@ export default function StatusTabs({
     // Only show "Assign To" button in specific tabs where assignment is relevant
     const tabsWithAssignButton = ['all', 'NewEnquiry', 'CoralPending', 'CadPending'];
     const shouldShowAssignButton = isAdmin && isUnassignedCheck && tabsWithAssignButton.includes(currentTab);
-    
-    // Debug log to help identify issues
-    if (__DEV__ && isAdmin && tabsWithAssignButton.includes(currentTab)) {
-      console.log('🔍 Assignment check:', {
-        id: item.Id || item._id || item.id,
-        name: item.Name || item.name,
-        assignedToRaw: item.AssignedTo || item.assignedTo,
-        assignedToType: typeof (item.AssignedTo || item.assignedTo),
-        assignedStr: assignedStr,
-        isUnassigned: isUnassignedCheck,
-        currentTab: currentTab,
-        shouldShowButton: shouldShowAssignButton,
-      });
-    }
     
     // Show Assign To button below the card only in expanded mode and when unassigned
     const showAssignBtn = isExpandedAll && shouldShowAssignButton;
@@ -433,6 +362,7 @@ export default function StatusTabs({
             user={user}
             statusValues={tabStatusValues[activeTab]}
             displayEnquiries={displayEnquiries}
+            onCountChange={setAssignedToYouCount}
           />
         </>
       )}
@@ -970,38 +900,21 @@ export default function StatusTabs({
                 onPress={async () => {
                   try {
                     if (u.id && activeEnquiryId) {
-                      console.log('🔄 Assigning enquiry:', {
-                        enquiryId: activeEnquiryId,
-                        userId: u.id,
-                        userName: u.name,
-                        status: activeEnquiryStatus,
-                      });
-
                       const success = await updateEnquiryStatusWrapper({
                         assignedTo: u.id,
                         status: activeEnquiryStatus,
                       });
-
                       if (success) {
-                        console.log('✅ Enquiry assigned successfully');
                         setShowAssignDropdown(false);
                         setActiveEnquiryId(null);
                         setActiveEnquiryStatus(null);
                         setAssignDropDownUsers([]);
-                        
-                        // Trigger refresh to update the list
-                        if (onRefresh) {
-                          onRefresh();
-                        }
-                      } else {
-                        console.log('❌ Failed to assign enquiry');
+                        if (onRefresh) onRefresh();
                       }
                     } else {
-                      console.log('⚠️ Missing required data for assignment');
                       setShowAssignDropdown(false);
                     }
-                  } catch (error) {
-                    console.error('❌ Error assigning enquiry:', error);
+                  } catch {
                     setShowAssignDropdown(false);
                   }
                 }}

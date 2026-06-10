@@ -35,12 +35,9 @@ let generatePDFModule = null;
 try {
   const mod = require('react-native-html-to-pdf');
   generatePDFModule = mod.generatePDF || mod.default?.generatePDF || mod.default;
-} catch (e) {
-  // module will be checked before use
-}
+} catch (e) {}
 
 export default function PricingCalci() {
-  // Form State
   const [clientId, setClientId] = useState('');
   const [stoneType, setStoneType] = useState('');
   const [metalKt, setMetalKt] = useState('18K');
@@ -54,22 +51,19 @@ export default function PricingCalci() {
     setAlertConfig({ visible: true, title, message, type, buttons });
   const hideAlert = () => setAlertConfig(prev => ({ ...prev, visible: false }));
 
-  // Modals Visibility
   const [showClientModal, setShowClientModal] = useState(false);
   const [showStoneModal, setShowStoneModal] = useState(false);
   const [showMetalModal, setShowMetalModal] = useState(false);
   const [showAllPricesModal, setShowAllPricesModal] = useState(false);
-  const [pdfHtml, setPdfHtml] = useState(null);   // raw HTML for in-app preview
+  const [pdfHtml, setPdfHtml] = useState(null);
   const [showPdfModal, setShowPdfModal] = useState(false);
 
-  // API Data
   const { clients = [] } = useClients();
   const { data: stoneTypesData = [] } = useGetStoneTypesQuery();
   const { data: metalPricesData } = useGetMetalPricesQuery(false);
   const [calculatePricing, { isLoading: isCalculating }] = useCalculatePricingMutation();
   const [GetimagepriceData, { isLoading: isImageLoading }] = useImagepriceDataMutation();
 
-  // Editable form state (populated from imageData)
   const [editableStones, setEditableStones] = useState([]);
   const [editableMetal, setEditableMetal] = useState({ Weight: 0, Quality: '18K', Rate: 0 });
   const [editableCharges, setEditableCharges] = useState({ Loss: 10, Labour: 7, ExtraCharges: 0, UndercutPrice: 0 });
@@ -78,7 +72,6 @@ export default function PricingCalci() {
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editingStoneIndex, setEditingStoneIndex] = useState(null);
 
-  // Validation: Check if metal rate and all stone prices are present
   const validatePricingData = useCallback(() => {
     const hasMetalRate = editableMetal && parseFloat(editableMetal.Rate) > 0;
     const allStonesHavePrices = editableStones.length > 0 && editableStones.every(stone => parseFloat(stone.Price || 0) > 0);
@@ -90,22 +83,14 @@ export default function PricingCalci() {
   useEffect(() => {
     if (!imageData) return;
     
-    // Check if imageData has any valid pricing information
     const p = imageData.pricing || imageData.extractedData || imageData;
     const extractedData = imageData.extractedData || {};
-    
-    // Check for valid stones
     const hasStones = p.Stones && Array.isArray(p.Stones) && p.Stones.length > 0;
     const hasExtractedStones = extractedData.Stones && Array.isArray(extractedData.Stones) && extractedData.Stones.length > 0;
-    
-    // Check for valid metal data
     const hasMetal = p.Metal && (parseFloat(p.Metal.Weight) > 0);
     const hasExtractedMetal = extractedData.Metal && (parseFloat(extractedData.Metal.Weight) > 0);
-    
-    // Check for valid total pieces
     const hasTotalPieces = (extractedData.TotalPieces && extractedData.TotalPieces > 0) || (p.TotalPieces && p.TotalPieces > 0);
-    
-    // If no valid data at all, show error and clear
+
     if (!hasStones && !hasExtractedStones && !hasMetal && !hasExtractedMetal && !hasTotalPieces) {
       showAlert(
         'No Data Found',
@@ -128,9 +113,8 @@ export default function PricingCalci() {
       return;
     }
     
-    // Only proceed if we have pricing data
     if (!imageData.pricing) return;
-    
+
     setEditableStones(
       (p.Stones || []).map(s => ({ ...s }))
     );
@@ -146,9 +130,6 @@ export default function PricingCalci() {
       UndercutPrice: p.Client?.UndercutPrice ?? 0,
     });
     setPricingResult(p);
-    
-    // Log the full response for debugging
-    console.log('📊 Full Image Data:', JSON.stringify(imageData, null, 2));
   }, [imageData, metalKt]);
 
   const updateStone = (index, field, value) => {
@@ -198,15 +179,21 @@ export default function PricingCalci() {
           Metal: {
             Weight: parseFloat(editableMetal.Weight || 0) || 0,
             Quality: editableMetal.Quality || metalKt,
+            Rate: parseFloat(editableMetal.Rate || 0) || 0,
           },
           Stones: formattedStones,
           Quantity: 1,
+          Loss:          parseFloat(editableCharges.Loss || 0) || 0,
+          Labour:        parseFloat(editableCharges.Labour || 0) || 0,
+          ExtraCharges:  parseFloat(editableCharges.ExtraCharges || 0) || 0,
+          UndercutPrice: parseFloat(editableCharges.UndercutPrice || 0) || 0,
         },
         clientId,
+        isRecalculate: true,
       }).unwrap();
 
       setPricingResult(result);
-      showAlert('Recalculation Complete', `Total Price: $${result.TotalPrice ?? result.totalPrice ?? 0}`, 'info');
+      showAlert('Recalculated', `Total Price: $${result.TotalPrice ?? result.totalPrice ?? 0}`, 'success');
     } catch (error) {
       const msg = error?.data?.message || error?.message || 'Recalculation failed';
       showAlert('Error', msg, 'error');
@@ -271,7 +258,7 @@ export default function PricingCalci() {
       </head>
       <body>
         <div class="header">
-          <h1>Chandra Jewellery</h1>
+          <h1>Chandra Jewels</h1>
           <p>Pricing Calculation Report</p>
           <p>${currentDate}</p>
         </div>
@@ -392,7 +379,7 @@ export default function PricingCalci() {
         </div>
 
         <div class="footer">
-          <p>Generated by Chandra Jewellery Management App</p>
+          <p>Generated by Chandra Jewels Management App</p>
           <p>This is a computer-generated document and does not require a signature</p>
         </div>
       </body>
@@ -584,7 +571,6 @@ export default function PricingCalci() {
 
 
 
-  // Options Formatting
   const clientOptions = clients.map((c) => ({
     label: c.name || 'Unknown Client',
     value: c.id || c._id,
@@ -604,7 +590,6 @@ export default function PricingCalci() {
     { label: 'Platinum', value: 'Platinum' },
   ];
 
-  // Calculate Today's Price based on selection
   const getTodayPrice = () => {
     const prices = metalPricesData?.prices || {};
     if (metalKt.includes('Silver')) {
@@ -613,8 +598,6 @@ export default function PricingCalci() {
     if (metalKt.includes('Platinum')) {
       return prices.platinum?.price ? `$${prices.platinum.price.toFixed(2)} / g` : 'N/A';
     }
-    
-    // For Gold (e.g. 10K, 14K, 18K)
     const baseGoldPrice = prices.gold?.price || 0;
     if (!baseGoldPrice) return 'N/A';
 
@@ -629,9 +612,7 @@ export default function PricingCalci() {
 
   const todayPriceDisplay = getTodayPrice();
 
-  // Handlers
   const handleImagePick = async () => {
-    // Validate required fields before picking image
     if (!clientId) {
       showAlert('Validation Error', 'Please select a client first', 'warning');
       return;
@@ -646,7 +627,6 @@ export default function PricingCalci() {
       if (pickerResult.didCancel) return;
       if (pickerResult.assets && pickerResult.assets.length > 0) {
         const asset = pickerResult.assets[0];
-        // Max 20MB limit validation
         if (asset.fileSize && asset.fileSize > 20 * 1024 * 1024) {
           showAlert('File too large', 'Maximum allowed image size is 20MB.', 'warning');
           return;
@@ -657,7 +637,6 @@ export default function PricingCalci() {
           type: asset.type || 'image/jpeg',
         });
 
-        // Show loader and extract data from image
         setIsExtracting(true);
         try {
           const apiResult = await GetimagepriceData({
@@ -671,13 +650,11 @@ export default function PricingCalci() {
             metalQuality: metalKt,
           }).unwrap();
 
-          console.log('🚀 image price data', apiResult);
-          setImageData(apiResult);
+              setImageData(apiResult);
         } catch (apiError) {
           console.error('❌ API Error:', apiError);
           const errorMsg = apiError?.data?.message || apiError?.error || 'Failed to extract pricing data. Please ensure the client has pricing configuration set up.';
            showAlert('Extraction Error', errorMsg, 'error');
-          // Clear the image on error
           setImageFile(null);
         } finally {
           setIsExtracting(false);
@@ -721,7 +698,6 @@ export default function PricingCalci() {
     }
     
     try {
-      // Structure the payload exactly as the backend expects
       const rawStones = Array.isArray(detailsData.Stones) 
         ? detailsData.Stones 
         : Array.isArray(detailsData.stones) ? detailsData.stones : [];
@@ -755,7 +731,6 @@ export default function PricingCalci() {
       const finalPrice = result?.TotalPrice !== undefined ? result.TotalPrice : (result?.totalPrice || 'N/A');
       showAlert('Calculation Complete', `Total Price: $${finalPrice}\n\nPlease check the console for detailed pricing breakdown.`, 'success', [{ text: 'OK' }]);
       
-      console.log('💰 Pricing Result:', result);
     } catch (error) {
       console.error('❌ Pricing calculation error:', error);
       const errorMsg = error?.data?.message || error?.message || 'Failed to calculate pricing. Please ensure the client has pricing configuration set up.';
@@ -763,7 +738,6 @@ export default function PricingCalci() {
     }
   };
 
-  // Reusable Dropdown Render Function
   const renderDropdown = (
     label,
     placeholder,
@@ -1023,13 +997,13 @@ export default function PricingCalci() {
               <Icon name="add" size={18} color={colors.textWhite} />
               <Text style={styles.addStoneButtonText}>Add Stone</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.addStoneButton, { backgroundColor: colors.border, marginTop: 8 }]} disabled>
-              <Icon name="refresh" size={18} color={colors.textWhite} />
-              <Text style={styles.addStoneButtonText}>Recalculate</Text>
-            </TouchableOpacity>
+    
             <TouchableOpacity style={[styles.addStoneButton, { backgroundColor: colors.primary, marginTop: 8 }]} onPress={() => {
               const html = buildPricingHtml();
-              if (html) {
+              if (editableStones.some(s => !s.MmSize || !s.Color || !s.Shape || !s.SieveSize || !s.Weight || !s.Pcs || !s.CtWeight || !s.Price || parseFloat(s.Price) <= 0)) {
+                showAlert('Incomplete Data', 'Please complete all stone details before previewing pricing.', 'warning');
+              }
+             else if (html) {
                 setPdfHtml(html);
                 setShowPdfModal(true);
               } else {
@@ -1047,7 +1021,7 @@ export default function PricingCalci() {
                 <View style={styles.chargesRow}>
                   <View style={styles.chargeField}>
                     <Text style={styles.fieldLabel}>Weight (g)</Text>
-                    <TextInput style={styles.fieldInput} keyboardType="decimal-pad" value={String(editableMetal.Weight || 0)} onChangeText={v => setEditableMetal(p => ({ ...p, Weight: v }))} />
+                    <TextInput style={styles.fieldInput} keyboardType="decimal-pad" value={String(editableMetal.Weight || ``)} onChangeText={v => setEditableMetal(p => ({ ...p, Weight: v }))} />
                   </View>
                   <View style={styles.chargeField}>
                     <Text style={styles.fieldLabel}>Quality</Text>
@@ -1058,7 +1032,7 @@ export default function PricingCalci() {
                     <TextInput 
                       style={[styles.fieldInput, (!editableMetal.Rate || parseFloat(editableMetal.Rate) <= 0) && styles.fieldInputError]} 
                       keyboardType="decimal-pad" 
-                      value={String(editableMetal.Rate || 0)} 
+                      value={String(editableMetal.Rate || ``)} 
                       onChangeText={v => setEditableMetal(p => ({ ...p, Rate: v }))} 
                     />
                     {(!editableMetal.Rate || parseFloat(editableMetal.Rate) <= 0) && (
@@ -1157,19 +1131,7 @@ export default function PricingCalci() {
                 )}
                 
                 <View style={styles.actionButtonRow}>
-                  <TouchableOpacity 
-                    style={[styles.recalcButton, !canRecalculate && styles.recalcButtonDisabled]} 
-                    onPress={handleRecalculate} 
-                    disabled={isRecalculating || !canRecalculate}
-                  >
-                    {isRecalculating ? (
-                      <ActivityIndicator size="small" color={colors.textWhite} />
-                    ) : (
-                      <>
-                        <Text style={styles.actionButtonText}>Recalculate</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
+      
                 </View>
                 {!canRecalculate && (
                   <View style={styles.validationWarning}>
@@ -1653,7 +1615,6 @@ const styles = StyleSheet.create({
     paddingHorizontal:20
   },
 
-  // ---- Results Form Styles ----
   sectionTitle: {
     fontSize: fonts.lg,
     fontFamily: fonts.bold,
@@ -1820,7 +1781,6 @@ const styles = StyleSheet.create({
     fontSize: fonts.sm,
   },
 
-  // ---- Compact Table Styles (No Horizontal Scroll) ----
   compactTableWrapper: {
     borderTopWidth: 1,
     borderBottomWidth: 1,
@@ -1920,7 +1880,6 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
 
-  // ---- Edit Modal Styles ----
   editModalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',

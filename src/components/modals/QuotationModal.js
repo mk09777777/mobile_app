@@ -46,29 +46,28 @@ try {
   generatePDFModule = mod.generatePDF || mod.default?.generatePDF || mod.default;
 } catch (_) {}
 
-// ─── helpers ──────────────────────────────────────────────────────────────────
 const num = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
 let _idSeed = 0;
 const makeId = () => `d-${Date.now()}-${_idSeed++}`;
 
-/** Pick the latest design version to pre-fill from.
- *  Prefer CAD if it exists, else Coral. Falls back to {}. */
 const getLatestPricing = (enquiry) => {
   const pool = [
     ...(Array.isArray(enquiry?.Cad)   ? enquiry.Cad   : []),
     ...(Array.isArray(enquiry?.Coral) ? enquiry.Coral : []),
   ];
   if (!pool.length) return null;
-  // most-recent first
   pool.sort((a, b) => new Date(b.CreatedDate || 0) - new Date(a.CreatedDate || 0));
-  return pool[0]?.Pricing?.[0] || null;
+  const pricing = pool[0]?.Pricing || pool[0]?.pricing;
+  if (!pricing) return null;
+  if (Array.isArray(pricing)) return pricing[0] || null;
+  if (typeof pricing === 'object' && Object.keys(pricing).length > 0) return pricing;
+  return null;
 };
 
 const stonesAreMissing = (stones) =>
   !Array.isArray(stones) || stones.length === 0 ||
   stones.every(s => num(s.Price) === 0);
 
-// ─── PDF HTML builder ─────────────────────────────────────────────────────────
 const buildHtml = ({ enquiry, pricingResult, stones, metal, charges, clientName }) => {
   const date = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   const stonesHtml = stones.map((s, i) => `
@@ -143,7 +142,6 @@ const buildHtml = ({ enquiry, pricingResult, stones, metal, charges, clientName 
   </body></html>`;
 };
 
-// ─── A compact charge input row ───────────────────────────────────────────────
 const ChargeInput = ({ label, value, onChangeText, placeholder = '0', keyboardType = 'decimal-pad' }) => (
   <View style={s.chargeItem}>
     <Text style={s.chargeLabel}>{label}</Text>
@@ -158,12 +156,10 @@ const ChargeInput = ({ label, value, onChangeText, placeholder = '0', keyboardTy
   </View>
 );
 
-// ─── Main component ───────────────────────────────────────────────────────────
 const QuotationModal = ({ visible, enquiryId, onClose }) => {
-  // ── fetch full enquiry fresh on every open ────────────────────────────────
   const { data: fullEnquiryData, isFetching: isFetchingEnquiry } = useGetEnquiryByIdQuery(enquiryId, {
     skip: !visible || !enquiryId,
-    refetchOnMountOrArgChange: true,   // always fetch fresh when modal opens
+    refetchOnMountOrArgChange: true,
   });
 
   const rawEnquiry  = fullEnquiryData?._originalData || fullEnquiryData;
@@ -171,55 +167,45 @@ const QuotationModal = ({ visible, enquiryId, onClose }) => {
 
   const sourcePricing = useMemo(() => getLatestPricing(fullEnquiry), [fullEnquiry]);
 
-  // ── metal state ──────────────────────────────────────────────────────────
   const [metalWeight,       setMetalWeight]       = useState('0');
   const [metalQuality,      setMetalQuality]      = useState('10K');
   const [metalRate,         setMetalRate]         = useState('0');
   const [showQualityPicker, setShowQualityPicker] = useState(false);
 
-  // ── diamonds state ────────────────────────────────────────────────────────
   const [diamonds,            setDiamonds]            = useState([]);
-  // Snapshot of missing-price indices — refreshed on open + after Calculate
   const [missingIndices,      setMissingIndices]      = useState(new Set());
   const [editModalVisible,    setEditModalVisible]    = useState(false);
   const [selectedIndex,       setSelectedIndex]       = useState(null);
   const [selectedDiamondData, setSelectedDiamondData] = useState({});
 
-  // ── result / PDF state ───────────────────────────────────────────────────
   const [pricingResult, setPricingResult] = useState(null);
   const [pdfHtml,       setPdfHtml]       = useState(null);
   const [showPdf,       setShowPdf]       = useState(false);
   const [isSharing,     setIsSharing]     = useState(false);
 
-  // ── client pricing message ───────────────────────────────────────────────
   const [clientMsg,     setClientMsg]     = useState('');
   const [copied,        setCopied]        = useState(false);
 
-  // ── api ──────────────────────────────────────────────────────────────────
   const [calculatePricing, { isLoading: isCalculating }] = useCalculatePricingMutation();
   const [savePricing,      { isLoading: isSaving }]      = useSavePricingMutation();
   const { data: metalPricesData } = useGetMetalPricesQuery(false);
 
-  // ── alert ────────────────────────────────────────────────────────────────
   const [alertCfg, setAlertCfg] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
   const showAlert  = useCallback((title, message, type = 'info', buttons = []) =>
     setAlertCfg({ visible: true, title, message, type, buttons }), []);
   const hideAlert  = useCallback(() => setAlertCfg(p => ({ ...p, visible: false })), []);
 
-  // ── seed when enquiry data arrives ───────────────────────────────────────
-  const seededForRef = useRef(null); // tracks which enquiryId has already been seeded
+  const seededForRef = useRef(null);
 
   useEffect(() => {
-    // Seed when: modal is visible AND fresh data has loaded AND we haven't seeded this enquiry yet
     if (!visible || isFetchingEnquiry || !fullEnquiry) return;
-    if (seededForRef.current === enquiryId) return; // already seeded for this enquiry
+    if (seededForRef.current === enquiryId) return;
     seededForRef.current = enquiryId;
 
     const p   = sourcePricing || {};
     const enq = fullEnquiry   || {};
     const mpd = metalPricesData;
 
-      // Metal
       setMetalWeight(String(p.Metal?.Weight ?? 0));
       setMetalQuality(p.Metal?.Quality || enq?.Metal?.Quality || '10K');
       const autoRate = (() => {
@@ -235,7 +221,6 @@ const QuotationModal = ({ visible, enquiryId, onClose }) => {
       })();
       setMetalRate(autoRate);
 
-      // Stones
       const rawStones = Array.isArray(p.Stones) ? p.Stones : [];
       setDiamonds(rawStones.length > 0
         ? rawStones.map(st => ({
@@ -253,16 +238,12 @@ const QuotationModal = ({ visible, enquiryId, onClose }) => {
           }))
         : []);
 
-      // Snapshot which stone indices are missing a price — stays frozen until Calculate
       const initialMissing = new Set(
         rawStones.reduce((acc, st, i) => { if (num(st.Price) <= 0) acc.push(i); return acc; }, [])
       );
       setMissingIndices(initialMissing);
 
-      // Client pricing message (from stored pricing)
       setClientMsg(p.ClientPricingMessage || '');
-
-      // Reset result state for fresh session
       setPricingResult(null);
       setPdfHtml(null);
       setShowPdf(false);
@@ -270,14 +251,8 @@ const QuotationModal = ({ visible, enquiryId, onClose }) => {
 
   }, [visible, isFetchingEnquiry, fullEnquiry, enquiryId, sourcePricing, metalPricesData]);
 
-  // Reset seed tracker when modal closes so next open re-seeds
-  useEffect(() => {
-    if (!visible) {
-      seededForRef.current = null;
-    }
-  }, [visible]);
 
-  // ── diamond CRUD ──────────────────────────────────────────────────────────
+
   const handleAddDiamond = useCallback(() => {
     setDiamonds(prev => {
       const newIdx = prev.length;
@@ -327,7 +302,6 @@ const QuotationModal = ({ visible, enquiryId, onClose }) => {
   }, [selectedIndex]);
 
 
-  // ── save quotation ────────────────────────────────────────────────────────
   const handleSaveQuotation = useCallback(async () => {
     if (!pricingResult) return;
 
@@ -342,7 +316,6 @@ const QuotationModal = ({ visible, enquiryId, onClose }) => {
       return;
     }
 
-    // Build the pricing object to save
     const pricingToSave = {
       Metal: { Weight: num(metalWeight), Quality: metalQuality, Rate: num(metalRate) },
       Stones: diamonds.map(d => ({
@@ -373,11 +346,6 @@ const QuotationModal = ({ visible, enquiryId, onClose }) => {
       ClientPricingMessage: clientMsg,
     };
 
-    // Use the correct backend endpoint: PUT /api/enquiries/:id/upload/:type?version=...
-    // This maps to the updateAssets controller → updateAssetData service which saves Pricing correctly.
-    // The general PUT /api/enquiries/:id endpoint does NOT support Cad/Coral updates.
-    //
-    // Pick the latest design entry (prefer Cad over Coral, same as getLatestPricing)
     const pool = [
       ...(Array.isArray(fullEnquiry?.Cad)   ? fullEnquiry.Cad.map(e => ({ ...e, _type: 'cad' }))   : []),
       ...(Array.isArray(fullEnquiry?.Coral)  ? fullEnquiry.Coral.map(e => ({ ...e, _type: 'coral' })) : []),
@@ -411,7 +379,6 @@ const QuotationModal = ({ visible, enquiryId, onClose }) => {
       metalWeight, metalQuality, metalRate, diamonds, sourcePricing,
       clientMsg, savePricing, showAlert]);
 
-  // ── calculate ─────────────────────────────────────────────────────────────
   const handleCalculate = useCallback(async () => {
     if (!diamonds.length) {
       showAlert('Validation', 'Please add at least one stone before calculating.', 'warning', [{ text: 'OK' }]);
@@ -452,7 +419,6 @@ const QuotationModal = ({ visible, enquiryId, onClose }) => {
           Price:     num(d.Price),
           Markup:    num(d.Markup),
         })).filter(st => st.Type),
-        // Charges are pre-filled from stored pricing — not editable in this modal
         Loss:                num(sourcePricing?.Loss ?? 0),
         Labour:              num(sourcePricing?.Labour ?? 0),
         ExtraCharges:        num(sourcePricing?.ExtraCharges ?? 0),
@@ -472,19 +438,18 @@ const QuotationModal = ({ visible, enquiryId, onClose }) => {
       const result = await calculatePricing(payload).unwrap();
       setPricingResult(result);
 
-      // Refresh missing-indices snapshot — stones with prices now disappear from table
       setDiamonds(prev => {
         setMissingIndices(new Set(
           prev.reduce((acc, st, i) => { if (num(st.Price) <= 0) acc.push(i); return acc; }, [])
         ));
-        return prev; // diamonds unchanged, just reading
+        return prev;
       });
 
-      // Update price values inside the existing ClientPricingMessage format.
-      // Strategy: replace the old stored price numbers with the newly calculated ones.
-      // This works regardless of the message format/language.
       setClientMsg(prev => {
-        if (!prev) return prev;
+        if (!prev) {
+          if (result.ClientPricingMessage) return result.ClientPricingMessage;
+          return prev;
+        }
         const swaps = [
           [num(sourcePricing?.MetalPrice),    num(result.MetalPrice)],
           [num(sourcePricing?.DiamondsPrice), num(result.DiamondsPrice)],
@@ -494,7 +459,6 @@ const QuotationModal = ({ visible, enquiryId, onClose }) => {
         let updated = prev;
         for (const [oldVal, newVal] of swaps) {
           if (oldVal <= 0 && newVal <= 0) continue;
-          // Match the old value formatted as a number (with or without $ and decimals)
           const escaped = oldVal.toFixed(2).replace('.', '\\.');
           const pattern = new RegExp(`\\$?${escaped}`, 'g');
           updated = updated.replace(pattern, `$${newVal.toFixed(2)}`);
@@ -521,7 +485,6 @@ const QuotationModal = ({ visible, enquiryId, onClose }) => {
     }
   }, [diamonds, metalWeight, metalQuality, metalRate, sourcePricing, fullEnquiry, calculatePricing, showAlert]);
 
-  // ── share PDF ─────────────────────────────────────────────────────────────
   const handleSharePdf = useCallback(async () => {
     if (!pdfHtml) return;
     if (typeof generatePDFModule !== 'function') {
@@ -554,7 +517,6 @@ const QuotationModal = ({ visible, enquiryId, onClose }) => {
 
   const hasMissingStones = missingIndices.size > 0 || diamonds.length === 0;
 
-  // ── copy client message ───────────────────────────────────────────────────
   const handleCopyMsg = useCallback(() => {
     if (!clientMsg) return;
     Clipboard.setString(clientMsg);
@@ -562,10 +524,9 @@ const QuotationModal = ({ visible, enquiryId, onClose }) => {
     setTimeout(() => setCopied(false), 2000);
   }, [clientMsg]);
 
-  // ── main render ──────────────────────────────────────────────────────────
   return (
     <>
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={() => { if (showPdf) { setShowPdf(false); } else { onClose(); } }}>
       <View style={s.overlay}>
         <View style={s.sheet}>
 
@@ -576,8 +537,8 @@ const QuotationModal = ({ visible, enquiryId, onClose }) => {
               {fullEnquiry?.Name ? <Text style={s.headerSub} numberOfLines={1}>{fullEnquiry.Name}</Text> : null}
             </View>
             {isFetchingEnquiry && <ActivityIndicator size="small" color="#fff" style={{ marginRight: 6 }} />}
-            <TouchableOpacity style={s.closeBtn} onPress={onClose} activeOpacity={0.7}>
-              <Icon name="close" size={22} color="#fff" />
+            <TouchableOpacity style={s.closeBtn} onPress={showPdf ? () => setShowPdf(false) : onClose} activeOpacity={0.7}>
+              <Icon name={showPdf ? 'arrow-back' : 'close'} size={22} color="#fff" />
             </TouchableOpacity>
           </View>
 
@@ -769,9 +730,7 @@ const QuotationModal = ({ visible, enquiryId, onClose }) => {
                   </TouchableOpacity>
                 </>
               )}
-
-              {/* ── CLIENT PRICING MESSAGE ─────────────────────────────── */}
-              {(clientMsg !== null && clientMsg !== undefined) ? (
+              {(clientMsg !== null && clientMsg !== undefined && diamonds.length > 0) ? (
                 <View style={s.clientMsgCard}>
                   <View style={s.clientMsgHeader}>
                     <Text style={s.clientMsgLabel}>Copy pricing format for your client</Text>
@@ -780,7 +739,7 @@ const QuotationModal = ({ visible, enquiryId, onClose }) => {
                       <Text style={[s.copyBtnText, copied && { color: '#059669' }]}>{copied ? 'Copied!' : 'Copy'}</Text>
                     </TouchableOpacity>
                   </View>
-                  <TextInput
+                  {diamonds.length > 0 && <TextInput
                     style={s.clientMsgInput}
                     value={clientMsg}
                     onChangeText={setClientMsg}
@@ -788,7 +747,7 @@ const QuotationModal = ({ visible, enquiryId, onClose }) => {
                     placeholder="No pricing message saved yet..."
                     placeholderTextColor={colors.textSecondary}
                     textAlignVertical="top"
-                  />
+                  />}
                 </View>
               ) : null}
 
@@ -835,7 +794,6 @@ const QuotationModal = ({ visible, enquiryId, onClose }) => {
   );
 };
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   sheet: {
@@ -845,7 +803,6 @@ const s = StyleSheet.create({
     overflow: 'hidden',
   },
 
-  // Header
   header: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingHorizontal: 16, paddingVertical: 14,
@@ -860,7 +817,6 @@ const s = StyleSheet.create({
   stepChipText: { fontFamily: fonts.medium, fontSize: fonts.xs || 11, color: colors.primary },
   closeBtn: { padding: 4 },
 
-  // Step indicator
   stepRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     paddingVertical: 10, paddingHorizontal: 40, gap: 0,
@@ -885,11 +841,9 @@ const s = StyleSheet.create({
   stepLabel:     { fontFamily: fonts.regular, fontSize: fonts.xs || 11, color: colors.textSecondary },
   stepLabelActive:{ fontFamily: fonts.medium, color: colors.primary },
 
-  // Scroll body
   scrollBody:    { flex: 1 },
   scrollContent: { padding: 16, paddingBottom: 32 },
 
-  // Banners
   warningBanner: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 8,
     backgroundColor: '#FEF3C7', borderRadius: 8, padding: 12, marginBottom: 14,
@@ -901,7 +855,6 @@ const s = StyleSheet.create({
   },
   infoText: { flex: 1, fontFamily: fonts.regular, fontSize: fonts.xs || 12, color: colors.primary, lineHeight: 18 },
 
-  // Section titles
   sectionTitle: {
     fontFamily: fonts.bold, fontSize: fonts.sm || 13,
     color: colors.textPrimary, marginBottom: 8, marginTop: 4,
@@ -911,11 +864,9 @@ const s = StyleSheet.create({
     marginBottom: 8, marginTop: 4,
   },
 
-  // Metal
   metalRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
   metalField: { flex: 1 },
 
-  // Charge inputs
   chargesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
   chargeItem:  { width: '47%' },
   chargeLabel: { fontFamily: fonts.medium, fontSize: fonts.xs || 11, color: colors.textSecondary, marginBottom: 4 },
@@ -927,7 +878,6 @@ const s = StyleSheet.create({
   },
   inputError: { borderColor: colors.error || '#EF4444', borderWidth: 1.5 },
 
-  // Stone flat table
   stoneTable: {
     borderWidth: 1, borderColor: colors.borderLight || '#E8E8E8',
     borderRadius: 10, overflow: 'hidden', marginBottom: 16,
@@ -944,7 +894,6 @@ const s = StyleSheet.create({
   },
   stoneRowAlt: { backgroundColor: colors.backgroundSecondary || '#F8F8F8' },
 
-  // column widths
   stoneCol:        { textAlign: 'center' },
   stoneColType:    { flex: 2.5, textAlign: 'left' },
   stoneColShape:   { flex: 2, textAlign: 'left' },
@@ -952,19 +901,16 @@ const s = StyleSheet.create({
   stoneColPrice:   { flex: 1.8 },
   stoneColActions: { width: 44, flexDirection: 'row', justifyContent: 'flex-end', gap: 6 },
 
-  // cell text styles
   stoneTh: { fontFamily: fonts.bold,    fontSize: 10, color: '#fff' },
   stoneTd: { fontFamily: fonts.regular, fontSize: 11, color: colors.textPrimary },
   stonePriceMissing: { color: colors.error || '#EF4444' },
 
-  // inline add row
   stoneAddRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
     paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.borderLight || '#F0F0F0',
   },
   stoneAddRowText: { fontFamily: fonts.medium, fontSize: 12, color: colors.primary },
 
-  // empty placeholder
   emptyStones: {
     alignItems: 'center', gap: 10, paddingVertical: 24,
     borderWidth: 1, borderStyle: 'dashed',
@@ -973,14 +919,12 @@ const s = StyleSheet.create({
   },
   emptyStonesText: { fontFamily: fonts.regular, fontSize: fonts.sm || 13, color: colors.textSecondary },
 
-  // Add stone button (header row button)
   addBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: colors.primary, paddingVertical: 7, paddingHorizontal: 14, borderRadius: 20,
   },
   addBtnText: { fontFamily: fonts.medium, fontSize: fonts.xs || 12, color: '#fff' },
 
-  // Calculate button
   calcBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 8, backgroundColor: colors.primary,
@@ -989,7 +933,6 @@ const s = StyleSheet.create({
   calcBtnDisabled: { opacity: 0.5 },
   calcBtnText: { fontFamily: fonts.bold, fontSize: fonts.sm || 14, color: '#fff' },
 
-  // Result
   resultCard: {
     backgroundColor: colors.backgroundSecondary || '#F8F9FA',
     borderRadius: 12, padding: 16, marginBottom: 12,
@@ -1019,7 +962,6 @@ const s = StyleSheet.create({
   },
   backEditText: { fontFamily: fonts.medium, fontSize: fonts.sm || 13, color: colors.primary },
 
-  // PDF toolbar
   pdfBar: { flexDirection: 'row', gap: 10, padding: 10, backgroundColor: 'rgba(0,0,0,0.75)' },
   pdfBarBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
@@ -1029,7 +971,6 @@ const s = StyleSheet.create({
   pdfBarBtnText: { fontFamily: fonts.medium, fontSize: fonts.xs || 12, color: '#fff' },
   shareBtn: { backgroundColor: colors.primary },
 
-  // Quality dropdown button
   qualityBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     borderWidth: 1, borderColor: colors.borderLight || '#E0E0E0',
@@ -1038,7 +979,6 @@ const s = StyleSheet.create({
   },
   qualityBtnText: { fontFamily: fonts.regular, fontSize: fonts.sm || 13, color: colors.textPrimary, flex: 1 },
 
-  // Quality picker modal
   pickerOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end',
   },
@@ -1059,7 +999,6 @@ const s = StyleSheet.create({
   pickerOptionText: { fontFamily: fonts.regular, fontSize: fonts.base || 15, color: colors.textPrimary },
   pickerOptionTextSelected: { fontFamily: fonts.bold, color: colors.primary },
 
-  // PDF buttons horizontal row
   pdfBtnRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
   pdfRowBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
@@ -1067,7 +1006,6 @@ const s = StyleSheet.create({
   },
   pdfRowBtnText: { fontFamily: fonts.bold, fontSize: fonts.sm || 13, color: '#fff' },
 
-  // Client pricing message
   clientMsgCard: {
     marginTop: 20, borderWidth: 1, borderColor: colors.borderLight || '#E0E0E0',
     borderRadius: 12, padding: 14, backgroundColor: colors.backgroundSecondary || '#F8F9FA',

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+﻿import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -365,7 +365,6 @@ const EnquiryListScreen = ({ navigation }) => {
       setStatusCounts(counts);
       
       if (__DEV__) {
-        console.log('📊 Updated status counts:', counts);
       }
     }
   }, [statusStatsData]);
@@ -1722,11 +1721,9 @@ const EnquiryListScreen = ({ navigation }) => {
                   }
                 });
                 
-                console.log('📦 Final payload:', JSON.stringify(payload, null, 2));
                 
                 // Call RTK mutation
                 await updateEnquiry(payload).unwrap();
-                console.log('✅ Successfully updated!');
                 
                 // Refetch aggregate counts
                 if (refetchStatusStats) {
@@ -1769,7 +1766,6 @@ const EnquiryListScreen = ({ navigation }) => {
                 
                 // Call RTK mutation
                 await deleteEnquiry(enquiryId).unwrap();
-                console.log('✅ Successfully deleted!');
                 
                 // Refetch aggregate counts
                 if (refetchStatusStats) {

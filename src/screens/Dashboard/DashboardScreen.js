@@ -389,22 +389,6 @@ const DashboardScreen = ({ navigation }) => {
     const finalPendingDesignsValue =
       pendingDesignsValue1 || 0;
 
-    console.log(
-      '📊 [DASHBOARD] ========== CORAL PENDING DESIGNS COUNT ==========',
-    );
-    console.log('📊 [DASHBOARD] User Role: coral');
-    console.log(
-      '📊 [DASHBOARD] dashboardData?.pendingDesigns (Coral count from API):',
-      pendingDesignsValue1,
-    );
-    console.log(
-      '📊 [DASHBOARD] Final Coral count displayed:',
-      finalPendingDesignsValue,
-    );
-    console.log(
-      '📊 [DASHBOARD] ===================================================',
-    );
-
     return (
       <View style={statsGridStyle}>
         <StatusCard
