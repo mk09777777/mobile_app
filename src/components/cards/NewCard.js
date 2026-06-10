@@ -1276,7 +1276,7 @@ const styles = StyleSheet.create({
   },
   dropdownModalTitle: {
     fontFamily: fonts.semiBold,
-    fontSize: 16,
+    fontSize: 14,
     color: colors.textPrimary,
     marginBottom: 12,
     textAlign: 'center',
