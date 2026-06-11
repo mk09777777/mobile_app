@@ -460,9 +460,6 @@ const EnquiryListScreen = ({ navigation }) => {
     setLocalSearchValue(searchQuery);
   }, [searchQuery]);
 
-  // Local search input value — updates immediately for responsive UI
-  // Actual Redux dispatch (which triggers API refetch) is debounced by 2 seconds
-  const [localSearchValue, setLocalSearchValue] = useState(searchQuery);
   const searchDebounceRef = useRef(null);
 
   const handleSearchChange = useCallback((text) => {
