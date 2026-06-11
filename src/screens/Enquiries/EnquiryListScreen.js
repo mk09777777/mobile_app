@@ -460,6 +460,30 @@ const EnquiryListScreen = ({ navigation }) => {
     setLocalSearchValue(searchQuery);
   }, [searchQuery]);
 
+  // Local search input value — updates immediately for responsive UI
+  // Actual Redux dispatch (which triggers API refetch) is debounced by 2 seconds
+  const [localSearchValue, setLocalSearchValue] = useState(searchQuery);
+  const searchDebounceRef = useRef(null);
+
+  const handleSearchChange = useCallback((text) => {
+    setLocalSearchValue(text);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
+      dispatch(setSearchQuery(text));
+    }, 2000);
+  }, [dispatch]);
+
+  const handleSearchClear = useCallback(() => {
+    setLocalSearchValue('');
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    dispatch(setSearchQuery(''));
+  }, [dispatch]);
+
+  // Sync local value if Redux searchQuery changes externally (e.g. filter clear)
+  useEffect(() => {
+    setLocalSearchValue(searchQuery);
+  }, [searchQuery]);
+
   const resolvedFilters = useMemo(() => {
     const normalizedFilters = {
       status: filters.status,
