@@ -460,27 +460,6 @@ const EnquiryListScreen = ({ navigation }) => {
     setLocalSearchValue(searchQuery);
   }, [searchQuery]);
 
-  const searchDebounceRef = useRef(null);
-
-  const handleSearchChange = useCallback((text) => {
-    setLocalSearchValue(text);
-    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-    searchDebounceRef.current = setTimeout(() => {
-      dispatch(setSearchQuery(text));
-    }, 2000);
-  }, [dispatch]);
-
-  const handleSearchClear = useCallback(() => {
-    setLocalSearchValue('');
-    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-    dispatch(setSearchQuery(''));
-  }, [dispatch]);
-
-  // Sync local value if Redux searchQuery changes externally (e.g. filter clear)
-  useEffect(() => {
-    setLocalSearchValue(searchQuery);
-  }, [searchQuery]);
-
   const resolvedFilters = useMemo(() => {
     const normalizedFilters = {
       status: filters.status,
