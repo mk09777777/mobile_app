@@ -310,8 +310,8 @@ const QuotationModal = ({ visible, enquiryId, onClose }) => {
       return;
     }
 
-    const enquiryId = fullEnquiry?._id || fullEnquiry?.id || fullEnquiry?.Id;
-    if (!enquiryId) {
+    const resolvedEnquiryId = fullEnquiry?._id || fullEnquiry?.id || fullEnquiry?.Id;
+    if (!resolvedEnquiryId) {
       showAlert('Error', 'Could not identify the enquiry to save.', 'error', [{ text: 'OK' }]);
       return;
     }
@@ -366,10 +366,10 @@ const QuotationModal = ({ visible, enquiryId, onClose }) => {
 
     try {
       await savePricing({
-        enquiryId,
+        enquiryId: resolvedEnquiryId,
         designType,
         version,
-        pricingData: pricingToSave,   // savePricing wraps this in { Pricing: [pricingToSave] }
+        pricingData: pricingToSave,
       }).unwrap();
       showAlert('Saved', 'Quotation saved successfully.', 'success', [{ text: 'OK' }]);
     } catch (e) {
@@ -881,6 +881,7 @@ const s = StyleSheet.create({
   stoneTable: {
     borderWidth: 1, borderColor: colors.borderLight || '#E8E8E8',
     borderRadius: 10, overflow: 'hidden', marginBottom: 16,
+    backgroundColor: colors.white,
   },
   stoneTableHeader: {
     flexDirection: 'row', alignItems: 'center',

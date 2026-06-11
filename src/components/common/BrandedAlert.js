@@ -100,7 +100,9 @@ const BrandedAlert = ({
                 const icon = CHECKLIST_ICONS[item.status] || CHECKLIST_ICONS.warning;
                 return (
                   <View key={i} style={styles.checklistRow}>
-                    <Icon name={icon.name} size={18} color={icon.color} />
+                    {item.status !== 'fail' && (
+                      <Icon name={icon.name} size={18} color={icon.color} />
+                    )}
                     <Text style={styles.checklistText}>{item.text}</Text>
                   </View>
                 );

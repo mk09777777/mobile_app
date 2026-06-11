@@ -26,6 +26,7 @@ import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
 import { FILE_BASE_URL } from '../../config/apiConfig';
 import Icon from '../common/Icon';
+import BrandedAlert from '../common/BrandedAlert';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigation } from '@react-navigation/native';
 import {
@@ -35,6 +36,7 @@ import {
   useGetEnquiryByIdQuery,
   useApproveDesignVersionMutation,
   useRejectDesignVersionMutation,
+  useUpdateEnquiryMutation,
 } from '../../store/api';
 
 const { width: screenWidth } = Dimensions.get('window');
@@ -48,6 +50,7 @@ export default function NewEnquiryCard({
   onUpdateEnquiry,
   onDeleteEnquiry,
   isExpandedAll = false,
+  onFinalLook,
 }) {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
@@ -66,11 +69,7 @@ export default function NewEnquiryCard({
   const [modalCurrentIndex, setModalCurrentIndex] = useState(0);
   const [zoomedImageIndex, setZoomedImageIndex] = useState(null);
   const modalFlatListRef = useRef(null);
-  const [showStatusDropdown, setShowStatusDropdown] = useState(false);
-  const [showAssignDropdown, setShowAssignDropdown] = useState(false);
-  const [assignDropDownUsers, setAssignDropDownUsers] = useState([]);
   const [showMoreOptions, setShowMoreOptions] = useState(false);
-  const [selectedStatus, setSelectedStatus] = useState(null);
   const [isRemarkExpanded, setIsRemarkExpanded] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -81,6 +80,10 @@ export default function NewEnquiryCard({
   const [selectedCadDesigner,  setSelectedCadDesigner]    = useState(null);
   const [updateReason,         setUpdateReason]           = useState('');
   const [isActionLoading,      setIsActionLoading]        = useState(false);
+  const [alertCfg, setAlertCfg] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
+  const showAlert = useCallback((title, message, type = 'info', buttons = []) =>
+    setAlertCfg({ visible: true, title, message, type, buttons }), []);
+  const hideAlert = useCallback(() => setAlertCfg(p => ({ ...p, visible: false })), []);
 
   const cadDesigners = useMemo(
     () => (users || []).filter(u => u.role === 3 || u.roleId === 3 || u.roleNumber === 3),
@@ -89,13 +92,42 @@ export default function NewEnquiryCard({
 
   const [approveDesignVersion] = useApproveDesignVersionMutation();
   const [rejectDesignVersion]  = useRejectDesignVersionMutation();
+  const [updateEnquiryDirect]  = useUpdateEnquiryMutation();
 
-  // Fetch full enquiry (with Coral/Cad arrays) only when action sheet is open.
+  const priority = (item?.Priority || 'medium').toLowerCase();
+  const status = (item?.CurrentStatus || 'pending').toLowerCase();
+  const isCoral = user?.role === 'coral';
+  const isCad = user?.role === 'cad';
+
+  // Fix status matching to match actual database values
+  const isJustCreated =
+    status === 'enquiry created' ||
+    status === 'created' ||
+    status === 'new' ||
+    status === 'pending';
+  const isCoralPending = status === 'coral';
+  const isCadPending = status === 'cad';
+  const isQuotation = status === 'quotation';
+  const isApprovalPending = status === 'design approval pending';
+  const isPlacementStage = status === 'order placement';
+  const isProduction = status === 'production';
+
+  // Fetch full enquiry (with Coral/Cad arrays + StatusHistory).
   // The list API strips these arrays in its $project — getEnquiryById returns the full doc.
+  // We fetch for quotation items too so we can detect the revised-quotation state.
   const enquiryId = item?.Id || item?._id || item?.id;
+  const shouldFetchFull = showQuotationActions || isQuotation;
   const { data: fullEnquiryData, isFetching: isFetchingEnquiry } = useGetEnquiryByIdQuery(enquiryId, {
-    skip: !showQuotationActions,
+    skip: !enquiryId || !shouldFetchFull,
   });
+
+  // StatusHistory is only available in the full enquiry (not in list API response)
+  const fullSrc = fullEnquiryData?._originalData || fullEnquiryData;
+  const statusHistory = fullSrc?.StatusHistory || [];
+  const hasApprovedCadInHistory = statusHistory.some(
+    (s, i, arr) => s.Status === 'Approved Cad' && arr[i + 1]?.Status === 'Quotation'
+  );
+  const isRevisedQuotation = isQuotation && hasApprovedCadInHistory;
 
   const referenceImages = item?.ReferenceImages || [];
 
@@ -131,23 +163,6 @@ export default function NewEnquiryCard({
     loadAllImages();
     return () => { cancelled = true; };
   }, [isExpandedAll]);
-  const priority = (item?.Priority || 'medium').toLowerCase();
-  const status = (item?.CurrentStatus || 'pending').toLowerCase();
-  const isCoral = user?.role === 'coral';
-  const isCad = user?.role === 'cad';
-
-  // Fix status matching to match actual database values
-  const isJustCreated =
-    status === 'enquiry created' ||
-    status === 'created' ||
-    status === 'new' ||
-    status === 'pending';
-  const isCoralPending = status === 'coral';
-  const isCadPending = status === 'cad';
-  const isQuotation = status === 'quotation';
-  const isApprovalPending = status === 'design approval pending';
-  const isPlacementStage = status === 'order placement';
-  const isProduction = status === 'production';
 
 
   const createdDate = item?.CreatedDate || item?.createdAt;
@@ -196,14 +211,16 @@ export default function NewEnquiryCard({
   // Button visibility based on user role and status
   const isApprovedCad = status === 'approved cad';
 
-  const shouldShowActionButtons        = isAdmin && isJustCreated;
+  // Admin: show upload button for whichever design stage is active
   const shouldShowAdminCoralUpload     = isAdmin && isCoralPending;
-  const shouldShowAdminCadUpload       = isAdmin && isCadPending;
-  const shouldShowAdminApprovedCad     = isAdmin && isApprovedCad;
+  const shouldShowAdminCadUpload       = isAdmin && (isCadPending || isApprovedCad);
   const shouldShowAdminPlacement       = isAdmin && isPlacementStage;
   const shouldShowAdminProduction      = isAdmin && isProduction;
+
+  // Designers: show upload for their stage regardless of how the enquiry was created
   const shouldShowCoralDesignerButtons = isCoral && isCoralPending;
   const shouldShowCadDesignerButtons   = isCad   && (isCadPending || isApprovedCad);
+  const shouldShowAdminApprovedCad     = isAdmin && isApprovedCad;
   const shouldShowQuotationButtons     = isQuotation || isApprovalPending;
 
   // Log bearer token on component mount
@@ -217,69 +234,17 @@ export default function NewEnquiryCard({
     setZoomedImageIndex(prev => prev === index ? null : index);
   }, []);
 
-  const DropDownStatus = useMemo(() => {
-    if (!statusesData) return [];
-    return statusesData.map(status => ({
-      Id: status.id,
-      value: status.name,
-      label: status.label,
-    }));
-  }, [statusesData]);
-
-  //role
-
-  const statusToRoleMap = useMemo(() => {
-    const map = {};
-    (rolesData || []).forEach(role => {
-      const name = (role.name || '').toLowerCase();
-      const code = (role.code || '').toLowerCase();
-      if (name === 'coral' || code === 'co') {
-        map['coral'] = role.id;
-        map['co'] = role.id;
-      }
-      if (name === 'cad' || code === 'cd' || name === 'cad designer') {
-        map['cad'] = role.id;
-        map['cd'] = role.id;
-      }
-    });
-    return map;
-  }, [rolesData]);
-
-  const handleStatusSelect = (value, label, id) => {
-    console.log('Selected status:', value, label);
-    setSelectedStatus({ value, label });
-    setShowStatusDropdown(false);
-
-    const targetRoleId = statusToRoleMap[value.toLowerCase()];
-
-    if (targetRoleId && users && users.length > 0) {
-      const filteredUsers = users.filter(user => user.role === targetRoleId);
-      setAssignDropDownUsers(filteredUsers.map(user => ({
-        id: user.id,
-        name: user.name || user.Name || user.username || user.email,
-      })));
-    } else {
-      setAssignDropDownUsers([]);
-    }
-
-    // Open the assign dropdown so user can pick who to assign,
-    // OR directly update status if no assignment is needed.
-    setShowAssignDropdown(true);
-  };
-
-
   const updateEnquiryStatus = async (updateData) => {
     if (!onUpdateEnquiry) {
       console.error('onUpdateEnquiry prop not provided');
       return false;
     }
-    
     const payload = {
       id: item?.Id || item?._id || item?.id,
       ...updateData,
     };
-    
-    return await onUpdateEnquiry(payload);
+    const result = await onUpdateEnquiry(payload);
+    return result;
   };
 
   const handleDeleteEnquiry = async () => {
@@ -326,19 +291,29 @@ export default function NewEnquiryCard({
       Alert.alert('Error', 'No design version found to approve.');
       return;
     }
+    const clientId = item?.ClientId || item?.clientId;
     setIsActionLoading(true);
     try {
-      await approveDesignVersion({
-        enquiryId,
-        designType: design.type,
-        version:    design.version,
-      }).unwrap();
-      if (designer) {
-        await updateEnquiryStatus({ AssignedTo: designer.id, Status: 'Approved Cad' });
+      if (isApprovedCad) {
+        await updateEnquiryDirect({
+          id: enquiryId,
+          Status: 'Production',
+          ApprovedDate: new Date().toISOString(),
+          AssignedTo: designer ? designer.id : null,
+          ClientId: clientId,
+        }).unwrap();
+      } else {
+        await updateEnquiryDirect({
+          id: enquiryId,
+          Status: 'Approved Cad',
+          AssignedTo: designer ? designer.id : null,
+          ClientId: clientId,
+        }).unwrap();
       }
+
       setShowQuotationActions(false);
-      const msg = design.type === 'cad'
-        ? 'CAD approved. Ready for order placement.'
+      const msg = isApprovedCad
+        ? 'CAD approved. Enquiry moved to Production.'
         : 'Design approved and assigned to CAD designer.';
       Alert.alert('Approved', msg);
     } catch (e) {
@@ -365,10 +340,12 @@ export default function NewEnquiryCard({
       }).unwrap();
       if (design.type === 'cad') {
         const currentAssignedTo = item?.AssignedTo || item?.assignedTo;
-        await updateEnquiryStatus({
+        await updateEnquiryDirect({
+          id: enquiryId,
           Status: 'CAD',
+          ClientId: item?.ClientId || item?.clientId,
           ...(currentAssignedTo ? { AssignedTo: currentAssignedTo } : {}),
-        });
+        }).unwrap();
       }
       setShowQuotationActions(false);
       setShowReasonInput(false);
@@ -379,6 +356,37 @@ export default function NewEnquiryCard({
     } finally {
       setIsActionLoading(false);
     }
+  };
+
+
+  const doApproveWithoutDesigner = async () => {
+    const clientId = item?.ClientId || item?.clientId;
+    setIsActionLoading(true);
+    try {
+      await updateEnquiryDirect({
+        id: enquiryId,
+        Status: 'Production',
+        ApprovedDate: new Date().toISOString(),
+        ClientId: clientId,
+      }).unwrap();
+      showAlert('Success', 'Enquiry moved to Production.', 'success', [{ text: 'OK' }]);
+    } catch (e) {
+      showAlert('Failed', e?.data?.message || 'Could not move to Production.', 'error', [{ text: 'OK' }]);
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleApproveWithoutDesigner = () => {
+    showAlert(
+      'Confirm Approval',
+      'Are you sure you want to move this enquiry to Production?',
+      'warning',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Confirm', onPress: doApproveWithoutDesigner },
+      ],
+    );
   };
 
   const closeQuotationActions = () => {
@@ -486,7 +494,7 @@ export default function NewEnquiryCard({
           <Icon name="schedule" size={12} color={colors.textSecondary} />
           <Text style={styles.metaText}>{formatDate(item?.CreatedDate) || '—'}</Text>
         </View>
-        {hasAssignedUser && (
+        {hasAssignedUser && !isAdmin && (
           <View style={styles.AssignedRow}>
             <Icon name="person-add" size={13} color={colors.background} />
             <Text style={styles.AssignedName} numberOfLines={1}>
@@ -518,15 +526,7 @@ export default function NewEnquiryCard({
             )}
           </View>
 
-        {shouldShowActionButtons ? (
-          <View style={styles.QuickButtonContainer}>
-            <TouchableOpacity style={styles.DropdownButton} onPress={() => setShowStatusDropdown(true)}>
-              <Icon name="tune" size={16} color={colors.primaryDark} />
-              <Text style={styles.DropdownButtonText}>{selectedStatus ? selectedStatus.label : 'Move to Status'}</Text>
-              <Icon name="arrow-drop-down" size={16} color={colors.primaryDark} />
-            </TouchableOpacity>
-          </View>
-        ) : shouldShowAdminCoralUpload ? (
+        {shouldShowAdminCoralUpload ? (
           <View style={styles.QuickButtonContainer}>
             <TouchableOpacity
               style={styles.ChatButton}
@@ -634,6 +634,29 @@ export default function NewEnquiryCard({
               <Text style={styles.QuickActionButtonText}>Upload CAD</Text>
             </TouchableOpacity>
           </View>
+        ) : isRevisedQuotation ? (
+          <View style={styles.QuickButtonContainer}>
+            <TouchableOpacity
+              style={styles.ChatButton}
+              onPress={() => {
+                if (onFinalLook) {
+                  onFinalLook(item);
+                }
+              }}
+            >
+              <Icon name="visibility" size={16} color={colors.primaryDark} />
+              <Text style={styles.ChatButtonText}>Final Look</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.QuickActionButton}
+              onPress={handleApproveWithoutDesigner}
+            >
+              <Icon name="check-circle" size={16} color={colors.textWhite} />
+              <Text style={styles.QuickActionButtonText}>
+                Approve
+              </Text>
+            </TouchableOpacity>
+          </View>
         ) : shouldShowQuotationButtons ? (
           <View style={styles.QuickButtonContainer}>
             <TouchableOpacity
@@ -677,10 +700,16 @@ export default function NewEnquiryCard({
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.QuickActionButton}
-              onPress={async () => { await updateEnquiryStatus({ Status: 'Order Placement' }); }}
+              onPress={() =>
+                navigation.navigate('UploadDesign', {
+                  enquiryId: item?.id || item?._id,
+                  designType: 'cad',
+                  enquiry: item,
+                })
+              }
             >
-              <Icon name="shopping-cart" size={16} color={colors.textWhite} />
-              <Text style={styles.QuickActionButtonText}>Order Placement</Text>
+              <Icon name="cloud-upload" size={16} color={colors.textWhite} />
+              <Text style={styles.QuickActionButtonText}>Upload Final CAD</Text>
             </TouchableOpacity>
           </View>
         ) : shouldShowAdminPlacement ? (
@@ -763,7 +792,7 @@ export default function NewEnquiryCard({
                         <Icon name="person" size={20} color={selectedCadDesigner?.id === designer.id ? colors.background : colors.textSecondary} />
                       </View>
                       <View style={styles.qaOptionText}>
-                        <Text style={[styles.qaOptionTitle],selectedCadDesigner?.id === designer.id && { color: colors.background }}>
+                        <Text style={[styles.qaOptionTitle, selectedCadDesigner?.id === designer.id && { color: colors.background }]}>
                           {designer.name}
                         </Text>
                         {!!designer.email && designer.email !== 'N/A' && (
@@ -942,92 +971,7 @@ export default function NewEnquiryCard({
         </TouchableOpacity>
       </Modal>
 
-      <Modal
-        visible={showStatusDropdown}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowStatusDropdown(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowStatusDropdown(false)}
-        >
-          <View style={styles.dropdownModalContent}>
-            <Text style={styles.dropdownModalTitle}>Move to Status</Text>
-            {DropDownStatus.map(option => (
-              <TouchableOpacity
-                key={option.value}
-                style={styles.dropdownModalItem}
-                onPress={() =>
-                  handleStatusSelect(option.value, option.label, item?.Id || item?._Id)
-                }
-              >
-                <Text style={styles.dropdownModalItemText}>{option.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </TouchableOpacity>
-      </Modal>
 
-      <Modal
-        visible={showAssignDropdown}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowAssignDropdown(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowAssignDropdown(false)}
-        >
-          <View style={styles.dropdownModalContent}>
-            <Text style={styles.dropdownModalTitle}>
-              {assignDropDownUsers.length > 0 ? 'Assign To' : `Move to "${selectedStatus?.label || ''}"?`}
-            </Text>
-            {assignDropDownUsers.length > 0 ? (
-              assignDropDownUsers.map(user => (
-                <TouchableOpacity
-                  key={user.id}
-                  style={styles.dropdownModalItem}
-                  onPress={async () => {
-                    const success = await updateEnquiryStatus({
-                      assignedTo: user.id,
-                      status: selectedStatus?.value,
-                    });
-                    if (success) setShowAssignDropdown(false);
-                  }}
-                >
-                  <Text style={styles.dropdownModalItemText}>{user.name}</Text>
-                </TouchableOpacity>
-              ))
-            ) : (
-              <>
-                <Text style={[styles.dropdownModalItemText, { color: colors.textSecondary, marginBottom: 12 }]}>
-                  No specific user to assign. Update status directly?
-                </Text>
-                <TouchableOpacity
-                  style={[styles.dropdownModalItem, { backgroundColor: colors.primary + '15' }]}
-                  onPress={async () => {
-                    const success = await updateEnquiryStatus({ status: selectedStatus?.value });
-                    if (success) setShowAssignDropdown(false);
-                  }}
-                >
-                  <Text style={[styles.dropdownModalItemText, { color: colors.primary, fontWeight: 'bold' }]}>
-                    Confirm Status Update
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.dropdownModalItem}
-                  onPress={() => setShowAssignDropdown(false)}
-                >
-                  <Text style={[styles.dropdownModalItemText, { color: colors.textSecondary }]}>Cancel</Text>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
-        </TouchableOpacity>
-      </Modal>
 
       <Modal
         visible={showMoreOptions}
@@ -1095,6 +1039,15 @@ export default function NewEnquiryCard({
           />
         </View>
       </Modal>
+
+      <BrandedAlert
+        visible={alertCfg.visible}
+        title={alertCfg.title}
+        message={alertCfg.message}
+        type={alertCfg.type}
+        buttons={alertCfg.buttons}
+        onClose={hideAlert}
+      />
     </View>
   );
 }

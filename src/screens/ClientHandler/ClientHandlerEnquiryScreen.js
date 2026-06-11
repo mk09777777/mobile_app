@@ -20,6 +20,7 @@ import {
   useGetEnquiriesQuery,
   useGetEnquiryByIdQuery,
   useGetUsersQuery,
+  useGetStatusesQuery,
   useUpdateEnquiryMutation,
   useDeleteEnquiryMutation,
 } from '../../store/api';
@@ -29,6 +30,7 @@ import Icon from '../../components/common/Icon';
 import BrandedAlert from '../../components/common/BrandedAlert';
 import CreateEnquiryModal from '../EditEnquiry/createEnquiryModal';
 import QuotationModal from '../../components/modals/QuotationModal';
+import FinalLookModal from '../../components/modals/FinalLookModal';
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
 
@@ -207,13 +209,14 @@ const validateClField = (type, value) => {
 
 // ─── Card with action bar ─────────────────────────────────────────────────────
 const EnquiryCardItem = React.memo(({
-  enquiry, navigation, onPreview, onSummary, onChecklist, onUpdate, onDelete, onViewQuotation, activeTab, isExpandedAll,
+  enquiry, navigation, onPreview, onSummary, onChecklist, onUpdate, onDelete, onViewQuotation, onFinalLook, activeTab, isExpandedAll,
 }) => (
   <View style={styles.cardWrapper}>
     <NewCard
       item={enquiry}
       navigation={navigation}
       onViewQuotation={onViewQuotation}
+      onFinalLook={onFinalLook}
       currentTab={activeTab}
       onUpdateEnquiry={onUpdate}
       onDeleteEnquiry={onDelete}
@@ -276,6 +279,9 @@ const ClientHandlerEnquiryScreen = ({ navigation, route }) => {
   const [showCreateModal,    setShowCreateModal]    = useState(false);
   const [showQuotationModal, setShowQuotationModal] = useState(false);
   const [quotationEnquiryId, setQuotationEnquiryId] = useState(null);
+  const [showFinalLookModal, setShowFinalLookModal] = useState(false);
+  const [finalLookEnquiryId, setFinalLookEnquiryId] = useState(null);
+  const [finalLookClientName, setFinalLookClientName] = useState('');
 
   // ── Alert ─────────────────────────────────────────────────────────────────
   const [alertCfg, setAlertCfg] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
@@ -350,6 +356,7 @@ const ClientHandlerEnquiryScreen = ({ navigation, route }) => {
   }, [user, page, activeTab, assignedUserId, statusValues, clientId, searchQuery]);
 
   const { data, isLoading, isFetching, refetch } = useGetEnquiriesQuery(queryParams, { skip: !user });
+  const { data: statusesData } = useGetStatusesQuery();
   const [updateEnquiry] = useUpdateEnquiryMutation();
   const [deleteEnquiry] = useDeleteEnquiryMutation();
 
@@ -534,6 +541,22 @@ const ClientHandlerEnquiryScreen = ({ navigation, route }) => {
     setShowQuotationModal(true);
   }, []);
 
+  // ── Final Look handler ────────────────────────────────────────────────────
+  const handleFinalLook = useCallback((enquiry) => {
+    const id = enquiry?._id || enquiry?.id || enquiry?.Id;
+    const name = enquiry?.clientName || enquiry?.ClientName || '';
+    setFinalLookEnquiryId(id);
+    setFinalLookClientName(name);
+    setShowFinalLookModal(true);
+  }, []);
+
+
+  const handleApproveWithoutDesigner = useCallback(async (enquiryId) => {
+    const prodStatus = statusesData?.find(s => s.name?.toLowerCase() === 'production');
+    const statusName = prodStatus?.name || 'Production';
+    await updateEnquiry({ id: enquiryId, Status: statusName, ApprovedDate: new Date().toISOString() }).unwrap();
+  }, [updateEnquiry, statusesData]);
+
   // ── Render helpers ────────────────────────────────────────────────────────
   const renderItem = useCallback(({ item }) => (
     <EnquiryCardItem
@@ -547,8 +570,9 @@ const ClientHandlerEnquiryScreen = ({ navigation, route }) => {
       onUpdate={handleUpdate}
       onDelete={handleDelete}
       onViewQuotation={handleViewQuotation}
+      onFinalLook={handleFinalLook}
     />
-  ), [navigation, activeTab, isExpandedAll, handlePreview, handleSummary, handleChecklist, handleUpdate, handleDelete, handleViewQuotation]);
+  ), [navigation, activeTab, isExpandedAll, handlePreview, handleSummary, handleChecklist, handleUpdate, handleDelete, handleViewQuotation, handleFinalLook]);
 
   const keyExtractor = useCallback((item, i) =>
     item?.id ? String(item.id) : item?._id ? String(item._id) : `i-${i}`, []);
@@ -1025,6 +1049,15 @@ const ClientHandlerEnquiryScreen = ({ navigation, route }) => {
         visible={showQuotationModal}
         enquiryId={quotationEnquiryId}
         onClose={() => { setShowQuotationModal(false); setQuotationEnquiryId(null); }}
+      />
+
+      {/* ══ Final Look ════════════════════════════════════════════════════ */}
+      <FinalLookModal
+        visible={showFinalLookModal}
+        enquiryId={finalLookEnquiryId}
+        clientName={finalLookClientName}
+        onApprove={handleApproveWithoutDesigner}
+        onClose={() => { setShowFinalLookModal(false); setFinalLookEnquiryId(null); setFinalLookClientName(''); }}
       />
 
       <BrandedAlert

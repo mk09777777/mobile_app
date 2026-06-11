@@ -709,6 +709,236 @@ export const generateEnquiryHTML = async (enquiry) => {
 };
 
 /**
+ * Generate HTML for the "Final Look" PDF — used when an enquiry moves from
+ * Approved Cad back to Quotation. Shows all design versions with images,
+ * a pricing comparison table, budget comparison, and checklist.
+ */
+export const generateFinalLookHTML = async (enquiry, options = {}) => {
+  const src = enquiry?._originalData || enquiry;
+  const name = src?.Name || 'Untitled Enquiry';
+  const clientName = options.clientName || src?.clientName || src?.ClientName || 'Unknown';
+  const category = src?.Category || 'N/A';
+  const stoneType = src?.StoneType || 'N/A';
+  const priority = src?.Priority || 'Medium';
+  const quantity = src?.Quantity ?? 1;
+  const budget = src?.Budget || 'N/A';
+  const remarks = (src?.Remarks || '').replace(/\n/g, '<br>');
+
+  // ── Gather design versions ──────────────────────────────────────────────
+  const coralVersions = Array.isArray(src?.Coral) ? src.Coral : [];
+  const cadVersions   = Array.isArray(src?.Cad)   ? src.Cad   : [];
+
+  const latestCoral = coralVersions.length > 0 ? coralVersions[coralVersions.length - 1] : null;
+  const latestCad   = cadVersions.length > 0   ? cadVersions[cadVersions.length - 1]     : null;
+
+  // Approved CAD = the CAD version that was approved (we use the last CAD version)
+  const approvedCadVersion = latestCad;
+
+  // ── Image helpers ───────────────────────────────────────────────────────
+  const getImageUrl = async (imgObj) => {
+    if (!imgObj) return '';
+    const key = imgObj.Key || imgObj.key || imgObj.Id || imgObj.id;
+    if (!key) return '';
+    const url = `${FILE_BASE_URL}/api/enquiries/files/${encodeURIComponent(key)}`;
+    try {
+      const token = await AsyncStorage.getItem('token');
+      const resp = await fetch(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!resp.ok) return '';
+      const ct = resp.headers.get('content-type') || '';
+      if (ct.includes('application/json')) {
+        const j = await resp.json();
+        return j.url || j.imageUrl || j.src || j.location || url;
+      }
+      return url;
+    } catch { return url; }
+  };
+
+  const getDesignImages = async (design, label) => {
+    if (!design?.Images || !Array.isArray(design.Images) || design.Images.length === 0) {
+      return `<tr><td colspan="2" style="text-align:center;padding:16px;color:#999;">No ${label} image available</td></tr>`;
+    }
+    const rows = await Promise.all(design.Images.map(async (img, idx) => {
+      const imgUrl = await getImageUrl(img);
+      const desc = img.Description || img.description || `${label} ${idx + 1}`;
+      if (!imgUrl) return '';
+      return `<tr>
+        <td style="padding:8px;border:1px solid #e0e0e0;font-weight:bold;color:#555;width:120px;vertical-align:top;">${idx === 0 ? label : ''}</td>
+        <td style="padding:8px;border:1px solid #e0e0e0;text-align:center;">
+          <img src="${imgUrl}" alt="${desc}" style="max-width:200px;max-height:200px;border-radius:6px;box-shadow:0 2px 6px rgba(0,0,0,0.1);" />
+          ${design.Version ? `<br><span style="font-size:11px;color:#999;">Version ${design.Version}</span>` : ''}
+        </td>
+      </tr>`;
+    }));
+    return rows.filter(Boolean).join('');
+  };
+
+  // ── Pricing data ────────────────────────────────────────────────────────
+  const getPricing = (design) => {
+    if (!design?.Pricing) return null;
+    const p = Array.isArray(design.Pricing) ? design.Pricing[0] : design.Pricing;
+    return p || null;
+  };
+
+  const coralPricing    = latestCoral    ? getPricing(latestCoral)    : null;
+  const cadPricing      = latestCad      ? getPricing(latestCad)      : null;
+  const approvedPricing = approvedCadVersion ? getPricing(approvedCadVersion) : null;
+
+  const num = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
+  const fmtCurrency = v => `$${num(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmtWeight = v => num(v).toFixed(3);
+
+  // Comparison rows
+  const comparisonRows = [
+    { label: 'Metal Price',      coral: coralPricing?.MetalPrice,      cad: cadPricing?.MetalPrice,      approved: approvedPricing?.MetalPrice },
+    { label: 'Diamonds Price',   coral: coralPricing?.DiamondsPrice,   cad: cadPricing?.DiamondsPrice,   approved: approvedPricing?.DiamondsPrice },
+    { label: 'Duties Amount',    coral: coralPricing?.DutiesAmount,    cad: cadPricing?.DutiesAmount,    approved: approvedPricing?.DutiesAmount },
+    { label: 'Total Price',      coral: coralPricing?.TotalPrice,      cad: cadPricing?.TotalPrice,      approved: approvedPricing?.TotalPrice, isTotal: true },
+    { label: 'Diamond Weight',   coral: coralPricing?.DiamondWeight,   cad: cadPricing?.DiamondWeight,   approved: approvedPricing?.DiamondWeight, unit: 'ct' },
+    { label: 'Total Pieces',     coral: coralPricing?.TotalPieces,     cad: cadPricing?.TotalPieces,     approved: approvedPricing?.TotalPieces, unit: 'pcs' },
+    { label: 'Undercut Price',   coral: coralPricing?.UndercutPrice,   cad: cadPricing?.UndercutPrice,   approved: approvedPricing?.UndercutPrice },
+  ];
+
+  const comparisonHtml = comparisonRows.map(row => {
+    const fmt = (v) => v != null ? (row.unit ? `${num(v)} ${row.unit}` : fmtCurrency(v)) : '—';
+    return `<tr${row.isTotal ? ' style="background:#f0f0f0;font-weight:bold;"' : ''}>
+      <td style="padding:8px;border:1px solid #ddd;font-weight:${row.isTotal ? 'bold' : 'medium'};color:#333;">${row.label}</td>
+      <td style="padding:8px;border:1px solid #ddd;text-align:center;">${fmt(row.coral)}</td>
+      <td style="padding:8px;border:1px solid #ddd;text-align:center;">${fmt(row.cad)}</td>
+      <td style="padding:8px;border:1px solid #ddd;text-align:center;">${fmt(row.approved)}</td>
+    </tr>`;
+  }).join('');
+
+  // ── Budget comparison ──────────────────────────────────────────────────
+  const budgetRow = (() => {
+    const prices = [coralPricing?.TotalPrice, cadPricing?.TotalPrice, approvedPricing?.TotalPrice]
+      .filter(v => v != null).map(v => num(v));
+    const maxPrice = prices.length > 0 ? Math.max(...prices) : 0;
+    const budgetNum = parseFloat(String(budget).replace(/[^0-9.]/g, ''));
+    const underBudget = budgetNum > 0 ? maxPrice <= budgetNum : null;
+    const underLabel = underBudget === true ? '✅ Under Budget' : underBudget === false ? '⚠️ Over Budget' : 'N/A';
+    return `<tr>
+      <td style="padding:8px;border:1px solid #ddd;font-weight:bold;color:#333;">Customer Budget</td>
+      <td style="padding:8px;border:1px solid #ddd;text-align:center;font-weight:bold;">${budget}</td>
+      <td style="padding:8px;border:1px solid #ddd;text-align:center;color:${underBudget ? '#059669' : '#DC2626'}" colspan="3">${underLabel}</td>
+    </tr>`;
+  })();
+
+  // ── Checklist ──────────────────────────────────────────────────────────
+  const checklist = src?.Checklist || {};
+  const checklistFields = [
+    { key: 'Engraving',           label: 'Engraving' },
+    { key: 'SizeLength',          label: 'Size (Length)' },
+    { key: 'SizeRingSize',        label: 'Size (Ring Size)' },
+    { key: 'DimensionsThickness', label: 'Dimensions (Thickness)' },
+    { key: 'DeliveryDate',        label: 'Delivery Date' },
+    { key: 'EnamelPaintwork',     label: 'Enamel / Paintwork' },
+    { key: 'RhodiumInstructions', label: 'Rhodium Instructions' },
+    { key: 'Components',          label: 'Components' },
+    { key: 'Findings',            label: 'Findings' },
+  ];
+
+  const checklistHtml = checklistFields.map(f => {
+    const val = checklist[f.key] || '—';
+    return `<tr>
+      <td style="padding:8px;border:1px solid #e0e0e0;font-weight:bold;color:#555;width:180px;">${f.label}</td>
+      <td style="padding:8px;border:1px solid #e0e0e0;color:#333;">${val}</td>
+    </tr>`;
+  }).join('');
+
+  const generatedAt = checklist.GeneratedAt
+    ? new Date(checklist.GeneratedAt).toLocaleString()
+    : 'N/A';
+
+  // ── Design images ──────────────────────────────────────────────────────
+  const coralImagesHtml   = await getDesignImages(latestCoral, 'Coral');
+  const cadImagesHtml     = await getDesignImages(latestCad, 'CAD');
+  const approvedImagesHtml = await getDesignImages(approvedCadVersion, 'Approved CAD');
+
+  const date = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; padding: 24px; color: #333; font-size: 13px; }
+    .hdr { text-align: center; border-bottom: 3px solid #D4AF37; padding-bottom: 16px; margin-bottom: 20px; }
+    .hdr h1 { color: #D4AF37; margin: 0; font-size: 24px; }
+    .hdr p { color: #666; margin: 4px 0; font-size: 12px; }
+    .sec-title { background: #D4AF37; color: #fff; padding: 8px 12px; font-weight: bold; margin: 18px 0 10px; font-size: 14px; }
+    table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 12px; }
+    th { background: #8B4513; color: #fff; padding: 8px; text-align: center; border: 1px solid #ddd; font-size: 12px; }
+    td { padding: 7px; border: 1px solid #ddd; }
+    .grid { width: 100%; margin-bottom: 8px; }
+    .grid-row { display: flex; padding: 6px 0; border-bottom: 1px solid #eee; }
+    .grid-lbl { font-weight: bold; color: #555; width: 180px; flex-shrink: 0; }
+    .grid-val { color: #333; flex: 1; }
+    .footer { text-align: center; margin-top: 32px; padding-top: 16px; border-top: 2px solid #eee; color: #999; font-size: 11px; }
+    .remark-box { padding: 12px; background: #f9f9f9; border-radius: 6px; line-height: 1.6; color: #555; margin: 10px 0; }
+    .badge { display: inline-block; padding: 4px 10px; border-radius: 12px; color: #fff; font-size: 11px; font-weight: bold; }
+    @media print { body { padding: 10px; } }
+  </style></head><body>
+  <div class="hdr">
+    <h1>Chandra Jewels</h1>
+    <p>Final Look Report</p>
+    <p>${date}</p>
+  </div>
+
+  <div style="text-align:center;margin-bottom:16px;">
+    <h2 style="color:#333;font-size:20px;margin-bottom:6px;">${name}</h2>
+    <span class="badge" style="background:#D4AF37;">${priority.toUpperCase()} Priority</span>
+  </div>
+
+  <div class="sec-title">Enquiry Details</div>
+  <div class="grid">
+    <div class="grid-row"><div class="grid-lbl">Client</div><div class="grid-val">${clientName}</div></div>
+    <div class="grid-row"><div class="grid-lbl">Category</div><div class="grid-val">${category}</div></div>
+    <div class="grid-row"><div class="grid-lbl">Stone Type</div><div class="grid-val">${stoneType}</div></div>
+    <div class="grid-row"><div class="grid-lbl">Quantity</div><div class="grid-val">${quantity}</div></div>
+    <div class="grid-row"><div class="grid-lbl">Budget</div><div class="grid-val">${budget}</div></div>
+    <div class="grid-row"><div class="grid-lbl">Remarks</div><div class="grid-val">${remarks || '—'}</div></div>
+  </div>
+
+  <div class="sec-title">Design Versions</div>
+  <table>
+    <thead><tr><th style="width:120px;">Stage</th><th>Image</th></tr></thead>
+    <tbody>
+      ${coralImagesHtml}
+      ${cadImagesHtml}
+      ${approvedImagesHtml}
+    </tbody>
+  </table>
+
+  <div class="sec-title">Pricing Comparison</div>
+  <table>
+    <thead><tr>
+      <th style="text-align:left;">Item</th>
+      <th>Coral${latestCoral ? ` (V${latestCoral.Version})` : ''}</th>
+      <th>CAD${latestCad ? ` (V${latestCad.Version})` : ''}</th>
+      <th>Approved CAD${approvedCadVersion ? ` (V${approvedCadVersion.Version})` : ''}</th>
+    </tr></thead>
+    <tbody>
+      ${comparisonHtml}
+      ${budgetRow}
+    </tbody>
+  </table>
+
+  <div class="sec-title">Checklist</div>
+  <p style="font-size:11px;color:#999;margin-bottom:6px;">Generated: ${generatedAt}</p>
+  <table>
+    <tbody>${checklistHtml}</tbody>
+  </table>
+
+  <div class="footer">
+    <p>Generated on ${new Date().toLocaleString()}</p>
+    <p>Chandra Jewels — Enquiry Management System</p>
+  </div>
+  </body></html>`;
+
+  return html;
+};
+
+/**
  * Share/Save enquiry as PDF
  */
 export const downloadEnquiryPDF = async (enquiry) => {

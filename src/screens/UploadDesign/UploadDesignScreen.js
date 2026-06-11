@@ -9,8 +9,10 @@ import {
   Platform,
   PermissionsAndroid,
   Modal,
+  Clipboard,
 } from 'react-native';
 import { launchImageLibrary } from 'react-native-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 // DocumentPicker is optional - will check if available
 let DocumentPicker;
 try {
@@ -399,6 +401,13 @@ const UploadDesignScreen = ({ route, navigation }) => {
         console.log('✅ [UploadDesign] Image validation successful:', result);
       }
 
+      // Store validation result in AsyncStorage for Final Look PDF
+      try {
+        await AsyncStorage.setItem(`@validation_${enquiryId2}`, JSON.stringify(result));
+      } catch (e) {
+        if (__DEV__) console.warn('⚠️ Failed to store validation result:', e.message);
+      }
+
       // Display validation results
       const summary = result?.summary || 'Validation completed';
       const issues = result?.issues;
@@ -416,7 +425,6 @@ const UploadDesignScreen = ({ route, navigation }) => {
           {
             text: 'Continue',
             onPress: () => {
-              // Navigate to upload excel screen
               navigation.navigate('UploadExcel', {
                 enquiryId: enquiryId2,
                 designType,
@@ -614,7 +622,10 @@ const UploadDesignScreen = ({ route, navigation }) => {
               <TouchableOpacity
                 style={styles.copyButton}
                 onPress={() => {
-                  showAlert('Info', 'Code copied to clipboard', 'warning');
+                  if (designCode) {
+                    Clipboard.setString(designCode);
+                    showAlert('Copied', 'Code copied to clipboard', 'success');
+                  }
                 }}
               >
                 <Icon name="content-copy" size={20} color={colors.primary} />

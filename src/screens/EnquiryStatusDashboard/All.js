@@ -357,14 +357,9 @@ export default function AllStatus({
       windowSize={isTablet ? 15 : 10}
       initialNumToRender={isTablet ? 15 : 10}
       updateCellsBatchingPeriod={50}
-      getItemLayout={(data, index) => {
-        const numCols = isTablet ? 3 : 2;
+      getItemLayout={(_, index) => {
         const cardHeight = isTablet ? 260 : 280;
-        return {
-          length: cardHeight,
-          offset: cardHeight * Math.floor(index / numCols),
-          index,
-        };
+        return { length: cardHeight, offset: cardHeight * index, index };
       }}
     />
   );
