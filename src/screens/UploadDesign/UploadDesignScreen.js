@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -9,8 +9,10 @@ import {
   Platform,
   PermissionsAndroid,
   Modal,
+  Clipboard,
 } from 'react-native';
 import { launchImageLibrary } from 'react-native-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 // DocumentPicker is optional - will check if available
 let DocumentPicker;
 try {
@@ -24,13 +26,12 @@ import Icon from '../../components/common/Icon';
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
 import { CustomText } from '../../components/common/Text';
-import { useValidateImageUploadMutation } from '../../store/api';
+import { useValidateImageUploadMutation, useGetEnquiryByIdQuery } from '../../store/api';
 import { useAuth } from '../../context/AuthContext';
 import BrandedAlert from '../../components/common/BrandedAlert';
 
 const UploadDesignScreen = ({ route, navigation }) => {
-  const { designType, enquiry,enquiryId } = route.params || {};  // designType: 'coral' or 'cad'
-    console.log("recived enquiry id is:",enquiryId)
+  const { designType, enquiry, enquiryId } = route.params || {};
 
   const { user } = useAuth();
 
@@ -45,13 +46,13 @@ const UploadDesignScreen = ({ route, navigation }) => {
         ''
       : originalData?.CadCode || enquiry?.CadCode || enquiry?.cadCode || '';
 
-  // Get existing versions to determine next version
-  const designData =
+  // Get existing versions from local prop (may be empty if from list API)
+  const localDesignData =
     designType === 'coral'
       ? originalData?.Coral || enquiry?.Coral || []
       : originalData?.Cad || enquiry?.Cad || [];
 
-  const nextVersion = designData.length + 1;
+  const localNextVersion = localDesignData.length + 1;
 
   // Generate versions 1 to 50
   const allVersions = Array.from({ length: 50 }, (_, i) => ({
@@ -60,7 +61,24 @@ const UploadDesignScreen = ({ route, navigation }) => {
   }));
 
   const [designCode, setDesignCode] = useState(initialDesignCode);
-  const [selectedVersion, setSelectedVersion] = useState(nextVersion);
+  const [selectedVersion, setSelectedVersion] = useState(localNextVersion);
+
+  // Fetch full enquiry to get accurate version count (list API strips Coral/Cad arrays)
+  const resolvedEnquiryId = enquiry?.id || enquiry?._id || enquiryId;
+  const { data: fullEnquiry } = useGetEnquiryByIdQuery(resolvedEnquiryId, {
+    skip: !resolvedEnquiryId,
+  });
+
+  useEffect(() => {
+    if (!fullEnquiry) return;
+    const fullData =
+      designType === 'coral'
+        ? fullEnquiry?.Coral || []
+        : fullEnquiry?.Cad || [];
+    const nextVer = fullData.length + 1;
+    setSelectedVersion(nextVer);
+  }, [fullEnquiry, designType]);
+
   const [selectedImages, setSelectedImages] = useState([]);
   const [selectedExcel, setSelectedExcel] = useState(null);
   const [showVersionDropdown, setShowVersionDropdown] = useState(false);
@@ -383,6 +401,13 @@ const UploadDesignScreen = ({ route, navigation }) => {
         console.log('✅ [UploadDesign] Image validation successful:', result);
       }
 
+      // Store validation result in AsyncStorage for Final Look PDF
+      try {
+        await AsyncStorage.setItem(`@validation_${enquiryId2}`, JSON.stringify(result));
+      } catch (e) {
+        if (__DEV__) console.warn('⚠️ Failed to store validation result:', e.message);
+      }
+
       // Display validation results
       const summary = result?.summary || 'Validation completed';
       const issues = result?.issues;
@@ -400,7 +425,6 @@ const UploadDesignScreen = ({ route, navigation }) => {
           {
             text: 'Continue',
             onPress: () => {
-              // Navigate to upload excel screen
               navigation.navigate('UploadExcel', {
                 enquiryId: enquiryId2,
                 designType,
@@ -424,13 +448,9 @@ const UploadDesignScreen = ({ route, navigation }) => {
         checklist,
       );
     } catch (error) {
-      if (__DEV__) {
-        console.error('❌ [UploadDesign] Validation error:', error);
-      }
-      
       const errorMessage =
         error?.data?.message ||
-        error?.data ||
+        (typeof error?.data === 'string' ? error.data : null) ||
         error?.message ||
         'Failed to validate image. Please try again.';
       showAlert('Validation Failed', errorMessage, 'warning');
@@ -602,7 +622,10 @@ const UploadDesignScreen = ({ route, navigation }) => {
               <TouchableOpacity
                 style={styles.copyButton}
                 onPress={() => {
-                  showAlert('Info', 'Code copied to clipboard', 'warning');
+                  if (designCode) {
+                    Clipboard.setString(designCode);
+                    showAlert('Copied', 'Code copied to clipboard', 'success');
+                  }
                 }}
               >
                 <Icon name="content-copy" size={20} color={colors.primary} />

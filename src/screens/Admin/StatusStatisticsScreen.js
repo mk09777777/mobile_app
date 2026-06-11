@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import {
   View,
   StyleSheet,
@@ -22,7 +22,6 @@ const StatusStatisticsScreen = ({ navigation }) => {
   // Debug: Log the data being fetched
   React.useEffect(() => {
     if (__DEV__) {
-      console.log('📊 [STATUS STATS] Status Data:', JSON.stringify(statusData, null, 2));
       if (statusData?.statusStats) {
       }
     }

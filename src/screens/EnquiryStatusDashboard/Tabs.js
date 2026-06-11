@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import {
   TouchableOpacity,
   Text,
@@ -13,7 +13,7 @@ import { SearchInput } from '../../components/common';
 import Icon from '../../components/common/Icon';
 import AllStatus from './All';
 import { useAuth } from '../../context/AuthContext';
-import { useGetUsersQuery, useGetStatusesQuery } from '../../store/api';
+import { useGetStatusesQuery } from '../../store/api';
 
 export default function StatusTabs({
   activeTab,
@@ -56,17 +56,8 @@ export default function StatusTabs({
   const { user } = useAuth();
   const userRole = user?.role?.toLowerCase();
 
-  const [selectedStatus, setSelectedStatus] = React.useState(null);
-  const [selectedAssignTo, setSelectedAssignTo] = React.useState(null);
   const [isExpandedAll, setIsExpandedAll] = React.useState(false);
 
-
-  React.useEffect(() => {
-    setSelectedAssignTo(null);
-  }, [selectedStatus]);
-
-
-  const { data: users } = useGetUsersQuery(undefined, { skip: !isAdmin });
   const { data: statusesFromApi = [] } = useGetStatusesQuery();
 
   const tabStatusValues = React.useMemo(() => {
@@ -75,8 +66,8 @@ export default function StatusTabs({
       NewEnquiry: ['Enquiry Created'],
       CoralPending: ['Coral'],
       CadPending: ['CAD'],
-      Quotation: ['Quotation'],
-      ApprovalPending: ['Design Approval Pending'],
+      ApprovedCad: ['Approved Cad'],
+      Quotation: ['Quotation', 'Design Approval Pending'],
       OrderPlaced: ['Order Placement'],
       Production: ['Production'],
       Shipped: ['Shipped'],
@@ -85,44 +76,19 @@ export default function StatusTabs({
     if (!statusesFromApi.length) return STATUS_MAP;
 
     // Try to find matching status names from the API (preserves exact casing from DB)
+    // A tab may have multiple expected names (e.g. Quotation has both 'Quotation' and 'Design Approval Pending')
     const map = {};
     for (const [tabKey, expectedNames] of Object.entries(STATUS_MAP)) {
-      const found = statusesFromApi.find(s => {
-        const name = (s.name || '').toLowerCase().trim();
-        return expectedNames.some(e => e.toLowerCase() === name);
+      const matched = expectedNames.map(expected => {
+        const apiMatch = statusesFromApi.find(
+          s => (s.name || '').toLowerCase().trim() === expected.toLowerCase()
+        );
+        return apiMatch ? apiMatch.name : expected;
       });
-      map[tabKey] = found ? [found.name] : expectedNames;
+      map[tabKey] = matched;
     }
     return map;
   }, [statusesFromApi]);
-
-  const [activeEnquiryId, setActiveEnquiryId] = React.useState(null);
-  const [showAssignDropdown, setShowAssignDropdown] = React.useState(false);
-  const [assignDropDownUsers, setAssignDropDownUsers] = React.useState([]);
-  const [activeEnquiryStatus, setActiveEnquiryStatus] = React.useState(null);
-
-  const updateEnquiryStatusWrapper = async (updateData) => {
-    if (!onUpdateEnquiry) {
-      console.log('⚠️ onUpdateEnquiry is not available');
-      return false;
-    }
-    
-    const payload = {
-      id: activeEnquiryId,
-      ...updateData,
-    };
-    
-    console.log('📦 Calling onUpdateEnquiry with payload:', payload);
-    
-    try {
-      const result = await onUpdateEnquiry(payload);
-      console.log('✅ onUpdateEnquiry result:', result);
-      return result;
-    } catch (error) {
-      console.error('❌ onUpdateEnquiry error:', error);
-      return false;
-    }
-  };
 
   const tabs = React.useMemo(() => {
     if (userRole === 'admin') {
@@ -131,8 +97,8 @@ export default function StatusTabs({
         { key: 'NewEnquiry', label: 'New Enquiries' },
         { key: 'CoralPending', label: 'Coral Pending' },
         { key: 'CadPending', label: 'CAD Pending' },
+        { key: 'ApprovedCad', label: 'Approved CAD' },
         { key: 'Quotation', label: 'Quotation' },
-        { key: 'ApprovalPending', label: 'Approval Pending' },
         { key: 'OrderPlaced', label: 'Order Placement' },
         { key: 'Production', label: 'Production' },
         { key: 'Shipped', label: 'Shipped' },
@@ -145,7 +111,8 @@ export default function StatusTabs({
     } else if (userRole === 'cad') {
       return [
         { key: 'AssignedToYou', label: 'Assigned to You' },
-        { key: 'CadPending', label: 'CAD Pending' }
+        { key: 'CadPending', label: 'CAD Pending' },
+        { key: 'ApprovedCad', label: 'Approved CAD' },
       ];
     } else if (userRole === 'client_handler') {
       return [
@@ -153,8 +120,8 @@ export default function StatusTabs({
         { key: 'NewEnquiry', label: 'New Enquiries' },
         { key: 'CoralPending', label: 'Coral Pending' },
         { key: 'CadPending', label: 'CAD Pending' },
+        { key: 'ApprovedCad', label: 'Approved CAD' },
         { key: 'Quotation', label: 'Quotation' },
-        { key: 'ApprovalPending', label: 'Approval Pending' },
         { key: 'OrderPlaced', label: 'Order Placement' },
         { key: 'Production', label: 'Production' },
         { key: 'Shipped', label: 'Shipped' },
@@ -172,60 +139,15 @@ export default function StatusTabs({
     }
   }, [tabs, activeTab, onTabChange]);
 
-  const assignedToYouCount = React.useMemo(() => {
-    const userId = String(user?.id || user?._id).trim();
-    console.log('🔢 [Count] Calculating assignedToYouCount for userId:', userId);
-    console.log('🔢 [Count] Total displayEnquiries:', displayEnquiries.length);
-    
-    const filtered = displayEnquiries.filter((enquiry, index) => {
-      let assignedToId = enquiry.AssignedTo || enquiry.assignedTo || enquiry._originalData?.AssignedTo || enquiry._originalData?.assignedTo;
-      
-      // Log first 5 items
-      if (index < 5) {
-        console.log(`🔢 [Count] Enquiry ${index}:`, {
-          id: enquiry.id || enquiry._id || enquiry.Id,
-          name: enquiry.Name || enquiry.name,
-          assignedToRaw: assignedToId,
-          assignedToType: typeof assignedToId,
-        });
-      }
-      
-      if (assignedToId && typeof assignedToId === 'object') {
-        assignedToId = assignedToId.id || assignedToId._id || assignedToId.toString();
-      }
-      
-      const assignedToIdStr = String(assignedToId).trim();
-      const matches = assignedToIdStr === userId;
-      
-      // Log first 5 comparisons
-      if (index < 5) {
-        console.log(`🔢 [Count] Enquiry ${index} comparison:`, {
-          assignedToIdStr,
-          userId,
-          matches,
-        });
-      }
-      
-      return matches;
-    });
-    
-    console.log('🔢 [Count] Filtered count:', filtered.length);
-    console.log('🔢 [Count] Filtered enquiries:', filtered.map(e => ({
-      id: e.id || e._id || e.Id,
-      name: e.Name || e.name,
-      assignedTo: e.AssignedTo || e.assignedTo,
-    })));
-    
-    return filtered.length;
-  }, [displayEnquiries, user]);
+  const [assignedToYouCount, setAssignedToYouCount] = React.useState(0);
   const getCountForTab = React.useCallback((tabKey) => {
     switch (tabKey) {
       case 'all': return displayEnquiries.length;
       case 'NewEnquiry': return statusCounts?.newEnquiry || 0;
       case 'CoralPending': return statusCounts?.coral || 0;
       case 'CadPending': return statusCounts?.cad || 0;
-      case 'Quotation': return statusCounts?.quotation || 0;
-      case 'ApprovalPending': return statusCounts?.approval || 0;
+      case 'ApprovedCad': return statusCounts?.approvedCad || 0;
+      case 'Quotation': return (statusCounts?.quotation || 0) + (statusCounts?.approval || 0);
       case 'OrderPlaced': return statusCounts?.order || 0;
       case 'Production': return statusCounts?.production || 0;
       case 'Shipped': return statusCounts?.shipped || 0;
@@ -267,99 +189,7 @@ export default function StatusTabs({
   };
 
   const renderItemWithActions = (props) => {
-    const { item, currentTab } = props;
-    
-    // Check all possible field variations for assigned user
-    const raw = item._originalData || item;
-    let assigned = item.AssignedTo || item.assignedTo || item.assigned_to || item.Assigned_To
-      || raw.AssignedTo || raw.assignedTo || raw.assigned_to || raw.Assigned_To;
-    
-    // If assigned is an object, try to extract the ID
-    if (assigned && typeof assigned === 'object') {
-      assigned = assigned.id || assigned.Id || assigned._id || assigned.userId || null;
-    }
-    
-    // Convert to string and trim if it exists
-    const assignedStr = assigned ? String(assigned).trim() : '';
-    
-    // More comprehensive check for unassigned status
-    // Consider it unassigned if:
-    // 1. No assigned value exists
-    // 2. Assigned value is explicitly '-' or empty string
-    // 3. Assigned string is empty after trimming
-    // 4. Assigned value is 'null' or 'undefined' as string
-    // 5. Assigned is a valid-looking ObjectId (24 hex chars) — treat as assigned
-    const isUnassignedCheck = 
-      !assignedStr || 
-      assignedStr === '-' || 
-      assignedStr === '' || 
-      assignedStr === 'null' || 
-      assignedStr === 'undefined';
-    
-    // Only show "Assign To" button in specific tabs where assignment is relevant
-    const tabsWithAssignButton = ['all', 'NewEnquiry', 'CoralPending', 'CadPending'];
-    const shouldShowAssignButton = isAdmin && isUnassignedCheck && tabsWithAssignButton.includes(currentTab);
-    
-    // Debug log to help identify issues
-    if (__DEV__ && isAdmin && tabsWithAssignButton.includes(currentTab)) {
-      console.log('🔍 Assignment check:', {
-        id: item.Id || item._id || item.id,
-        name: item.Name || item.name,
-        assignedToRaw: item.AssignedTo || item.assignedTo,
-        assignedToType: typeof (item.AssignedTo || item.assignedTo),
-        assignedStr: assignedStr,
-        isUnassigned: isUnassignedCheck,
-        currentTab: currentTab,
-        shouldShowButton: shouldShowAssignButton,
-      });
-    }
-    
-    // Show Assign To button below the card only in expanded mode and when unassigned
-    const showAssignBtn = isExpandedAll && shouldShowAssignButton;
-
-    return (
-      <View style={{ paddingBottom: showAssignBtn ? 8 : 0 }}>
-        {renderEnquiryItem({ ...props, isExpandedAll })}
-        {showAssignBtn && (
-          <View style={styles.QuickButtonContainerWrapper}>
-            <View style={styles.QuickButtonContainer}>
-              <TouchableOpacity
-                style={styles.ActionButton}
-                onPress={() => {
-                  const statusStr = item.CurrentStatus || item.Status || item.status || '';
-                  const statusLower = statusStr.toLowerCase();
-
-                  let targetRoleId = null;
-                  if (statusLower.includes('coral')) targetRoleId = 2;
-                  else if (statusLower.includes('cad')) targetRoleId = 3;
-
-                  let usersToList = [];
-                  if (targetRoleId && users && users.length > 0) {
-                    usersToList = users.filter(u => u.role === targetRoleId);
-                  } else if (users && users.length > 0) {
-                    usersToList = users;
-                  }
-
-                  if (usersToList.length > 0) {
-                    setAssignDropDownUsers(usersToList.map(u => ({
-                      id: u.id,
-                      name: u.name || u.Name || u.username || u.email,
-                    })));
-                    setActiveEnquiryId(item.Id || item._id || item.id);
-                    setActiveEnquiryStatus(statusStr);
-                    setShowAssignDropdown(true);
-                  }
-                }}
-              >
-                <Icon name="person-add" size={16} color={colors.textWhite} />
-                <Text style={styles.ActionButtonText}>Assign To</Text>
-                <Icon name="arrow-drop-down" size={16} color={colors.textWhite} />
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-      </View>
-    );
+    return renderEnquiryItem({ ...props, isExpandedAll });
   };
 
   return (
@@ -430,6 +260,7 @@ export default function StatusTabs({
             user={user}
             statusValues={tabStatusValues[activeTab]}
             displayEnquiries={displayEnquiries}
+            onCountChange={setAssignedToYouCount}
           />
         </>
       )}
@@ -549,63 +380,6 @@ export default function StatusTabs({
         </>
       )}
 
-      {activeTab === 'ApprovalPending' && (
-        <>
-          <View style={[styles.header, isTablet && styles.headerTablet]}>
-            <View style={styles.searchRow}>
-              <View style={styles.searchContainer}>
-                <SearchInput
-                  placeholder="Search enquiries..."
-                  value={searchQuery}
-                  onChangeText={onSearchChange}
-                  onClear={onSearchClear}
-                />
-              </View>
-
-              <TouchableOpacity style={styles.sortButton} onPress={onSortPress}>
-                <Icon name="sort" size={20} color={colors.primary} />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.filterButton}
-                onPress={onFilterPress}
-              >
-                <Icon name="tune" size={20} color={colors.primary} />
-              </TouchableOpacity>
-
-              <View style={styles.expandToggleWrapper}>
-                <Text style={styles.expandToggleLabel}>
-                  {isExpandedAll ? 'Collapse' : 'Expand'}
-                </Text>
-                <TouchableOpacity
-                  onPress={() => setIsExpandedAll(v => !v)}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.expandToggleTrack, isExpandedAll && styles.expandToggleTrackOn]}>
-                    <View style={[styles.expandToggleThumb, isExpandedAll && styles.expandToggleThumbOn]} />
-                  </View>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-
-          <AllStatus
-            flatListRef={flatListRef}
-            renderEnquiryItem={renderItemWithActions}
-            renderEmpty={renderEmpty}
-            searchQuery={searchQuery}
-            resolvedFilters={resolvedFilters}
-            sortBy={sortBy}
-            sortOrder={sortOrder}
-            isTablet={isTablet}
-            styles={parentStyles}
-            currentTab="ApprovalPending"
-            user={user}
-            statusValues={tabStatusValues[activeTab]}
-          />
-        </>
-      )}
-
       {activeTab === 'CoralPending' && (
         <>
           <View style={[styles.header, isTablet && styles.headerTablet]}>
@@ -714,6 +488,63 @@ export default function StatusTabs({
             isTablet={isTablet}
             styles={parentStyles}
             currentTab="CadPending"
+            user={user}
+            statusValues={tabStatusValues[activeTab]}
+          />
+        </>
+      )}
+
+      {activeTab === 'ApprovedCad' && (
+        <>
+          <View style={[styles.header, isTablet && styles.headerTablet]}>
+            <View style={styles.searchRow}>
+              <View style={styles.searchContainer}>
+                <SearchInput
+                  placeholder="Search enquiries..."
+                  value={searchQuery}
+                  onChangeText={onSearchChange}
+                  onClear={onSearchClear}
+                />
+              </View>
+
+              <TouchableOpacity style={styles.sortButton} onPress={onSortPress}>
+                <Icon name="sort" size={20} color={colors.primary} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.filterButton}
+                onPress={onFilterPress}
+              >
+                <Icon name="tune" size={20} color={colors.primary} />
+              </TouchableOpacity>
+
+              <View style={styles.expandToggleWrapper}>
+                <Text style={styles.expandToggleLabel}>
+                  {isExpandedAll ? 'Collapse' : 'Expand'}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setIsExpandedAll(v => !v)}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.expandToggleTrack, isExpandedAll && styles.expandToggleTrackOn]}>
+                    <View style={[styles.expandToggleThumb, isExpandedAll && styles.expandToggleThumbOn]} />
+                  </View>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+
+          <AllStatus
+            flatListRef={flatListRef}
+            renderEnquiryItem={renderItemWithActions}
+            renderEmpty={renderEmpty}
+            searchQuery={searchQuery}
+            resolvedFilters={resolvedFilters}
+            sortBy={sortBy}
+            sortOrder={sortOrder}
+            isTablet={isTablet}
+            styles={parentStyles}
+            currentTab="ApprovedCad"
             user={user}
             statusValues={tabStatusValues[activeTab]}
           />
@@ -947,68 +778,6 @@ export default function StatusTabs({
         </>
       )}
 
-      <Modal
-        visible={showAssignDropdown}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowAssignDropdown(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowAssignDropdown(false)}
-        >
-          <View style={styles.dropdownModalContent}>
-            <Text style={styles.dropdownModalTitle}>Assign To</Text>
-            {(assignDropDownUsers || []).map(u => (
-              <TouchableOpacity
-                key={u.id || u.name}
-                style={styles.dropdownModalItem}
-                onPress={async () => {
-                  try {
-                    if (u.id && activeEnquiryId) {
-                      console.log('🔄 Assigning enquiry:', {
-                        enquiryId: activeEnquiryId,
-                        userId: u.id,
-                        userName: u.name,
-                        status: activeEnquiryStatus,
-                      });
-
-                      const success = await updateEnquiryStatusWrapper({
-                        assignedTo: u.id,
-                        status: activeEnquiryStatus,
-                      });
-
-                      if (success) {
-                        console.log('✅ Enquiry assigned successfully');
-                        setShowAssignDropdown(false);
-                        setActiveEnquiryId(null);
-                        setActiveEnquiryStatus(null);
-                        setAssignDropDownUsers([]);
-                        
-                        // Trigger refresh to update the list
-                        if (onRefresh) {
-                          onRefresh();
-                        }
-                      } else {
-                        console.log('❌ Failed to assign enquiry');
-                      }
-                    } else {
-                      console.log('⚠️ Missing required data for assignment');
-                      setShowAssignDropdown(false);
-                    }
-                  } catch (error) {
-                    console.error('❌ Error assigning enquiry:', error);
-                    setShowAssignDropdown(false);
-                  }
-                }}
-              >
-                <Text style={styles.dropdownModalItemText}>{u.name}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </TouchableOpacity>
-      </Modal>
     </View>
   );
 }

@@ -709,6 +709,288 @@ export const generateEnquiryHTML = async (enquiry) => {
 };
 
 /**
+ * Generate HTML for the "Final Look" PDF — used when an enquiry moves from
+ * Approved Cad back to Quotation. Shows all design versions with images,
+ * a pricing comparison table, budget comparison, and checklist.
+ */
+export const generateFinalLookHTML = async (enquiry, options = {}) => {
+  const src = enquiry?._originalData || enquiry;
+  const name = src?.Name || 'Untitled Enquiry';
+  const clientName = options.clientName || src?.clientName || src?.ClientName || 'Unknown';
+  const category = src?.Category || 'N/A';
+  const stoneType = src?.StoneType || 'N/A';
+  const priority = src?.Priority || 'Medium';
+  const quantity = src?.Quantity ?? 1;
+  const budget = src?.Budget || 'N/A';
+  const remarks = (src?.Remarks || '').replace(/\n/g, '<br>');
+  const styleNumber = src?.StyleNumber || null;
+  const metalQuality = src?.Metal?.Quality || src?.metal?.quality || null;
+  const metalColor = src?.Metal?.Color || src?.metal?.color || null;
+  const stamping = src?.Stamping || null;
+
+  // ── Gather design versions ──────────────────────────────────────────────
+  const coralVersions = Array.isArray(src?.Coral) ? src.Coral : [];
+  const cadVersions   = Array.isArray(src?.Cad)   ? src.Cad   : [];
+
+  const latestCoral = coralVersions.length > 0 ? coralVersions[coralVersions.length - 1] : null;
+  const latestCad   = cadVersions.length > 0   ? cadVersions[cadVersions.length - 1]     : null;
+
+  // Approved CAD = the CAD version that was approved (we use the last CAD version)
+  const approvedCadVersion = latestCad;
+
+  // ── Image helpers ───────────────────────────────────────────────────────
+  const getImageUrl = async (imgObj) => {
+    if (!imgObj) return '';
+    const key = imgObj.Key || imgObj.key || imgObj.Id || imgObj.id;
+    if (!key) return '';
+    const url = `${FILE_BASE_URL}/api/enquiries/files/${encodeURIComponent(key)}`;
+    try {
+      const token = await AsyncStorage.getItem('token');
+      const resp = await fetch(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!resp.ok) return '';
+      const ct = resp.headers.get('content-type') || '';
+      if (ct.includes('application/json')) {
+        const j = await resp.json();
+        return j.url || j.imageUrl || j.src || j.location || url;
+      }
+      return url;
+    } catch { return url; }
+  };
+
+  const getDesignImages = async (design, label) => {
+    if (!design?.Images || !Array.isArray(design.Images) || design.Images.length === 0) {
+      return `<tr><td colspan="2" style="text-align:center;padding:16px;color:#999;">No ${label} image available</td></tr>`;
+    }
+    const rows = await Promise.all(design.Images.map(async (img, idx) => {
+      const imgUrl = await getImageUrl(img);
+      const desc = img.Description || img.description || `${label} ${idx + 1}`;
+      if (!imgUrl) return '';
+      return `<tr>
+        <td style="padding:8px;border:1px solid #e0e0e0;font-weight:bold;color:#555;width:120px;vertical-align:top;">${idx === 0 ? label : ''}</td>
+        <td style="padding:8px;border:1px solid #e0e0e0;text-align:center;">
+          <img src="${imgUrl}" alt="${desc}" style="max-width:200px;max-height:200px;border-radius:6px;box-shadow:0 2px 6px rgba(0,0,0,0.1);" />
+          ${design.Version ? `<br><span style="font-size:11px;color:#999;">Version ${design.Version}</span>` : ''}
+          ${design.CoralCode ? `<br><span style="font-size:11px;color:#666;">Code: ${design.CoralCode}</span>` : ''}
+          ${design.CadCode   ? `<br><span style="font-size:11px;color:#666;">Code: ${design.CadCode}</span>`   : ''}
+        </td>
+      </tr>`;
+    }));
+    return rows.filter(Boolean).join('');
+  };
+
+  // ── Pricing data ────────────────────────────────────────────────────────
+  const getPricing = (design) => {
+    if (!design?.Pricing) return null;
+    const p = Array.isArray(design.Pricing) ? design.Pricing[0] : design.Pricing;
+    return p || null;
+  };
+
+  const coralPricing    = latestCoral    ? getPricing(latestCoral)    : null;
+  const cadPricing      = latestCad      ? getPricing(latestCad)      : null;
+  const approvedPricing = approvedCadVersion ? getPricing(approvedCadVersion) : null;
+
+  const num = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
+  const fmtCurrency = v => `$${num(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmtWeight = v => num(v).toFixed(3);
+
+  // Metal detail rows from Pricing[0].Metal
+  const fmtMetal = (p) => {
+    if (!p?.Metal) return '—';
+    const w = p.Metal.Weight != null ? `${num(p.Metal.Weight)}g` : null;
+    const q = p.Metal.Quality || null;
+    const r = p.Metal.Rate != null ? `$${num(p.Metal.Rate)}/g` : null;
+    return [w, q, r].filter(Boolean).join(' · ') || '—';
+  };
+
+  // Comparison rows
+  const comparisonRows = [
+    { label: 'Metal (Wt · Quality · Rate)', coral: fmtMetal(coralPricing), cad: fmtMetal(cadPricing), approved: fmtMetal(approvedPricing), isString: true },
+    { label: 'Metal Price',      coral: coralPricing?.MetalPrice,      cad: cadPricing?.MetalPrice,      approved: approvedPricing?.MetalPrice },
+    { label: 'Diamond Weight',   coral: coralPricing?.DiamondWeight,   cad: cadPricing?.DiamondWeight,   approved: approvedPricing?.DiamondWeight, unit: 'ct' },
+    { label: 'Total Pieces',     coral: coralPricing?.TotalPieces,     cad: cadPricing?.TotalPieces,     approved: approvedPricing?.TotalPieces, unit: 'pcs' },
+    { label: 'Diamonds Price',   coral: coralPricing?.DiamondsPrice,   cad: cadPricing?.DiamondsPrice,   approved: approvedPricing?.DiamondsPrice },
+    { label: 'Duties Amount',    coral: coralPricing?.DutiesAmount,    cad: cadPricing?.DutiesAmount,    approved: approvedPricing?.DutiesAmount },
+    { label: 'Undercut Price',   coral: coralPricing?.UndercutPrice,   cad: cadPricing?.UndercutPrice,   approved: approvedPricing?.UndercutPrice },
+    { label: 'Total Price',      coral: coralPricing?.TotalPrice,      cad: cadPricing?.TotalPrice,      approved: approvedPricing?.TotalPrice, isTotal: true },
+  ];
+
+  const comparisonHtml = comparisonRows.map(row => {
+    const fmt = (v) => {
+      if (row.isString) return v || '—';
+      return v != null ? (row.unit ? `${num(v)} ${row.unit}` : fmtCurrency(v)) : '—';
+    };
+    return `<tr${row.isTotal ? ' style="background:#f0f0f0;font-weight:bold;"' : ''}>
+      <td style="padding:8px;border:1px solid #ddd;font-weight:${row.isTotal ? 'bold' : 'medium'};color:#333;">${row.label}</td>
+      <td style="padding:8px;border:1px solid #ddd;text-align:center;">${fmt(row.coral)}</td>
+      <td style="padding:8px;border:1px solid #ddd;text-align:center;">${fmt(row.cad)}</td>
+      <td style="padding:8px;border:1px solid #ddd;text-align:center;">${fmt(row.approved)}</td>
+    </tr>`;
+  }).join('');
+
+  // ── Budget comparison ──────────────────────────────────────────────────
+  const budgetRow = (() => {
+    const prices = [coralPricing?.TotalPrice, cadPricing?.TotalPrice, approvedPricing?.TotalPrice]
+      .filter(v => v != null).map(v => num(v));
+    const maxPrice = prices.length > 0 ? Math.max(...prices) : 0;
+    const budgetNum = parseFloat(String(budget).replace(/[^0-9.]/g, ''));
+    const underBudget = budgetNum > 0 ? maxPrice <= budgetNum : null;
+    const underLabel = underBudget === true ? '✅ Under Budget' : underBudget === false ? '⚠️ Over Budget' : 'N/A';
+    return `<tr>
+      <td style="padding:8px;border:1px solid #ddd;font-weight:bold;color:#333;">Customer Budget</td>
+      <td style="padding:8px;border:1px solid #ddd;text-align:center;font-weight:bold;">${budget}</td>
+      <td style="padding:8px;border:1px solid #ddd;text-align:center;color:${underBudget ? '#059669' : '#DC2626'}" colspan="3">${underLabel}</td>
+    </tr>`;
+  })();
+
+  // ── Checklist ──────────────────────────────────────────────────────────
+  const checklist = src?.Checklist || {};
+  const checklistFields = [
+    { key: 'Engraving',           label: 'Engraving' },
+    { key: 'SizeLength',          label: 'Size (Length)' },
+    { key: 'SizeRingSize',        label: 'Size (Ring Size)' },
+    { key: 'DimensionsThickness', label: 'Dimensions (Thickness)' },
+    { key: 'DeliveryDate',        label: 'Delivery Date' },
+    { key: 'EnamelPaintwork',     label: 'Enamel / Paintwork' },
+    { key: 'RhodiumInstructions', label: 'Rhodium Instructions' },
+    { key: 'Components',          label: 'Components' },
+    { key: 'Findings',            label: 'Findings' },
+  ];
+
+  const checklistHtml = checklistFields.map(f => {
+    const val = checklist[f.key] || '—';
+    return `<tr>
+      <td style="padding:8px;border:1px solid #e0e0e0;font-weight:bold;color:#555;width:180px;">${f.label}</td>
+      <td style="padding:8px;border:1px solid #e0e0e0;color:#333;">${val}</td>
+    </tr>`;
+  }).join('');
+
+  const generatedAt = checklist.GeneratedAt
+    ? new Date(checklist.GeneratedAt).toLocaleString()
+    : 'N/A';
+
+  // ── Reference images (fetched as base64 so PDF renderer can display them) ─
+  const referenceImages = Array.isArray(src?.ReferenceImages) ? src.ReferenceImages : [];
+  const refImagesHtml = referenceImages.length > 0
+    ? (await Promise.all(referenceImages.map(async (img, idx) => {
+        const key = img?.Key || img?.key;
+        const id  = img?.Id  || img?.id || img?._id;
+        if (!key && !id) return '';
+        const apiUrl = key
+          ? `${FILE_BASE_URL}/api/enquiries/files/${encodeURIComponent(key)}`
+          : `${FILE_BASE_URL}/api/enquiries/files/${id}`;
+        const dataUri = await fetchImageAsBase64(apiUrl);
+        if (!dataUri) return '';
+        const desc = img.Description || img.description || `Reference ${idx + 1}`;
+        return `<tr>
+          <td style="padding:8px;border:1px solid #e0e0e0;font-weight:bold;color:#555;width:120px;vertical-align:top;">${idx === 0 ? 'Reference' : ''}</td>
+          <td style="padding:8px;border:1px solid #e0e0e0;text-align:center;">
+            <img src="${dataUri}" alt="${desc}" style="max-width:200px;max-height:200px;border-radius:6px;box-shadow:0 2px 6px rgba(0,0,0,0.1);" />
+            <br><span style="font-size:11px;color:#999;">${desc}</span>
+          </td>
+        </tr>`;
+      }))).filter(Boolean).join('')
+    : '';
+
+  // ── Design images ──────────────────────────────────────────────────────
+  const coralImagesHtml    = await getDesignImages(latestCoral, 'Coral');
+  const cadImagesHtml      = await getDesignImages(latestCad, 'CAD');
+  const approvedImagesHtml = await getDesignImages(approvedCadVersion, 'Approved CAD');
+
+  const date = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; padding: 24px; color: #333; font-size: 13px; }
+    .hdr { text-align: center; border-bottom: 3px solid #D4AF37; padding-bottom: 16px; margin-bottom: 20px; }
+    .hdr h1 { color: #D4AF37; margin: 0; font-size: 24px; }
+    .hdr p { color: #666; margin: 4px 0; font-size: 12px; }
+    .sec-title { background: #D4AF37; color: #fff; padding: 8px 12px; font-weight: bold; margin: 18px 0 10px; font-size: 14px; }
+    table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 12px; }
+    th { background: #8B4513; color: #fff; padding: 8px; text-align: center; border: 1px solid #ddd; font-size: 12px; }
+    td { padding: 7px; border: 1px solid #ddd; }
+    .grid { width: 100%; margin-bottom: 8px; }
+    .grid-row { display: flex; padding: 6px 0; border-bottom: 1px solid #eee; }
+    .grid-lbl { font-weight: bold; color: #555; width: 180px; flex-shrink: 0; }
+    .grid-val { color: #333; flex: 1; }
+    .footer { text-align: center; margin-top: 32px; padding-top: 16px; border-top: 2px solid #eee; color: #999; font-size: 11px; }
+    .remark-box { padding: 12px; background: #f9f9f9; border-radius: 6px; line-height: 1.6; color: #555; margin: 10px 0; }
+    .badge { display: inline-block; padding: 4px 10px; border-radius: 12px; color: #fff; font-size: 11px; font-weight: bold; }
+    @media print { body { padding: 10px; } }
+  </style></head><body>
+  <div class="hdr">
+    <h1>Chandra Jewels</h1>
+    <p>Final Look Report</p>
+    <p>${date}</p>
+  </div>
+
+  <div style="text-align:center;margin-bottom:16px;">
+    <h2 style="color:#333;font-size:20px;margin-bottom:6px;">${name}</h2>
+    <span class="badge" style="background:#D4AF37;">${priority.toUpperCase()} Priority</span>
+  </div>
+
+  <div class="sec-title">Enquiry Details</div>
+  <div class="grid">
+    <div class="grid-row"><div class="grid-lbl">Client</div><div class="grid-val">${clientName}</div></div>
+    <div class="grid-row"><div class="grid-lbl">Category</div><div class="grid-val">${category}</div></div>
+    ${styleNumber ? `<div class="grid-row"><div class="grid-lbl">Style Number</div><div class="grid-val">${styleNumber}</div></div>` : ''}
+    <div class="grid-row"><div class="grid-lbl">Stone Type</div><div class="grid-val">${stoneType}</div></div>
+    ${metalQuality ? `<div class="grid-row"><div class="grid-lbl">Metal Quality</div><div class="grid-val">${metalColor ? `${metalColor} — ` : ''}${metalQuality}</div></div>` : ''}
+    ${stamping ? `<div class="grid-row"><div class="grid-lbl">Stamping</div><div class="grid-val">${stamping}</div></div>` : ''}
+    <div class="grid-row"><div class="grid-lbl">Quantity</div><div class="grid-val">${quantity}</div></div>
+    <div class="grid-row"><div class="grid-lbl">Budget</div><div class="grid-val">${budget}</div></div>
+    <div class="grid-row"><div class="grid-lbl">Remarks</div><div class="grid-val">${remarks || '—'}</div></div>
+  </div>
+
+  ${refImagesHtml ? `
+  <div class="sec-title">Reference Images</div>
+  <table>
+    <thead><tr><th style="width:120px;">Label</th><th>Image</th></tr></thead>
+    <tbody>${refImagesHtml}</tbody>
+  </table>` : ''}
+
+  <div class="sec-title">Design Versions</div>
+  <table>
+    <thead><tr><th style="width:120px;">Stage</th><th>Image</th></tr></thead>
+    <tbody>
+      ${coralImagesHtml}
+      ${cadImagesHtml}
+      ${approvedImagesHtml}
+    </tbody>
+  </table>
+
+  <div class="sec-title">Pricing Comparison</div>
+  <table>
+    <thead><tr>
+      <th style="text-align:left;">Item</th>
+      <th>Coral${latestCoral ? ` (V${latestCoral.Version})` : ''}</th>
+      <th>CAD${latestCad ? ` (V${latestCad.Version})` : ''}</th>
+      <th>Approved CAD${approvedCadVersion ? ` (V${approvedCadVersion.Version})` : ''}</th>
+    </tr></thead>
+    <tbody>
+      ${comparisonHtml}
+      ${budgetRow}
+    </tbody>
+  </table>
+
+  <div class="sec-title">Checklist</div>
+  <p style="font-size:11px;color:#999;margin-bottom:6px;">Generated: ${generatedAt}</p>
+  <table>
+    <tbody>${checklistHtml}</tbody>
+  </table>
+
+  <div class="footer">
+    <p>Generated on ${new Date().toLocaleString()}</p>
+    <p>Chandra Jewels — Enquiry Management System</p>
+  </div>
+  </body></html>`;
+
+  return html;
+};
+
+/**
  * Share/Save enquiry as PDF
  */
 export const downloadEnquiryPDF = async (enquiry) => {
@@ -1919,6 +2201,103 @@ export const downloadEnquiriesPDFFromBackend = async (filters = {}, options = {}
     // Re-throw other errors
     throw error;
   }
+};
+
+/**
+ * Generates a side-by-side comparison PDF of reference images vs coral/cad design images.
+ */
+export const generateCompareImagesHTML = async (enquiry) => {
+  const referenceImages = Array.isArray(enquiry?.ReferenceImages) ? enquiry.ReferenceImages : [];
+
+  const designImages = [];
+  const allVersions = [
+    ...(Array.isArray(enquiry?.Coral) ? enquiry.Coral.map(v => ({ ...v, _stage: 'Coral' })) : []),
+    ...(Array.isArray(enquiry?.Cad)   ? enquiry.Cad.map(v => ({ ...v, _stage: 'CAD' }))     : []),
+  ];
+  allVersions.sort((a, b) => new Date(a.CreatedDate || 0) - new Date(b.CreatedDate || 0));
+  for (const version of allVersions) {
+    const imgs = Array.isArray(version.Images) ? version.Images : [];
+    for (const img of imgs) {
+      designImages.push({ img, label: `${version._stage} v${version.Version || ''}` });
+    }
+  }
+
+  const fetchImg = async (imgObj) => {
+    const key = imgObj?.Key || imgObj?.key;
+    const id  = imgObj?.Id  || imgObj?.id || imgObj?._id;
+    if (!key && !id) return '';
+    const url = key
+      ? `${FILE_BASE_URL}/api/enquiries/files/${encodeURIComponent(key)}`
+      : `${FILE_BASE_URL}/api/enquiries/files/${id}`;
+    return fetchImageAsBase64(url);
+  };
+
+  const [refResults, designResults] = await Promise.all([
+    Promise.all(referenceImages.map(img => fetchImg(img))),
+    Promise.all(designImages.map(({ img }) => fetchImg(img))),
+  ]);
+
+  const refRows = referenceImages.map((img, i) => ({
+    src: refResults[i],
+    label: img.Description || img.description || `Ref ${i + 1}`,
+  })).filter(r => r.src);
+
+  const designRows = designImages.map(({ label }, i) => ({
+    src: designResults[i],
+    label,
+  })).filter(r => r.src);
+
+  const maxRows = Math.max(refRows.length, designRows.length);
+
+  if (maxRows === 0) {
+    return `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;padding:40px;text-align:center;color:#666;">
+      <h2>No images to compare</h2>
+      <p>This enquiry has no reference images or design version images.</p>
+    </body></html>`;
+  }
+
+  const tableRows = Array.from({ length: maxRows }, (_, i) => {
+    const ref    = refRows[i];
+    const design = designRows[i];
+    return `<tr>
+      <td style="padding:12px;border:1px solid #e0e0e0;text-align:center;width:50%;vertical-align:top;">
+        ${ref ? `<img src="${ref.src}" style="max-width:100%;max-height:280px;border-radius:6px;object-fit:contain;" /><br><span style="font-size:11px;color:#888;">${ref.label}</span>` : ''}
+      </td>
+      <td style="padding:12px;border:1px solid #e0e0e0;text-align:center;width:50%;vertical-align:top;">
+        ${design ? `<img src="${design.src}" style="max-width:100%;max-height:280px;border-radius:6px;object-fit:contain;" /><br><span style="font-size:11px;color:#888;">${design.label}</span>` : ''}
+      </td>
+    </tr>`;
+  }).join('');
+
+  const date = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <style>
+    body { font-family: Arial, sans-serif; padding: 24px; color: #333; font-size: 13px; }
+    .hdr { text-align: center; border-bottom: 3px solid #D4AF37; padding-bottom: 16px; margin-bottom: 20px; }
+    .hdr h1 { color: #D4AF37; margin: 0; font-size: 22px; }
+    .hdr p { color: #666; margin: 4px 0; font-size: 12px; }
+    table { width: 100%; border-collapse: collapse; }
+    th { background: #8B4513; color: #fff; padding: 10px; text-align: center; font-size: 13px; }
+    .footer { text-align: center; margin-top: 24px; color: #999; font-size: 11px; }
+  </style>
+  </head><body>
+  <div class="hdr">
+    <h1>Chandra Jewels</h1>
+    <p>Image Comparison — ${enquiry?.Name || 'Enquiry'}</p>
+    <p>${date}</p>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Reference Images</th>
+        <th>Design Images (Coral / CAD)</th>
+      </tr>
+    </thead>
+    <tbody>${tableRows}</tbody>
+  </table>
+  <div class="footer">Generated by Chandra Jewels Management App</div>
+  </body></html>`;
 };
 
 // Debug: Verify export is available

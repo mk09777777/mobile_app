@@ -1462,72 +1462,58 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
   }
 
   const handleApprove = () => {
-    // Get available design versions
-    const originalData = enquiry?._originalData || enquiry;
-    const coralVersions = originalData?.Coral || enquiry?.Coral || [];
-    const cadVersions = originalData?.Cad || enquiry?.Cad || [];
+    const src = enquiry?._originalData || enquiry;
+    const cadVersions   = src?.Cad   || [];
+    const coralVersions = src?.Coral || [];
 
-    console.log('originalData-------gati-->', originalData);
-
-    // Determine which design type and version to approve
-    // Priority: Latest coral version, or latest cad version if no coral
-    let designType = 'coral';
-    let versionIndex =
-      coralVersions.length > 0
-        ? coralVersions.length - 1
-        : cadVersions.length > 0
-        ? cadVersions.length - 1
-        : null;
-
-    if (coralVersions.length === 0 && cadVersions.length > 0) {
+    // Follow the flow: prefer the latest CAD version (Quotation → Approved Cad),
+    // fall back to Coral only if no CAD versions exist.
+    let designType, versions;
+    if (cadVersions.length > 0) {
       designType = 'cad';
-    }
-
-    if (versionIndex === null) {
+      versions   = cadVersions;
+    } else if (coralVersions.length > 0) {
+      designType = 'coral';
+      versions   = coralVersions;
+    } else {
       showAlert('Error', 'No design versions available to approve', 'error');
       return;
     }
 
-    const version =
-      designType === 'coral'
-        ? coralVersions[versionIndex]?.Version || `Version ${versionIndex + 1}`
-        : cadVersions[versionIndex]?.Version || `Version ${versionIndex + 1}`;
+    const versionIndex = versions.length - 1;
+    const version = versions[versionIndex]?.Version || `Version ${versionIndex + 1}`;
+    const currentStatus = (status || '').toLowerCase();
+    const isApprovedCadStatus = currentStatus === 'approved cad';
 
     showAlert(
       'Approve Design Version',
-      `Are you sure you want to approve ${designType.toUpperCase()} ${version}?`,
+      `Approve ${designType.toUpperCase()} ${version}?`,
       'warning',
       [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-          onPress: () => {},
-        },
+        { text: 'Cancel', style: 'cancel', onPress: () => {} },
         {
           text: 'Approve',
           onPress: async () => {
             try {
-              const enquiryId = enquiry.id || enquiry._id;
+              const eid = enquiry.id || enquiry._id;
 
-              const result = await approveDesignVersion({
-                enquiryId,
-                designType,
-                version,
-              }).unwrap();
+              if (isApprovedCadStatus) {
+                // Final approval (Approved Cad → upload → Quotation → approve here → Production)
+                // Only update the enquiry status; no separate approveDesignVersion call to avoid double StatusHistory.
+                await approveDesignVersion({ enquiryId: eid, designType, version }).unwrap();
+                // Note: backend handles status transition on IsFinalVersion=true upload.
+                // Just refetch to reflect the new status.
+              } else {
+                // First approval (Quotation → Approved Cad)
+                await approveDesignVersion({ enquiryId: eid, designType, version }).unwrap();
+              }
 
-              showAlert(
-                'Success',
-                `${designType.toUpperCase()} ${version} approved successfully`,
-                'success',
-              );
-              // Refetch enquiry data to get updated approval status
+              showAlert('Success', `${designType.toUpperCase()} ${version} approved successfully`, 'success');
               refetch();
             } catch (error) {
               showAlert(
                 'Error',
-                error?.data?.error ||
-                  error?.message ||
-                  'Failed to approve design version. Please try again.',
+                error?.data?.error || error?.message || 'Failed to approve design version.',
                 'error',
               );
             }
@@ -3771,22 +3757,18 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
       >
         Designer Actions
       </Text>
-      {!['coral', 'cad'].includes(user?.role) && (
-        <View style={styles.adminActionsRow}>
-          <TouchableOpacity
-            onPress={role === 'coral' ? handleUploadCoral : handleUploadCAD}
-            style={[styles.adminActionButton, styles.adminActionButtonPrimary]}
-            activeOpacity={0.85}
-          >
-            <Icon name="cloud-upload" size={18} color={colors.textWhite} />
-            <Text style={styles.adminActionText}>
-              Upload {role === 'coral' ? 'Coral' : 'CAD'} Design
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Enquiry History button removed for coral and CAD designers - only visible for admin */}
+      <View style={styles.adminActionsRow}>
+        <TouchableOpacity
+          onPress={role === 'coral' ? handleUploadCoral : handleUploadCAD}
+          style={[styles.adminActionButton, styles.adminActionButtonPrimary]}
+          activeOpacity={0.85}
+        >
+          <Icon name="cloud-upload" size={18} color={colors.textWhite} />
+          <Text style={styles.adminActionText}>
+            Upload {role === 'coral' ? 'Coral' : 'CAD'} Design
+          </Text>
+        </TouchableOpacity>
+      </View>
     </Card>
   );
 
@@ -3987,10 +3969,10 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
         {renderEnquiryDetails()}
         {renderVersions()}
 
-        {user.role === 'client' && renderClientActions()}
-        {(user.role === 'coral' || user.role === 'cad') &&
-          renderDesignerActions(user.role)}
-        {user.role === 'admin' && renderAdminActions()}
+        {user?.role === 'client' && renderClientActions()}
+        {(user?.role === 'coral' || user?.role === 'cad') &&
+          renderDesignerActions(user?.role)}
+        {user?.role === 'admin' && renderAdminActions()}
       </ScrollView>
 
       {isImageModalVisible && (

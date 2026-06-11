@@ -10,6 +10,8 @@ import {
   StyleSheet,
   View,
   Text,
+  TextInput,
+  Alert,
   ActivityIndicator,
   ScrollView,
   Dimensions,
@@ -24,12 +26,17 @@ import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
 import { FILE_BASE_URL } from '../../config/apiConfig';
 import Icon from '../common/Icon';
+import BrandedAlert from '../common/BrandedAlert';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigation } from '@react-navigation/native';
 import {
   useGetUsersQuery,
   useGetStatusesQuery,
   useGetRolesQuery,
+  useGetEnquiryByIdQuery,
+  useApproveDesignVersionMutation,
+  useRejectDesignVersionMutation,
+  useUpdateEnquiryMutation,
 } from '../../store/api';
 
 const { width: screenWidth } = Dimensions.get('window');
@@ -43,6 +50,7 @@ export default function NewEnquiryCard({
   onUpdateEnquiry,
   onDeleteEnquiry,
   isExpandedAll = false,
+  onFinalLook,
 }) {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
@@ -61,13 +69,65 @@ export default function NewEnquiryCard({
   const [modalCurrentIndex, setModalCurrentIndex] = useState(0);
   const [zoomedImageIndex, setZoomedImageIndex] = useState(null);
   const modalFlatListRef = useRef(null);
-  const [showStatusDropdown, setShowStatusDropdown] = useState(false);
-  const [showAssignDropdown, setShowAssignDropdown] = useState(false);
-  const [assignDropDownUsers, setAssignDropDownUsers] = useState([]);
   const [showMoreOptions, setShowMoreOptions] = useState(false);
-  const [selectedStatus, setSelectedStatus] = useState(null);
   const [isRemarkExpanded, setIsRemarkExpanded] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // ── Quotation action sheet state ──────────────────────────────────────────
+  const [showQuotationActions, setShowQuotationActions]   = useState(false);
+  const [showReasonInput,      setShowReasonInput]        = useState(false);
+  const [showCadPicker,        setShowCadPicker]          = useState(false);
+  const [selectedCadDesigner,  setSelectedCadDesigner]    = useState(null);
+  const [updateReason,         setUpdateReason]           = useState('');
+  const [isActionLoading,      setIsActionLoading]        = useState(false);
+  const [alertCfg, setAlertCfg] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
+  const showAlert = useCallback((title, message, type = 'info', buttons = []) =>
+    setAlertCfg({ visible: true, title, message, type, buttons }), []);
+  const hideAlert = useCallback(() => setAlertCfg(p => ({ ...p, visible: false })), []);
+
+  const cadDesigners = useMemo(
+    () => (users || []).filter(u => u.role === 3 || u.roleId === 3 || u.roleNumber === 3),
+    [users],
+  );
+
+  const [approveDesignVersion] = useApproveDesignVersionMutation();
+  const [rejectDesignVersion]  = useRejectDesignVersionMutation();
+  const [updateEnquiryDirect]  = useUpdateEnquiryMutation();
+
+  const priority = (item?.Priority || 'medium').toLowerCase();
+  const status = (item?.CurrentStatus || 'pending').toLowerCase();
+  const isCoral = user?.role === 'coral';
+  const isCad = user?.role === 'cad';
+
+  // Fix status matching to match actual database values
+  const isJustCreated =
+    status === 'enquiry created' ||
+    status === 'created' ||
+    status === 'new' ||
+    status === 'pending';
+  const isCoralPending = status === 'coral';
+  const isCadPending = status === 'cad';
+  const isQuotation = status === 'quotation';
+  const isApprovalPending = status === 'design approval pending';
+  const isPlacementStage = status === 'order placement';
+  const isProduction = status === 'production';
+
+  // Fetch full enquiry (with Coral/Cad arrays + StatusHistory).
+  // The list API strips these arrays in its $project — getEnquiryById returns the full doc.
+  // We fetch for quotation items too so we can detect the revised-quotation state.
+  const enquiryId = item?.Id || item?._id || item?.id;
+  const shouldFetchFull = showQuotationActions || isQuotation;
+  const { data: fullEnquiryData, isFetching: isFetchingEnquiry } = useGetEnquiryByIdQuery(enquiryId, {
+    skip: !enquiryId || !shouldFetchFull,
+  });
+
+  // StatusHistory is only available in the full enquiry (not in list API response)
+  const fullSrc = fullEnquiryData?._originalData || fullEnquiryData;
+  const statusHistory = fullSrc?.StatusHistory || [];
+  const hasApprovedCadInHistory = statusHistory.some(
+    (s, i, arr) => s.Status === 'Approved Cad' && arr[i + 1]?.Status === 'Quotation'
+  );
+  const isRevisedQuotation = isQuotation && hasApprovedCadInHistory;
 
   const referenceImages = item?.ReferenceImages || [];
 
@@ -103,48 +163,7 @@ export default function NewEnquiryCard({
     loadAllImages();
     return () => { cancelled = true; };
   }, [isExpandedAll]);
-  const priority = (item?.Priority || 'medium').toLowerCase();
-  const status = (item?.CurrentStatus || 'pending').toLowerCase();
-  const isCoral = user?.role === 'coral';
-  const isCad = user?.role === 'cad';
 
-  //consoling the complete enquiry data
-  console.log('📋 Enquiry Item:', item);
-  console.log('🎯 Status (original):', item?.CurrentStatus);
-  console.log('🎯 Status (lowercase):', status);
-  console.log('⚡ Priority:', priority);
-  console.log('👤 Client:', item?.clientName);
-  console.log('🆔 Enquiry ID:', item?.Id || item?._id || item?.id);
-  
-  // Console based on status
-  if (isJustCreated) {
-    console.log('🆕 NEW ENQUIRY - Awaiting Assignment');
-  } else if (isCoralPending) {
-    console.log('🎨 CORAL STAGE - Design in Progress');
-  } else if (isCadPending) {
-    console.log('💻 CAD STAGE - Technical Design');
-  } else if (isQuotation) {
-    console.log('💰 QUOTATION STAGE - Pricing Ready');
-  } else if (isApprovalPending) {
-    console.log('✅ APPROVAL PENDING - Awaiting Client Decision');
-  } else if (isPlacementStage) {
-    console.log('📦 ORDER PLACEMENT - Ready for Production');
-  } else {
-    console.log('📌 STATUS:', status.toUpperCase());
-  }
-
-  // Fix status matching to match actual database values
-  const isJustCreated =
-    status === 'enquiry created' ||
-    status === 'created' ||
-    status === 'new' ||
-    status === 'pending';
-  const isCoralPending = status === 'coral';
-  const isCadPending = status === 'cad';
-  const isQuotation = status === 'quotation';
-  const isApprovalPending = status === 'design approval pending';
-  const isPlacementStage = status === 'order placement';
-  const isProduction = status === 'production';
 
   const createdDate = item?.CreatedDate || item?.createdAt;
   const daysSinceCreation = createdDate
@@ -190,52 +209,23 @@ export default function NewEnquiryCard({
   }, [assignedIdStr, assignedVal, users]);
 
   // Button visibility based on user role and status
-  const shouldShowActionButtons = isAdmin && isJustCreated;
-  const shouldShowAdminCoralUpload = isAdmin && isCoralPending;
-  const shouldShowAdminCadUpload = isAdmin && isCadPending;
+  const isApprovedCad = status === 'approved cad';
+
+  // Admin: show upload button for whichever design stage is active
+  const shouldShowAdminCoralUpload     = isAdmin && isCoralPending;
+  const shouldShowAdminCadUpload       = isAdmin && (isCadPending || isApprovedCad);
+  const shouldShowAdminPlacement       = isAdmin && isPlacementStage;
+  const shouldShowAdminProduction      = isAdmin && isProduction;
+
+  // Designers: show upload for their stage regardless of how the enquiry was created
   const shouldShowCoralDesignerButtons = isCoral && isCoralPending;
-  const shouldShowCadDesignerButtons = isCad && isCadPending;
-  const shouldShowQuotationButtons = isQuotation;
-  const showApprovalButton = isAdmin && isApprovalPending;
-  const showPlacementButton = isAdmin && isPlacementStage;
-  const showProductionButton = isAdmin && isProduction;
+  const shouldShowCadDesignerButtons   = isCad   && (isCadPending || isApprovedCad);
+  const shouldShowAdminApprovedCad     = isAdmin && isApprovedCad;
+  const shouldShowQuotationButtons     = isQuotation || isApprovalPending;
 
   // Log bearer token on component mount
 
-  // ── Image loading commented out ──────────────────────────────────────────
-  // useEffect(() => {
-  //   if (!referenceImages || referenceImages.length === 0) { setImageLoading(false); return; }
-  //   let cancelled = false;
-  //   const loadAllImages = async () => {
-  //     try {
-  //       setImageLoading(true);
-  //       const token = await AsyncStorage.getItem('token');
-  //       const imagePromises = referenceImages.map(async img => {
-  //         const imageKey = img?.Key;
-  //         if (!imageKey) return null;
-  //         const imageUrl = `${FILE_BASE_URL}/api/enquiries/files/${encodeURIComponent(imageKey)}`;
-  //         try {
-  //           const response = await fetch(imageUrl, { method: 'GET', headers: { Authorization: `Bearer ${token}` } });
-  //           if (!response.ok) return null;
-  //           const contentType = response.headers.get('content-type') || '';
-  //           if (contentType.includes('application/json')) {
-  //             const jsonData = await response.json();
-  //             return jsonData.url || jsonData.imageUrl || jsonData.Url || null;
-  //           } else {
-  //             const arrayBuffer = await response.arrayBuffer();
-  //             const base64 = btoa(new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), ''));
-  //             return `data:${contentType};base64,${base64}`;
-  //           }
-  //         } catch (error) { return null; }
-  //       });
-  //       const loadedImages = await Promise.all(imagePromises);
-  //       const validImages = loadedImages.filter(img => img !== null);
-  //       if (!cancelled) { setImagesData(validImages); setImageLoading(false); }
-  //     } catch (error) { if (!cancelled) { setImageLoading(false); } }
-  //   };
-  //   loadAllImages();
-  //   return () => { cancelled = true; };
-  // }, [referenceImages.length]);
+
 
   const handleScroll = e => setCurrentIndex(Math.round(e.nativeEvent.contentOffset.x / screenWidth));
   const handleImagePress = useCallback(index => { setModalCurrentIndex(index); setImageModalVisible(true); }, []);
@@ -244,69 +234,17 @@ export default function NewEnquiryCard({
     setZoomedImageIndex(prev => prev === index ? null : index);
   }, []);
 
-  const DropDownStatus = useMemo(() => {
-    if (!statusesData) return [];
-    return statusesData.map(status => ({
-      Id: status.id,
-      value: status.name,
-      label: status.label,
-    }));
-  }, [statusesData]);
-
-  //role
-
-  const statusToRoleMap = useMemo(() => {
-    const map = {};
-    (rolesData || []).forEach(role => {
-      const name = (role.name || '').toLowerCase();
-      const code = (role.code || '').toLowerCase();
-      if (name === 'coral' || code === 'co') {
-        map['coral'] = role.id;
-        map['co'] = role.id;
-      }
-      if (name === 'cad' || code === 'cd' || name === 'cad designer') {
-        map['cad'] = role.id;
-        map['cd'] = role.id;
-      }
-    });
-    return map;
-  }, [rolesData]);
-
-  const handleStatusSelect = (value, label, id) => {
-    console.log('Selected status:', value, label);
-    setSelectedStatus({ value, label });
-    setShowStatusDropdown(false);
-
-    const targetRoleId = statusToRoleMap[value.toLowerCase()];
-    
-    if (targetRoleId && users && users.length > 0) {
-      // Filter users by role ID
-      const filteredUsers = users.filter(user => user.role === targetRoleId);
-      console.log('Filtered users for role ID', targetRoleId, ':', filteredUsers);
-      
-      setAssignDropDownUsers(filteredUsers.map(user => ({
-        id: user.id,
-        name: user.name || user.Name || user.username || user.email,  
-      })));
-    } else {
-      // For other statuses, show all users
-      setAssignDropDownUsers([{name:"Select status first"}]);
-    }
-  };
-
-
   const updateEnquiryStatus = async (updateData) => {
     if (!onUpdateEnquiry) {
       console.error('onUpdateEnquiry prop not provided');
       return false;
     }
-    
     const payload = {
       id: item?.Id || item?._id || item?.id,
       ...updateData,
     };
-    
-    return await onUpdateEnquiry(payload);
+    const result = await onUpdateEnquiry(payload);
+    return result;
   };
 
   const handleDeleteEnquiry = async () => {
@@ -314,7 +252,7 @@ export default function NewEnquiryCard({
       console.error('onDeleteEnquiry prop not provided');
       return;
     }
-    
+
     setIsDeleting(true);
     try {
       const enquiryId = item?.Id || item?._id || item?.id;
@@ -325,6 +263,138 @@ export default function NewEnquiryCard({
     } finally {
       setIsDeleting(false);
     }
+  };
+
+  // ── Quotation action helpers ───────────────────────────────────────────────
+  /** Returns { type: 'coral'|'cad', version } from the full enquiry fetched by ID.
+   *  The list aggregation strips Coral/Cad arrays — getEnquiryByIdQuery returns the
+   *  complete document when the action sheet is open. */
+  const getLatestDesign = () => {
+    const src = fullEnquiryData || item?._originalData || item;
+
+    const cad   = Array.isArray(src?.Cad)   && src.Cad.length   > 0 ? src.Cad[src.Cad.length - 1]     : null;
+    const coral = Array.isArray(src?.Coral) && src.Coral.length > 0 ? src.Coral[src.Coral.length - 1] : null;
+
+    if (cad?.Version)   return { type: 'cad',   version: cad.Version };
+    if (coral?.Version) return { type: 'coral', version: coral.Version };
+
+    return null;
+  };
+
+  const handleApprove = () => {
+    setShowCadPicker(true);
+  };
+
+  const handleApproveWithDesigner = async (designer) => {
+    const design = getLatestDesign();
+    if (!design) {
+      Alert.alert('Error', 'No design version found to approve.');
+      return;
+    }
+    const clientId = item?.ClientId || item?.clientId;
+    setIsActionLoading(true);
+    try {
+      if (isApprovedCad) {
+        await updateEnquiryDirect({
+          id: enquiryId,
+          Status: 'Production',
+          ApprovedDate: new Date().toISOString(),
+          AssignedTo: designer ? designer.id : null,
+          ClientId: clientId,
+        }).unwrap();
+      } else {
+        await updateEnquiryDirect({
+          id: enquiryId,
+          Status: 'Approved Cad',
+          AssignedTo: designer ? designer.id : null,
+          ClientId: clientId,
+        }).unwrap();
+      }
+
+      setShowQuotationActions(false);
+      const msg = isApprovedCad
+        ? 'CAD approved. Enquiry moved to Production.'
+        : 'Design approved and assigned to CAD designer.';
+      Alert.alert('Approved', msg);
+    } catch (e) {
+      Alert.alert('Failed', e?.data?.message || 'Could not approve the design. Please try again.');
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleRequestUpdate = async () => {
+    if (!updateReason.trim()) return;
+    const design = getLatestDesign();
+    if (!design) {
+      Alert.alert('Error', 'No design version found.');
+      return;
+    }
+    setIsActionLoading(true);
+    try {
+      await rejectDesignVersion({
+        enquiryId,
+        designType: design.type,
+        version:    design.version,
+        reason:     updateReason.trim(),
+      }).unwrap();
+      if (design.type === 'cad') {
+        const currentAssignedTo = item?.AssignedTo || item?.assignedTo;
+        await updateEnquiryDirect({
+          id: enquiryId,
+          Status: 'CAD',
+          ClientId: item?.ClientId || item?.clientId,
+          ...(currentAssignedTo ? { AssignedTo: currentAssignedTo } : {}),
+        }).unwrap();
+      }
+      setShowQuotationActions(false);
+      setShowReasonInput(false);
+      setUpdateReason('');
+      Alert.alert('Update Requested', 'Your revision request has been sent. The design will be updated.');
+    } catch (e) {
+      Alert.alert('Failed', e?.data?.message || 'Could not send the update request. Please try again.');
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+
+  const doApproveWithoutDesigner = async () => {
+    const clientId = item?.ClientId || item?.clientId;
+    setIsActionLoading(true);
+    try {
+      await updateEnquiryDirect({
+        id: enquiryId,
+        Status: 'Production',
+        ApprovedDate: new Date().toISOString(),
+        ClientId: clientId,
+      }).unwrap();
+      showAlert('Success', 'Enquiry moved to Production.', 'success', [{ text: 'OK' }]);
+    } catch (e) {
+      showAlert('Failed', e?.data?.message || 'Could not move to Production.', 'error', [{ text: 'OK' }]);
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleApproveWithoutDesigner = () => {
+    showAlert(
+      'Confirm Approval',
+      'Are you sure you want to move this enquiry to Production?',
+      'warning',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Confirm', onPress: doApproveWithoutDesigner },
+      ],
+    );
+  };
+
+  const closeQuotationActions = () => {
+    setShowQuotationActions(false);
+    setShowReasonInput(false);
+    setShowCadPicker(false);
+    setSelectedCadDesigner(null);
+    setUpdateReason('');
   };
 
  
@@ -424,7 +494,7 @@ export default function NewEnquiryCard({
           <Icon name="schedule" size={12} color={colors.textSecondary} />
           <Text style={styles.metaText}>{formatDate(item?.CreatedDate) || '—'}</Text>
         </View>
-        {hasAssignedUser && (
+        {hasAssignedUser && !isAdmin && (
           <View style={styles.AssignedRow}>
             <Icon name="person-add" size={13} color={colors.background} />
             <Text style={styles.AssignedName} numberOfLines={1}>
@@ -456,15 +526,7 @@ export default function NewEnquiryCard({
             )}
           </View>
 
-        {shouldShowActionButtons ? (
-          <View style={styles.QuickButtonContainer}>
-            <TouchableOpacity style={styles.DropdownButton} onPress={() => setShowStatusDropdown(true)}>
-              <Icon name="tune" size={16} color={colors.primaryDark} />
-              <Text style={styles.DropdownButtonText}>{selectedStatus ? selectedStatus.label : 'Move to Status'}</Text>
-              <Icon name="arrow-drop-down" size={16} color={colors.primaryDark} />
-            </TouchableOpacity>
-          </View>
-        ) : shouldShowAdminCoralUpload ? (
+        {shouldShowAdminCoralUpload ? (
           <View style={styles.QuickButtonContainer}>
             <TouchableOpacity
               style={styles.ChatButton}
@@ -572,15 +634,37 @@ export default function NewEnquiryCard({
               <Text style={styles.QuickActionButtonText}>Upload CAD</Text>
             </TouchableOpacity>
           </View>
+        ) : isRevisedQuotation ? (
+          <View style={styles.QuickButtonContainer}>
+            <TouchableOpacity
+              style={styles.ChatButton}
+              onPress={() => {
+                if (onFinalLook) {
+                  onFinalLook(item);
+                }
+              }}
+            >
+              <Icon name="visibility" size={16} color={colors.primaryDark} />
+              <Text style={styles.ChatButtonText}>Final Look</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.QuickActionButton}
+              onPress={handleApproveWithoutDesigner}
+            >
+              <Icon name="check-circle" size={16} color={colors.textWhite} />
+              <Text style={styles.QuickActionButtonText}>
+                Approve
+              </Text>
+            </TouchableOpacity>
+          </View>
         ) : shouldShowQuotationButtons ? (
           <View style={styles.QuickButtonContainer}>
             <TouchableOpacity
               style={styles.ChatButton}
               onPress={() => {
                 if (onViewQuotation) {
-                  const quotationUrl =
-                    item.quotationUrl || item.QuotationUrl || item.pdfUrl;
-                  onViewQuotation(quotationUrl);
+                
+                  onViewQuotation(item);
                 } else {
                   navigation.navigate('ChatDetail', {
                     enquiryId: item?.id || item?._id,
@@ -597,118 +681,297 @@ export default function NewEnquiryCard({
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.QuickActionButton}
-              onPress={async () => await updateEnquiryStatus({ status: 'Design Approval Pending' })}
+              onPress={() => setShowQuotationActions(true)}
             >
-              {/* <Icon name="edit" size={16} color={colors.textWhite} /> */}
+              <Icon name="more-vert" size={16} color={colors.textWhite} />
               <Text style={styles.QuickActionButtonText}>
-                Send to Design Approval
+                Actions
               </Text>
             </TouchableOpacity>
           </View>
-        ) : showApprovalButton ? (
+        ) : shouldShowAdminApprovedCad ? (
           <View style={styles.QuickButtonContainer}>
             <TouchableOpacity
+              style={styles.ChatButton}
+              onPress={() => navigation.navigate('ChatDetail', { enquiryId: item?.id || item?._id })}
+            >
+              <Icon name="chat" size={16} color={colors.primaryDark} />
+              <Text style={styles.ChatButtonText}>Chat</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
               style={styles.QuickActionButton}
-              onPress={async () => {await updateEnquiryStatus({ status: 'Order Placement' });}
+              onPress={() =>
+                navigation.navigate('UploadDesign', {
+                  enquiryId: item?.id || item?._id,
+                  designType: 'cad',
+                  enquiry: item,
+                })
               }
             >
-              <Text style={styles.QuickActionButtonText}>
-                Move to Order Placement
-              </Text>
+              <Icon name="cloud-upload" size={16} color={colors.textWhite} />
+              <Text style={styles.QuickActionButtonText}>Upload Final CAD</Text>
             </TouchableOpacity>
           </View>
-        ) : showPlacementButton ? (
+        ) : shouldShowAdminPlacement ? (
           <View style={styles.QuickButtonContainer}>
             <TouchableOpacity
+              style={styles.ChatButton}
+              onPress={() => navigation.navigate('ChatDetail', { enquiryId: item?.id || item?._id })}
+            >
+              <Icon name="chat" size={16} color={colors.primaryDark} />
+              <Text style={styles.ChatButtonText}>Chat</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
               style={styles.QuickActionButton}
-              onPress={async () => {
-                await updateEnquiryStatus({ status: 'production' });
-              }}
+              onPress={async () => { await updateEnquiryStatus({ Status: 'Production' }); }}
             >
               <Icon name="build" size={16} color={colors.textWhite} />
-              <Text style={styles.QuickActionButtonText}>
-                Move to Production
-              </Text>
+              <Text style={styles.QuickActionButtonText}>Production</Text>
             </TouchableOpacity>
           </View>
-      ) : showProductionButton ? (
-        <View style={styles.QuickButtonContainer}>
-          <TouchableOpacity
-            style={styles.QuickActionButton}
-            onPress={async () => {
-              await updateEnquiryStatus({ status: 'shipped' });
-            }}
-          >
-            <Icon name="local-shipping" size={16} color={colors.textWhite} />
-            <Text style={styles.QuickActionButtonText}>
-              Move to Shipped
-            </Text>
-          </TouchableOpacity>
-        </View>
+        ) : shouldShowAdminProduction ? (
+          <View style={styles.QuickButtonContainer}>
+            <TouchableOpacity
+              style={styles.ChatButton}
+              onPress={() => navigation.navigate('ChatDetail', { enquiryId: item?.id || item?._id })}
+            >
+              <Icon name="chat" size={16} color={colors.primaryDark} />
+              <Text style={styles.ChatButtonText}>Chat</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.QuickActionButton}
+              onPress={async () => { await updateEnquiryStatus({ Status: 'Shipped' }); }}
+            >
+              <Icon name="local-shipping" size={16} color={colors.textWhite} />
+              <Text style={styles.QuickActionButtonText}>Shipped</Text>
+            </TouchableOpacity>
+          </View>
         ) : null}
         </View>
       )}
+      {/* ══ Quotation Action Sheet ════════════════════════════════════════════ */}
       <Modal
-        visible={showStatusDropdown}
+        visible={showQuotationActions}
         transparent
-        animationType="fade"
-        onRequestClose={() => setShowStatusDropdown(false)}
+        animationType="slide"
+        onRequestClose={closeQuotationActions}
       >
         <TouchableOpacity
-          style={styles.modalOverlay}
+          style={styles.qaOverlay}
           activeOpacity={1}
-          onPress={() => setShowStatusDropdown(false)}
+          onPress={closeQuotationActions}
         >
-          <View style={styles.dropdownModalContent}>
-            <Text style={styles.dropdownModalTitle}>Move to Status</Text>
-            {DropDownStatus.map(option => (
-              <TouchableOpacity
-                key={option.value}
-                style={styles.dropdownModalItem}
-                onPress={() =>
-                  handleStatusSelect(option.value, option.label, item?.Id || item?._Id)
-                }
-              >
-                <Text style={styles.dropdownModalItemText}>{option.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          <TouchableOpacity activeOpacity={1} style={styles.qaSheet}>
+            {/* Header */}
+            <View style={styles.qaHeader}>
+              <View style={styles.qaDragHandle} />
+              <Text style={styles.qaTitle}>
+                {showReasonInput ? 'Request a Design Update' : showCadPicker ? 'Assign CAD Designer' : 'Quotation Actions'}
+              </Text>
+              <Text style={styles.qaSubtitle} numberOfLines={1}>
+                {item?.Name || ''}
+              </Text>
+            </View>
+
+            {showCadPicker ? (
+              /* ── CAD designer picker step ──────────────────────────── */
+              <View style={styles.qaOptions}>
+                {cadDesigners.length === 0 ? (
+                  <Text style={[styles.qaOptionDesc, { textAlign: 'center', paddingVertical: 16 }]}>
+                    No CAD designers found.
+                  </Text>
+                ) : (
+                  cadDesigners.map(designer => (
+                    <TouchableOpacity
+                      key={designer.id}
+                      style={[styles.qaOption, selectedCadDesigner?.id === designer.id && { borderColor: colors.primary, backgroundColor: colors.primaryLight || colors.background }]}
+                      onPress={() => setSelectedCadDesigner(designer)}
+                      activeOpacity={0.8}
+                    >
+                      <View style={styles.qaIconWrap}>
+                        <Icon name="person" size={20} color={selectedCadDesigner?.id === designer.id ? colors.background : colors.textSecondary} />
+                      </View>
+                      <View style={styles.qaOptionText}>
+                        <Text style={[styles.qaOptionTitle, selectedCadDesigner?.id === designer.id && { color: colors.background }]}>
+                          {designer.name}
+                        </Text>
+                        {!!designer.email && designer.email !== 'N/A' && (
+                          <Text style={styles.qaOptionDesc}>{designer.email}</Text>
+                        )}
+                      </View>
+                      {selectedCadDesigner?.id === designer.id && (
+                        <Icon name="check-circle" size={18} color={colors.primary} />
+                      )}
+                    </TouchableOpacity>
+                  ))
+                )}
+                <TouchableOpacity
+                  style={[styles.QuickActionButton, { marginTop: 8, justifyContent: 'center', opacity: (!selectedCadDesigner || isActionLoading) ? 0.4 : 1 }]}
+                  onPress={() => handleApproveWithDesigner(selectedCadDesigner)}
+                  disabled={!selectedCadDesigner || isActionLoading}
+                  activeOpacity={0.8}
+                >
+                  {isActionLoading
+                    ? <ActivityIndicator size="small" color={colors.textWhite} />
+                    : <Text style={styles.QuickActionButtonText}>Confirm & Approve</Text>
+                  }
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.qaOption, { marginTop: 4, justifyContent: 'center' }]}
+                  onPress={() => { setShowCadPicker(false); setSelectedCadDesigner(null); }}
+                  disabled={isActionLoading}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.qaOptionTitle, { textAlign: 'center' }]}>Back</Text>
+                </TouchableOpacity>
+              </View>
+            ) : !showReasonInput ? (
+              /* ── 3-option menu ─────────────────────────────────────── */
+              <View style={styles.qaOptions}>
+                {isFetchingEnquiry && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4, paddingBottom: 4 }}>
+                    <ActivityIndicator size="small" color={colors.primary} />
+                    <Text style={{ fontFamily: fonts.regular, fontSize: 12, color: colors.textSecondary }}>Loading design info...</Text>
+                  </View>
+                )}
+
+                {/* Approve — context-aware:
+                    'Quotation'               → approve the design version (→ Approved Cad)
+                    'Design Approval Pending' → client approved; move straight to Order Placement */}
+                <TouchableOpacity
+                  style={styles.qaOption}
+                  onPress={isApprovalPending
+                    ? async () => {
+                        setIsActionLoading(true);
+                        try {
+                          await updateEnquiryStatus({ Status: 'Order Placement' });
+                          setShowQuotationActions(false);
+                        } catch (e) {
+                          Alert.alert('Failed', e?.data?.message || 'Could not move to Order Placement.');
+                        } finally {
+                          setIsActionLoading(false);
+                        }
+                      }
+                    : handleApprove}
+                  disabled={isActionLoading}
+                  activeOpacity={0.8}
+                >
+                  {isActionLoading ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <>
+                      <View style={styles.qaIconWrap}>
+                        <Icon name="check-circle" size={20} color={colors.primary} />
+                      </View>
+                      <View style={styles.qaOptionText}>
+                        <Text style={styles.qaOptionTitle}>
+                          {isApprovalPending ? 'Move to Order Placement' : 'Approve'}
+                        </Text>
+                        <Text style={styles.qaOptionDesc}>
+                          {isApprovalPending
+                            ? 'Client has approved — proceed to Order Placement'
+                            : 'Mark this version as approved and move to next stage'}
+                        </Text>
+                      </View>
+                      <Icon name="chevron-right" size={18} color={colors.textSecondary} />
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                {/* Update (Request Revision) */}
+                <TouchableOpacity
+                  style={styles.qaOption}
+                  onPress={() => setShowReasonInput(true)}
+                  disabled={isActionLoading}
+                  activeOpacity={0.8}
+                >
+                  <>
+                    <View style={styles.qaIconWrap}>
+                      <Icon name="edit" size={20} color={colors.primary} />
+                    </View>
+                    <View style={styles.qaOptionText}>
+                      <Text style={styles.qaOptionTitle}>Update</Text>
+                      <Text style={styles.qaOptionDesc}>Request a new version with changes — provide a reason</Text>
+                    </View>
+                    <Icon name="chevron-right" size={18} color={colors.textSecondary} />
+                  </>
+                </TouchableOpacity>
+
+                {/* Cancel Order — disabled for now */}
+                <TouchableOpacity
+                  style={[styles.qaOption, { opacity: 0.35 }]}
+                  disabled
+                  activeOpacity={0.8}
+                >
+                  <>
+                    <View style={styles.qaIconWrap}>
+                      <Icon name="cancel" size={20} color={colors.textSecondary} />
+                    </View>
+                    <View style={styles.qaOptionText}>
+                      <Text style={styles.qaOptionTitle}>Cancel Order</Text>
+                      <Text style={styles.qaOptionDesc}>Cancel this enquiry order</Text>
+                    </View>
+                    <Text style={styles.qaBadge}>Soon</Text>
+                  </>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              /* ── Reason input step ─────────────────────────────────── */
+              <View style={styles.qaReasonWrap}>
+                <Text style={styles.qaReasonLabel}>
+                  What changes are needed?
+                </Text>
+                <TextInput
+                  style={styles.qaReasonInput}
+                  value={updateReason}
+                  onChangeText={setUpdateReason}
+                  placeholder="Add a reason to update the version..."
+                  placeholderTextColor={colors.textSecondary}
+                  multiline
+                  numberOfLines={4}
+                  autoFocus
+                />
+                <View style={styles.qaReasonActions}>
+                  <TouchableOpacity
+                    style={styles.qaReasonBack}
+                    onPress={() => { setShowReasonInput(false); setUpdateReason(''); }}
+                    disabled={isActionLoading}
+                    activeOpacity={0.8}
+                  >
+                    <Icon name="arrow-back" size={16} color="#6B7280" />
+                    <Text style={styles.qaReasonBackText}>Back</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.qaReasonSubmit,
+                      (!updateReason.trim() || isActionLoading) && { opacity: 0.4 },
+                    ]}
+                    onPress={handleRequestUpdate}
+                    disabled={!updateReason.trim() || isActionLoading}
+                    activeOpacity={0.8}
+                  >
+                    {isActionLoading ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <>
+                        <Icon name="send" size={15} color="#fff" />
+                        <Text style={styles.qaReasonSubmitText}>Send Request</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+            {/* Close pill */}
+            <TouchableOpacity style={styles.qaDismiss} onPress={closeQuotationActions} activeOpacity={0.7}>
+              <Text style={styles.qaDismissText}>Dismiss</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
 
-      <Modal
-        visible={showAssignDropdown}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowAssignDropdown(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowAssignDropdown(false)}
-        >
-          <View style={styles.dropdownModalContent}>
-            <Text style={styles.dropdownModalTitle}>Assign To</Text>
-            {assignDropDownUsers.map(user => (
-              <TouchableOpacity
-                key={user.id}
-                style={styles.dropdownModalItem}
-                onPress={async () => {
-                  const success = await updateEnquiryStatus({
-                    assignedTo: user.id,
-                    status: selectedStatus?.label || status,
-                  });
-                  if (success) {
-                    setShowAssignDropdown(false);
-                  }
-                }}
-              >
-                <Text style={styles.dropdownModalItemText}>{user.name}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </TouchableOpacity>
-      </Modal>
+
 
       <Modal
         visible={showMoreOptions}
@@ -776,15 +1039,43 @@ export default function NewEnquiryCard({
           />
         </View>
       </Modal>
+
+      <BrandedAlert
+        visible={alertCfg.visible}
+        title={alertCfg.title}
+        message={alertCfg.message}
+        type={alertCfg.type}
+        buttons={alertCfg.buttons}
+        onClose={hideAlert}
+      />
     </View>
   );
 }
 
 const getStatusColor = status => {
   const statusColors = {
-    pending: '#F59E0B',
-    completed: '#10B981',
-    rejected: '#EF4444',
+    // raw CurrentStatus values (lowercased)
+    'enquiry created':          '#F59E0B',
+    'coral':                    '#8B5CF6',
+    'cad':                      '#3B82F6',
+    'approved cad':             '#10B981',
+    'quotation':                '#0EA5E9',
+    'design approval pending':  '#F97316',
+    'order placement':          '#6366F1',
+    'production':               '#D97706',
+    'shipped':                  '#059669',
+    'completed':                '#10B981',
+    'rejected':                 '#EF4444',
+    // normalizedStatus values (fallback)
+    pending:           '#F59E0B',
+    approval_pending:  '#F97316',
+    approved_cad:      '#10B981',
+    cad:               '#3B82F6',
+    coral:             '#8B5CF6',
+    order_placement:   '#6366F1',
+    production:        '#D97706',
+    shipped:           '#059669',
+    in_progress:       '#6B7280',
   };
   return statusColors[status] || '#6B7280';
 };
@@ -975,7 +1266,7 @@ const styles = StyleSheet.create({
   },
   dropdownModalTitle: {
     fontFamily: fonts.semiBold,
-    fontSize: 16,
+    fontSize: 14,
     color: colors.textPrimary,
     marginBottom: 12,
     textAlign: 'center',
@@ -994,5 +1285,168 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textPrimary,
     textAlign: 'center',
+  },
+
+  // ── Quotation Action Sheet ──────────────────────────────────────────────
+  qaOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  qaSheet: {
+    backgroundColor: colors.background,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    paddingBottom: 28,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  qaHeader: {
+    alignItems: 'center',
+    paddingTop: 12,
+    paddingBottom: 14,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  qaDragHandle: {
+    width: 36, height: 4,
+    backgroundColor: colors.border,
+    borderRadius: 2,
+    marginBottom: 10,
+  },
+  qaTitle: {
+    fontFamily: fonts.bold,
+    fontSize: 15,
+    color: colors.textPrimary,
+    marginBottom: 2,
+  },
+  qaSubtitle: {
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  qaOptions: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    gap: 10,
+  },
+  qaOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+  },
+  qaIconWrap: {
+    width: 36, height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  qaOptionText: {
+    flex: 1,
+  },
+  qaOptionTitle: {
+    fontFamily: fonts.medium,
+    fontSize: 14,
+    color: colors.textPrimary,
+    marginBottom: 2,
+  },
+  qaOptionDesc: {
+    fontFamily: fonts.regular,
+    fontSize: 11,
+    color: colors.textSecondary,
+    lineHeight: 15,
+  },
+  qaBadge: {
+    fontFamily: fonts.medium,
+    fontSize: 10,
+    color: colors.textSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+
+  // Reason input step
+  qaReasonWrap: {
+    padding: 20,
+    gap: 12,
+  },
+  qaReasonLabel: {
+    fontFamily: fonts.medium,
+    fontSize: 14,
+    color: colors.textPrimary,
+    marginBottom: 4,
+  },
+  qaReasonInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    padding: 12,
+    minHeight: 110,
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    color: colors.textPrimary,
+    backgroundColor: colors.background,
+    lineHeight: 20,
+    textAlignVertical: 'top',
+  },
+  qaReasonActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+  },
+  qaReasonBack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  qaReasonBackText: {
+    fontFamily: fonts.medium,
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+  qaReasonSubmit: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
+  },
+  qaReasonSubmitText: {
+    fontFamily: fonts.bold,
+    fontSize: 14,
+    color: colors.textWhite,
+  },
+  qaDismiss: {
+    alignSelf: 'center',
+    marginTop: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 24,
+  },
+  qaDismissText: {
+    fontFamily: fonts.medium,
+    fontSize: 13,
+    color: colors.textSecondary,
   },
 });

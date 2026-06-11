@@ -1,4 +1,4 @@
-import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
+﻿import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import { Platform } from 'react-native';
 import secureStorage from '../utils/secureStorage';
 import {
@@ -57,7 +57,7 @@ export const api = createApi({
   // Prevent memory buildup by removing unused data after 60 seconds
   keepUnusedDataFor: 60,
   endpoints: builder => ({
-    // ==================== CODE LISTS ====================
+
     getRoles: builder.query({
       query: () => '/api/codelists/Roles',
       providesTags: ['Roles'],
@@ -97,7 +97,7 @@ export const api = createApi({
       providesTags: ['Statuses'],
       transformResponse: data => {
         let statuses = [];
-        console.log('🔍 Data:', data);
+        console.log('ðŸ” Data:', data);
         // Handle array response
         if (Array.isArray(data)) {
           statuses = data.map(status => ({
@@ -185,7 +185,7 @@ export const api = createApi({
       },
     }),
 
-    // ==================== AUTH ====================
+
     login: builder.mutation({
       query: ({ email, password }) => {
         return {
@@ -318,7 +318,7 @@ export const api = createApi({
         body: data,
       }),
       transformResponse: response => {
-        console.log('🆕 [createUser] Raw API Response:', JSON.stringify(response, null, 2));
+        console.log('ðŸ†• [createUser] Raw API Response:', JSON.stringify(response, null, 2));
         return {
           success: true,
           user: response.user || response,
@@ -340,7 +340,7 @@ export const api = createApi({
     getUserById: builder.query({
       query: userId => `/api/users/${userId}`,
       transformResponse: response => {
-        console.log('👤 [getUserById] Raw API Response:', JSON.stringify(response, null, 2));
+        console.log('ðŸ‘¤ [getUserById] Raw API Response:', JSON.stringify(response, null, 2));
         // Handle different response formats
         const user = response.user || response;
         return {
@@ -367,7 +367,7 @@ export const api = createApi({
     // Update user endpoint
     updateUser: builder.mutation({
       query: ({ userId, ...data }) => {
-        console.log('📤 [updateUser] userId:', userId, 'payload:', JSON.stringify(data, null, 2));
+        console.log('ðŸ“¤ [updateUser] userId:', userId, 'payload:', JSON.stringify(data, null, 2));
         return {
           url: `/api/users/${userId}`,
           method: 'PUT',
@@ -376,7 +376,7 @@ export const api = createApi({
       },
       invalidatesTags: ['Users'],
       transformResponse: response => {
-        console.log('✅ [updateUser] Response:', JSON.stringify(response, null, 2));
+        console.log('âœ… [updateUser] Response:', JSON.stringify(response, null, 2));
         return {
           success: true,
           user: response.user || response,
@@ -384,7 +384,7 @@ export const api = createApi({
         };
       },
       transformErrorResponse: response => {
-        console.log('❌ [updateUser] Error:', JSON.stringify(response, null, 2));
+        console.log('âŒ [updateUser] Error:', JSON.stringify(response, null, 2));
         return {
           success: false,
           error:
@@ -423,44 +423,15 @@ export const api = createApi({
       query: () => '/api/users',
       providesTags: ['Users'],
       transformResponse: data => {
-        console.log(
-          '🔍 [getUsers] Raw API Response:',
-          JSON.stringify(data, null, 2),
-        );
-        console.log(
-          '🔍 [getUsers] Response Type:',
-          Array.isArray(data) ? 'Array' : typeof data,
-        );
-
         let usersArray = [];
         if (Array.isArray(data)) {
           usersArray = data;
-          console.log('🔍 [getUsers] Using direct array format');
         } else if (data.users && Array.isArray(data.users)) {
           usersArray = data.users;
-          console.log('🔍 [getUsers] Using data.users format');
         } else if (data.data && Array.isArray(data.data)) {
           usersArray = data.data;
-          console.log('🔍 [getUsers] Using data.data format');
         } else {
-          console.log('🔍 [getUsers] No valid array found in response');
           return [];
-        }
-
-        console.log('🔍 [getUsers] Users Array Length:', usersArray.length);
-        if (usersArray.length > 0) {
-          console.log(
-            '🔍 [getUsers] First User (raw):',
-            JSON.stringify(usersArray[0], null, 2),
-          );
-          console.log(
-            '🔍 [getUsers] First User Keys:',
-            Object.keys(usersArray[0]),
-          );
-          console.log(
-            '🔍 [getUsers] First User Skills field:',
-            usersArray[0].Skills || usersArray[0].skills || 'NOT FOUND',
-          );
         }
 
         return usersArray.map(user => ({
@@ -475,7 +446,6 @@ export const api = createApi({
       },
     }),
 
-    // ==================== ENQUIRY PARSING ====================
     parseEnquiry: builder.mutation({
       query: ({ message, mediaType }) => ({
         url: '/api/enquiries/parse',
@@ -487,13 +457,13 @@ export const api = createApi({
       }),
       transformResponse: response => {
         if (__DEV__) {
-          console.log('✅ Parse enquiry response:', response);
+          console.log('âœ… Parse enquiry response:', response);
         }
         return response;
       },
       transformErrorResponse: response => {
         if (__DEV__) {
-          console.error('❌ Parse enquiry error:', response);
+          console.error('âŒ Parse enquiry error:', response);
         }
         return {
           status: response.status,
@@ -549,7 +519,7 @@ export const api = createApi({
           const fullUrl = `${API_BASE_URL}${endpoint}`;
 
           if (__DEV__) {
-            console.log('📤 [submitEnquiry] Submitting enquiry:', {
+            console.log('ðŸ“¤ [submitEnquiry] Submitting enquiry:', {
               endpoint: fullUrl,
               dataKeys: Object.keys(data),
               imagesCount: referenceImages?.length || 0,
@@ -567,7 +537,7 @@ export const api = createApi({
           if (response.ok) {
             const result = await response.json();
             if (__DEV__) {
-              console.log('✅ [submitEnquiry] Success:', result);
+              console.log('âœ… [submitEnquiry] Success:', result);
             }
             return { data: result };
           } else {
@@ -580,7 +550,7 @@ export const api = createApi({
             }
 
             if (__DEV__) {
-              console.error('❌ [submitEnquiry] Error:', errorData);
+              console.error('âŒ [submitEnquiry] Error:', errorData);
             }
 
             return {
@@ -592,7 +562,7 @@ export const api = createApi({
           }
         } catch (error) {
           if (__DEV__) {
-            console.error('❌ [submitEnquiry] Exception:', error);
+            console.error('âŒ [submitEnquiry] Exception:', error);
           }
           return {
             error: {
@@ -605,8 +575,8 @@ export const api = createApi({
       invalidatesTags: ['Enquiry', 'Dashboard', 'StatusStatistics'],
     }),
 
-    // ==================== ENQUIRIES ====================
     getEnquiries: builder.query({
+      providesTags: ['Enquiry'],
       query: arg => {
         // Support both object format { role, page, search, limit, assignedTo } and simple role string
         const role = typeof arg === 'object' ? arg?.role : arg;
@@ -636,9 +606,9 @@ export const api = createApi({
           // Safety check: if somehow assignedTo is set for admin, log warning and don't add it
           if (__DEV__) {
             console.warn(
-              '⚠️ WARNING: assignedTo was set for admin user, ignoring it to show all enquiries',
+              'âš ï¸ WARNING: assignedTo was set for admin user, ignoring it to show all enquiries',
             );
-            console.warn('⚠️ Role:', role, 'AssignedTo:', assignedTo);
+            console.warn('âš ï¸ Role:', role, 'AssignedTo:', assignedTo);
           }
         }
 
@@ -681,7 +651,7 @@ export const api = createApi({
           ) {
             // Fallback: For client users without a clientId filter, use userId as clientId
             console.log(
-              '🔐 ========== API CLIENT FILTER (FALLBACK) ==========',
+              'ðŸ” ========== API CLIENT FILTER (FALLBACK) ==========',
             );
             queryString += `&clientId=${encodeURIComponent(argUserId)}`;
           }
@@ -785,7 +755,7 @@ export const api = createApi({
             if (isClientRole && argUserId) {
               if (enquiriesArray.length > 0) {
                 console.log(
-                  '📥 Sample enquiry ClientIds:',
+                  'ðŸ“¥ Sample enquiry ClientIds:',
                   enquiriesArray.slice(0, 5).map(e => ({
                     id: e.id || e._id,
                     clientId: e.clientId || e.ClientId,
@@ -800,14 +770,14 @@ export const api = createApi({
                   );
                 }).length;
                 console.log(
-                  '📥 Matching enquiries (ClientId = user.id):',
+                  'ðŸ“¥ Matching enquiries (ClientId = user.id):',
                   matchingCount,
                   'out of',
                   enquiriesArray.length,
                 );
                 if (matchingCount === 0 && enquiriesArray.length > 0) {
                   console.warn(
-                    '📥 ⚠️ All enquiry ClientIds:',
+                    'ðŸ“¥ âš ï¸ All enquiry ClientIds:',
                     enquiriesArray
                       .map(e => e.clientId || e.ClientId)
                       .filter(Boolean)
@@ -834,16 +804,16 @@ export const api = createApi({
         const normalizedEnquiries = enquiriesArray.map((enquiry, index) => {
           // Debug: Log first enquiry before normalization
           if (__DEV__ && index === 0) {
-            console.log('🔍 ========== API NORMALIZATION DEBUG ==========');
-            console.log('🔍 Raw first enquiry _id:', enquiry._id);
-            console.log('🔍 Raw first enquiry Name:', enquiry.Name);
-            console.log('🔍 Raw first enquiry AssignedTo:', enquiry.AssignedTo);
-            console.log('🔍 Raw first enquiry ClientId:', enquiry.ClientId);
+            console.log('ðŸ” ========== API NORMALIZATION DEBUG ==========');
+            console.log('ðŸ” Raw first enquiry _id:', enquiry._id);
+            console.log('ðŸ” Raw first enquiry Name:', enquiry.Name);
+            console.log('ðŸ” Raw first enquiry AssignedTo:', enquiry.AssignedTo);
+            console.log('ðŸ” Raw first enquiry ClientId:', enquiry.ClientId);
             console.log(
-              '🔍 Raw first enquiry CurrentStatus:',
+              'ðŸ” Raw first enquiry CurrentStatus:',
               enquiry.CurrentStatus,
             );
-            console.log('🔍 ==============================================');
+            console.log('ðŸ” ==============================================');
           }
 
           // Use CurrentStatus directly from aggregated response
@@ -878,22 +848,32 @@ export const api = createApi({
           // Normalize status from CurrentStatus field
           let normalizedStatus = 'pending';
           const status = currentStatus.toLowerCase();
-          if (
-            status === 'enquiry created' ||
-            status === 'pending' ||
-            status.includes('pending')
-          ) {
+          if (status === 'enquiry created' || status === 'pending') {
             normalizedStatus = 'pending';
-          } else if (
-            status.includes('completed') ||
-            status.includes('approved')
-          ) {
+          } else if (status.includes('design approval') || (status.includes('approval') && status.includes('pending'))) {
+            normalizedStatus = 'approval_pending';
+          } else if (status.includes('approved') && status.includes('cad')) {
+            normalizedStatus = 'approved_cad';
+          } else if (status.includes('quotation')) {
+            normalizedStatus = 'quotation';
+          } else if (status === 'coral') {
+            normalizedStatus = 'coral';
+          } else if (status === 'cad') {
+            normalizedStatus = 'cad';
+          } else if (status.includes('order')) {
+            normalizedStatus = 'order_placement';
+          } else if (status.includes('production')) {
+            normalizedStatus = 'production';
+          } else if (status.includes('shipped')) {
+            normalizedStatus = 'shipped';
+          } else if (status.includes('completed') || status.includes('approved')) {
             normalizedStatus = 'completed';
           } else if (status.includes('rejected')) {
             normalizedStatus = 'rejected';
-          } else {
-            // For statuses like coral, cad, progress, etc., normalize to pending
+          } else if (status.includes('pending')) {
             normalizedStatus = 'pending';
+          } else {
+            normalizedStatus = 'in_progress';
           }
 
           // Extract metal type info
@@ -960,7 +940,7 @@ export const api = createApi({
             StoneType: enquiry.StoneType,
             ShippingDate: enquiry.ShippingDate,
             ClientId: enquiry.ClientId,
-            AssignedTo: enquiry.AssignedTo || enquiry.assignedTo,
+            AssignedTo: enquiry.AssignedTo !== undefined ? enquiry.AssignedTo : enquiry.assignedTo,
             AssignedDate: enquiry.AssignedDate,
             CurrentStatus: enquiry.CurrentStatus,
             CreatedDate: enquiry.CreatedDate,
@@ -975,15 +955,15 @@ export const api = createApi({
 
           // Debug: Log first enquiry after normalization
           if (__DEV__ && index === 0) {
-            console.log('🔍 ========== AFTER NORMALIZATION ==========');
-            console.log('🔍 Normalized first enquiry id:', normalized.id);
-            console.log('🔍 Normalized first enquiry title:', normalized.title);
+            console.log('ðŸ” ========== AFTER NORMALIZATION ==========');
+            console.log('ðŸ” Normalized first enquiry id:', normalized.id);
+            console.log('ðŸ” Normalized first enquiry title:', normalized.title);
             console.log(
-              '🔍 Normalized first enquiry AssignedTo:',
+              'ðŸ” Normalized first enquiry AssignedTo:',
               normalized.AssignedTo,
             );
-            console.log('🔍 Has valid id?', !!normalized.id);
-            console.log('🔍 =========================================');
+            console.log('ðŸ” Has valid id?', !!normalized.id);
+            console.log('ðŸ” =========================================');
           }
 
           return normalized;
@@ -1018,16 +998,7 @@ export const api = createApi({
           enquiry = rawResponse.enquiry || rawResponse.data || rawResponse;
         }
 
-        if (__DEV__) {
-          console.log('📦 [getEnquiryById] raw keys:', Object.keys(rawResponse || {}));
-          console.log('📦 [getEnquiryById] enquiry keys:', Object.keys(enquiry || {}));
-          console.log('📦 [getEnquiryById] Summary:', enquiry?.Summary ? String(enquiry.Summary).slice(0, 80) : 'MISSING');
-          console.log('📦 [getEnquiryById] Checklist:', enquiry?.Checklist ? String(enquiry.Checklist).slice(0, 80) : 'MISSING');
-        }
-
-        // Handle null/undefined enquiry or error responses
         if (!enquiry || enquiry === null || typeof enquiry !== 'object') {
-          // Return a minimal object structure to prevent crashes
           return {
             id: null,
             title: 'Enquiry not found',
@@ -1048,12 +1019,15 @@ export const api = createApi({
           let createdAt = new Date().toISOString();
           let updatedAt = new Date().toISOString();
 
-          // Use optional chaining for safe property access
-          if (
+          // Prefer CurrentStatus directly (same field the list endpoint returns)
+          if (enquiry?.CurrentStatus || enquiry?.Status) {
+            currentStatus = enquiry.CurrentStatus || enquiry.Status;
+          } else if (
             enquiry?.StatusHistory &&
             Array.isArray(enquiry.StatusHistory) &&
             enquiry.StatusHistory.length > 0
           ) {
+            // Fallback: derive from StatusHistory sorted newest-first
             const sortedHistory = [...enquiry.StatusHistory].sort(
               (a, b) =>
                 new Date(b.Timestamp || b.timestamp || 0) -
@@ -1088,16 +1062,30 @@ export const api = createApi({
           const status = currentStatus.toLowerCase();
           if (status === 'enquiry created' || status === 'pending') {
             normalizedStatus = 'pending';
-          } else if (
-            status.includes('completed') ||
-            status.includes('approved')
-          ) {
+          } else if (status.includes('design approval') || (status.includes('approval') && status.includes('pending'))) {
+            normalizedStatus = 'approval_pending';
+          } else if (status.includes('approved') && status.includes('cad')) {
+            normalizedStatus = 'approved_cad';
+          } else if (status.includes('quotation')) {
+            normalizedStatus = 'quotation';
+          } else if (status === 'coral') {
+            normalizedStatus = 'coral';
+          } else if (status === 'cad') {
+            normalizedStatus = 'cad';
+          } else if (status.includes('order')) {
+            normalizedStatus = 'order_placement';
+          } else if (status.includes('production')) {
+            normalizedStatus = 'production';
+          } else if (status.includes('shipped')) {
+            normalizedStatus = 'shipped';
+          } else if (status.includes('completed') || status.includes('approved')) {
             normalizedStatus = 'completed';
           } else if (status.includes('rejected')) {
             normalizedStatus = 'rejected';
-          } else {
-            // For statuses like coral, cad, progress, etc., normalize to pending
+          } else if (status.includes('pending')) {
             normalizedStatus = 'pending';
+          } else {
+            normalizedStatus = 'in_progress';
           }
 
           const metalColor =
@@ -1183,7 +1171,7 @@ export const api = createApi({
 
           // Debug logging to see what backend returns
           if (__DEV__) {
-            console.log('🔍 [getEnquiryById] Media data from backend:', {
+            console.log('ðŸ” [getEnquiryById] Media data from backend:', {
               hasReferenceImages: !!(
                 enquiry?.ReferenceImages &&
                 Array.isArray(enquiry.ReferenceImages)
@@ -1276,7 +1264,7 @@ export const api = createApi({
             // Preserve original API fields
             Name: enquiry?.Name,
             Summary: enquiry?.Summary,
-            // Checklist is a JSON object — preserve as-is
+            // Checklist is a JSON object â€” preserve as-is
             Checklist: enquiry?.Checklist || null,
             Remarks: enquiry?.Remarks,
             Priority: enquiry?.Priority,
@@ -1343,10 +1331,10 @@ export const api = createApi({
 
     createEnquiry: builder.mutation({
       queryFn: async (data, { dispatch }, extraOptions, baseQuery) => {
-        console.log('🌐 Timestamp:', new Date().toISOString());
-        console.log('🌐 Request Payload:', JSON.stringify(data, null, 2));
-        console.log('🌐 Payload Size:', JSON.stringify(data).length, 'bytes');
-        console.log('🌐 Payload Summary:', {
+        console.log('ðŸŒ Timestamp:', new Date().toISOString());
+        console.log('ðŸŒ Request Payload:', JSON.stringify(data, null, 2));
+        console.log('ðŸŒ Payload Size:', JSON.stringify(data).length, 'bytes');
+        console.log('ðŸŒ Payload Summary:', {
           Name: data.Name,
           ClientId: data.ClientId,
           Priority: data.Priority,
@@ -1376,17 +1364,17 @@ export const api = createApi({
 
           if (result.error) {
             console.error(
-              '❌ API Error Response:',
+              'âŒ API Error Response:',
               JSON.stringify(result.error, null, 2),
             );
             return result;
           }
 
           console.log(
-            '✅ API Success Response:',
+            'âœ… API Success Response:',
             JSON.stringify(result.data, null, 2),
           );
-          console.log('✅ Response Summary:', {
+          console.log('âœ… Response Summary:', {
             Status: 'Success',
             'Enquiry ID': result.data?.id || result.data?._id || 'Not returned',
             Name: result.data?.Name || result.data?.name || data.Name,
@@ -1475,7 +1463,6 @@ export const api = createApi({
       },
     }),
 
-    // ==================== CLIENTS ====================
     getClients: builder.query({
       query: () => '/api/clients',
       providesTags: ['Client'],
@@ -1575,7 +1562,6 @@ export const api = createApi({
       ],
     }),
 
-    // ==================== STATUS STATISTICS ====================
     getStatusStatistics: builder.query({
       queryFn: async (arg, { dispatch }, extraOptions, baseQuery) => {
         try {
@@ -1598,7 +1584,7 @@ export const api = createApi({
 
           if (__DEV__) {
             console.log(
-              '📊 [STATUS STATS API] Total Count:',
+              'ðŸ“Š [STATUS STATS API] Total Count:',
               statusStats.reduce((sum, item) => sum + (item.count || 0), 0),
             );
           }
@@ -1624,7 +1610,6 @@ export const api = createApi({
       providesTags: ['StatusStatistics'],
     }),
 
-    // ==================== DASHBOARD ====================
     // Dashboard data is computed from aggregate endpoints
     // Uses /api/enquiries/aggregate?groupBy=status and groupBy=client
     getDashboardData: builder.query({
@@ -1698,7 +1683,7 @@ export const api = createApi({
             )}`;
             if (__DEV__) {
               console.log(
-                '🔐 [DASHBOARD] Enquiries search using ClientId:',
+                'ðŸ” [DASHBOARD] Enquiries search using ClientId:',
                 clientFilterId,
               );
             }
@@ -1919,22 +1904,32 @@ export const api = createApi({
 
             let normalizedStatus = 'pending';
             const status = currentStatus.toLowerCase();
-            if (
-              status === 'enquiry created' ||
-              status === 'pending' ||
-              status.includes('pending')
-            ) {
+            if (status === 'enquiry created' || status === 'pending') {
               normalizedStatus = 'pending';
-            } else if (
-              status.includes('completed') ||
-              status.includes('approved')
-            ) {
+            } else if (status.includes('design approval') || (status.includes('approval') && status.includes('pending'))) {
+              normalizedStatus = 'approval_pending';
+            } else if (status.includes('approved') && status.includes('cad')) {
+              normalizedStatus = 'approved_cad';
+            } else if (status.includes('quotation')) {
+              normalizedStatus = 'quotation';
+            } else if (status === 'coral') {
+              normalizedStatus = 'coral';
+            } else if (status === 'cad') {
+              normalizedStatus = 'cad';
+            } else if (status.includes('order')) {
+              normalizedStatus = 'order_placement';
+            } else if (status.includes('production')) {
+              normalizedStatus = 'production';
+            } else if (status.includes('shipped')) {
+              normalizedStatus = 'shipped';
+            } else if (status.includes('completed') || status.includes('approved')) {
               normalizedStatus = 'completed';
             } else if (status.includes('rejected')) {
               normalizedStatus = 'rejected';
-            } else {
-              // For statuses like coral, cad, progress, etc., normalize to pending
+            } else if (status.includes('pending')) {
               normalizedStatus = 'pending';
+            } else {
+              normalizedStatus = 'in_progress';
             }
 
             let budget = 0;
@@ -2084,8 +2079,8 @@ export const api = createApi({
               statusCounts.completed ||
               normalizedEnquiries.filter(e => e.status === 'completed').length;
             // For "Pending Designs", show role-specific count:
-            // - Coral role → Coral count
-            // - CAD role → CAD count
+            // - Coral role â†’ Coral count
+            // - CAD role â†’ CAD count
             const pendingDesigns =
               role === 'coral'
                 ? specificStatusCounts['coral'] || 0
@@ -2144,7 +2139,6 @@ export const api = createApi({
       providesTags: ['Dashboard'],
     }),
 
-    // ============= VALIDATE IMAGE UPLOAD =============
     validateImageUpload: builder.mutation({
       queryFn: async (
         { image, enquiryId },
@@ -2155,13 +2149,13 @@ export const api = createApi({
         const startTime = Date.now();
 
         if (__DEV__) {
-          console.log('🔍 [validateImageUpload] ===== START VALIDATION =====');
+          console.log('ðŸ” [validateImageUpload] ===== START VALIDATION =====');
           console.log(
-            '🔍 [validateImageUpload] Timestamp:',
+            'ðŸ” [validateImageUpload] Timestamp:',
             new Date().toISOString(),
           );
-          console.log('🔍 [validateImageUpload] Enquiry ID:', enquiryId);
-          console.log('🔍 [validateImageUpload] Image:', {
+          console.log('ðŸ” [validateImageUpload] Enquiry ID:', enquiryId);
+          console.log('ðŸ” [validateImageUpload] Image:', {
             uri: image?.uri?.substring(0, 50) + '...',
             type: image?.type,
             name: image?.name,
@@ -2173,7 +2167,7 @@ export const api = createApi({
           if (!token) {
             if (__DEV__) {
               console.error(
-                '❌ [validateImageUpload] Authentication token not found',
+                'âŒ [validateImageUpload] Authentication token not found',
               );
             }
             return {
@@ -2202,7 +2196,7 @@ export const api = createApi({
           const fullUrl = `${API_BASE_URL}${endpoint}`;
 
           if (__DEV__) {
-            console.log('📤 [validateImageUpload] Request:', {
+            console.log('ðŸ“¤ [validateImageUpload] Request:', {
               endpoint: fullUrl,
               enquiryId,
               imageFile: {
@@ -2225,7 +2219,7 @@ export const api = createApi({
           const requestDuration = Date.now() - requestStartTime;
 
           if (__DEV__) {
-            console.log('📡 [validateImageUpload] Response received:', {
+            console.log('ðŸ“¡ [validateImageUpload] Response received:', {
               status: response.status,
               statusText: response.statusText,
               ok: response.ok,
@@ -2238,9 +2232,9 @@ export const api = createApi({
             const totalDuration = Date.now() - startTime;
 
             if (__DEV__) {
-              console.log('✅ [validateImageUpload] SUCCESS');
-              console.log('📊 Response Data:', JSON.stringify(data, null, 2));
-              console.log('⏱️  Total Duration:', `${totalDuration}ms`);
+              console.log('âœ… [validateImageUpload] SUCCESS');
+              console.log('ðŸ“Š Response Data:', JSON.stringify(data, null, 2));
+              console.log('â±ï¸  Total Duration:', `${totalDuration}ms`);
             }
 
             return { data };
@@ -2270,18 +2264,18 @@ export const api = createApi({
             }
 
             if (__DEV__) {
-              console.log('❌ [validateImageUpload] FAILED');
+              console.log('âŒ [validateImageUpload] FAILED');
               console.log(
-                '📊 Response Status:',
+                'ðŸ“Š Response Status:',
                 response.status,
                 response.statusText,
               );
               console.log(
-                '❌ Error Message:',
+                'âŒ Error Message:',
                 errorData?.message || 'Unknown error',
               );
-              console.log('📄 Error Data:', errorData);
-              console.log('⏱️  Total Duration:', `${totalDuration}ms`);
+              console.log('ðŸ“„ Error Data:', errorData);
+              console.log('â±ï¸  Total Duration:', `${totalDuration}ms`);
             }
 
             return {
@@ -2295,10 +2289,10 @@ export const api = createApi({
           const totalDuration = Date.now() - startTime;
 
           if (__DEV__) {
-            console.log('💥 [validateImageUpload] EXCEPTION');
-            console.error('❌ Error:', error);
-            console.error('❌ Error Message:', error.message);
-            console.log('⏱️  Total Duration:', `${totalDuration}ms`);
+            console.log('ðŸ’¥ [validateImageUpload] EXCEPTION');
+            console.error('âŒ Error:', error);
+            console.error('âŒ Error Message:', error.message);
+            console.log('â±ï¸  Total Duration:', `${totalDuration}ms`);
           }
 
           return {
@@ -2311,37 +2305,21 @@ export const api = createApi({
       },
     }),
 
-    // ==================== FILE UPLOAD ====================
     uploadDesign: builder.mutation({
       queryFn: async (
-        { enquiryId, designType, version, images, excel, designCode , cost },
+        { enquiryId, designType, version, images, excel, designCode, cost },
         { dispatch },
         extraOptions,
         baseQuery,
       ) => {
         const startTime = Date.now();
 
-        if (__DEV__) {
-          console.log('🚀 [uploadDesign] ===== START DESIGN UPLOAD =====');
-          console.log('🚀 [uploadDesign] Timestamp:', new Date().toISOString());
-          console.log('🚀 [uploadDesign] Enquiry ID:', enquiryId);
-          console.log('🚀 [uploadDesign] Design Type:', designType);
-          console.log('🚀 [uploadDesign] Version:', version);
-          console.log('🚀 [uploadDesign] Cost:', cost);
-          console.log(
-            '🚀 [uploadDesign] Total files received:',
-            images?.length || 0,
-          );
-          console.log('🚀 [uploadDesign] Has Excel:', !!excel);
-          console.log('🚀 [uploadDesign] Design Code:', designCode);
-        }
-
         // Note: invalidatesTags is set in the mutation definition below
         try {
           const token = await secureStorage.getItem('token');
           if (!token) {
             if (__DEV__) {
-              console.error('❌ [uploadDesign] Authentication token not found');
+              console.error('âŒ [uploadDesign] Authentication token not found');
             }
             return {
               error: {
@@ -2352,7 +2330,7 @@ export const api = createApi({
           }
 
           if (__DEV__) {
-            console.log('✅ [uploadDesign] Authentication token found');
+            console.log('âœ… [uploadDesign] Authentication token found');
           }
 
           // Create FormData
@@ -2373,7 +2351,7 @@ export const api = createApi({
 
           // Log input parameters BEFORE processing
           if (__DEV__) {
-            console.log('🔍 [uploadDesign] Input parameters:', {
+            console.log('ðŸ” [uploadDesign] Input parameters:', {
               enquiryId,
               designType,
               version: version,
@@ -2424,7 +2402,7 @@ export const api = createApi({
           }
 
           if (__DEV__) {
-            console.log('🔍 [uploadDesign] Version processing:', {
+            console.log('ðŸ” [uploadDesign] Version processing:', {
               originalVersion: version,
               processedVersion: versionValue,
               versionString: versionValue.toString(),
@@ -2444,6 +2422,7 @@ export const api = createApi({
           if (cost !== undefined && cost !== null && cost !== '') {
             formData.append('cost', String(cost));
           }
+
 
           // Separate images and videos - backend expects them in separate fields
           const imageFiles = [];
@@ -2469,7 +2448,7 @@ export const api = createApi({
               // Log warning but don't fail - backend will handle validation
               if (__DEV__) {
                 console.warn(
-                  `⚠️ [uploadDesign] Video type ${file.type} may not be fully supported by backend`,
+                  `âš ï¸ [uploadDesign] Video type ${file.type} may not be fully supported by backend`,
                 );
               }
             }
@@ -2491,7 +2470,7 @@ export const api = createApi({
                 } catch (validationError) {
                   if (__DEV__) {
                     console.error(
-                      `❌ [uploadDesign] Video validation failed for file ${index}:`,
+                      `âŒ [uploadDesign] Video validation failed for file ${index}:`,
                       validationError,
                     );
                   }
@@ -2513,7 +2492,7 @@ export const api = createApi({
               // Log each file object being created
               if (__DEV__) {
                 console.log(
-                  `🔍 [uploadDesign] File ${index} (${
+                  `ðŸ” [uploadDesign] File ${index} (${
                     isVideo ? 'VIDEO' : 'IMAGE'
                   }):`,
                   {
@@ -2571,7 +2550,7 @@ export const api = createApi({
                   fileObject.type = 'video/mp4';
                   if (__DEV__) {
                     console.warn(
-                      `⚠️ [uploadDesign] Video type adjusted to video/mp4 for file: ${fileObject.name}`,
+                      `âš ï¸ [uploadDesign] Video type adjusted to video/mp4 for file: ${fileObject.name}`,
                     );
                   }
                 }
@@ -2581,7 +2560,7 @@ export const api = createApi({
                 videoFiles.push(fileObject);
                 if (__DEV__) {
                   console.log(
-                    `📹 [uploadDesign] Video sent in 'images' field (backend may not support 'videos' field for ${designType} uploads)`,
+                    `ðŸ“¹ [uploadDesign] Video sent in 'images' field (backend may not support 'videos' field for ${designType} uploads)`,
                   );
                 }
               } else {
@@ -2600,7 +2579,7 @@ export const api = createApi({
             };
 
             if (__DEV__) {
-              console.log('🔍 [uploadDesign] Excel file:', {
+              console.log('ðŸ” [uploadDesign] Excel file:', {
                 originalExcel: {
                   uri: excel.uri?.substring(0, 50) + '...',
                   type: excel.type,
@@ -2625,24 +2604,24 @@ export const api = createApi({
           if (__DEV__) {
             console.log('');
             console.log(
-              '═══════════════════════════════════════════════════════════',
+              'â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•',
             );
-            console.log('✅ [uploadDesign] ENDPOINT VERIFICATION');
+            console.log('âœ… [uploadDesign] ENDPOINT VERIFICATION');
             console.log(
-              '═══════════════════════════════════════════════════════════',
+              'â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•',
             );
-            console.log('📍 Endpoint Path:', endpoint);
-            console.log('🌐 Full URL:', fullUrl);
-            console.log('🎨 Design Type:', designType);
+            console.log('ðŸ“ Endpoint Path:', endpoint);
+            console.log('ðŸŒ Full URL:', fullUrl);
+            console.log('ðŸŽ¨ Design Type:', designType);
             console.log(
-              '📝 Note: Design uploads use /upload/{designType} endpoint',
+              'ðŸ“ Note: Design uploads use /upload/{designType} endpoint',
             );
             console.log(
-              '═══════════════════════════════════════════════════════════',
+              'â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•',
             );
             console.log('');
 
-            console.log('📤 [uploadDesign] Final FormData Summary:', {
+            console.log('ðŸ“¤ [uploadDesign] Final FormData Summary:', {
               endpoint: fullUrl,
               designType,
               version: versionValue.toString(),
@@ -2666,7 +2645,7 @@ export const api = createApi({
               },
             });
 
-            console.log('📋 [uploadDesign] FormData Details:', {
+            console.log('ðŸ“‹ [uploadDesign] FormData Details:', {
               images: imageFiles.map(
                 (f, i) => `${i + 1}. ${f.name} (${f.type})`,
               ),
@@ -2689,10 +2668,10 @@ export const api = createApi({
           }
 
           if (__DEV__) {
-            console.log('🌐 [uploadDesign] Sending HTTP Request...');
-            console.log('🌐 [uploadDesign] Request URL:', fullUrl);
-            console.log('🌐 [uploadDesign] Request Method: POST');
-            console.log('🌐 [uploadDesign] Request Headers:', {
+            console.log('ðŸŒ [uploadDesign] Sending HTTP Request...');
+            console.log('ðŸŒ [uploadDesign] Request URL:', fullUrl);
+            console.log('ðŸŒ [uploadDesign] Request Method: POST');
+            console.log('ðŸŒ [uploadDesign] Request Headers:', {
               Authorization: `Bearer ${token.substring(0, 20)}...`,
               'Content-Type': 'multipart/form-data (auto-set by fetch)',
             });
@@ -2711,7 +2690,7 @@ export const api = createApi({
           const requestDuration = Date.now() - requestStartTime;
 
           if (__DEV__) {
-            console.log('📡 [uploadDesign] Response received:', {
+            console.log('ðŸ“¡ [uploadDesign] Response received:', {
               status: response.status,
               statusText: response.statusText,
               ok: response.ok,
@@ -2726,19 +2705,19 @@ export const api = createApi({
             if (__DEV__) {
               console.log('');
               console.log(
-                '═══════════════════════════════════════════════════════════',
+                'â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•',
               );
-              console.log('✅ [uploadDesign] UPLOAD SUCCESS');
+              console.log('âœ… [uploadDesign] UPLOAD SUCCESS');
               console.log(
-                '═══════════════════════════════════════════════════════════',
+                'â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•',
               );
               console.log(
-                '📊 Response Status:',
+                'ðŸ“Š Response Status:',
                 response.status,
                 response.statusText,
               );
-              console.log('📦 Response Data:', JSON.stringify(data, null, 2));
-              console.log('📈 Upload Summary:', {
+              console.log('ðŸ“¦ Response Data:', JSON.stringify(data, null, 2));
+              console.log('ðŸ“ˆ Upload Summary:', {
                 designType,
                 version: versionValue.toString(),
                 imagesUploaded: imageFiles.length,
@@ -2747,10 +2726,10 @@ export const api = createApi({
                 totalFilesUploaded:
                   imageFiles.length + videoFiles.length + (excel ? 1 : 0),
               });
-              console.log('⏱️  Total Duration:', `${totalDuration}ms`);
-              console.log('🌐 Endpoint Used:', endpoint);
+              console.log('â±ï¸  Total Duration:', `${totalDuration}ms`);
+              console.log('ðŸŒ Endpoint Used:', endpoint);
               console.log(
-                '═══════════════════════════════════════════════════════════',
+                'â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•',
               );
               console.log('');
             }
@@ -2813,21 +2792,21 @@ export const api = createApi({
             if (__DEV__) {
               console.log('');
               console.log(
-                '═══════════════════════════════════════════════════════════',
+                'â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•',
               );
-              console.log('❌ [uploadDesign] UPLOAD FAILED');
+              console.log('âŒ [uploadDesign] UPLOAD FAILED');
               console.log(
-                '═══════════════════════════════════════════════════════════',
+                'â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•',
               );
               console.log(
-                '📊 Response Status:',
+                'ðŸ“Š Response Status:',
                 response.status,
                 response.statusText,
               );
-              console.log('🌐 Endpoint Used:', endpoint);
-              console.log('🎨 Design Type:', designType);
-              console.log('📝 Version:', versionValue.toString());
-              console.log('📦 Files Attempted:', {
+              console.log('ðŸŒ Endpoint Used:', endpoint);
+              console.log('ðŸŽ¨ Design Type:', designType);
+              console.log('ðŸ“ Version:', versionValue.toString());
+              console.log('ðŸ“¦ Files Attempted:', {
                 imagesCount: imageFiles.length,
                 videosCount: videoFiles.length,
                 excelCount: excel ? 1 : 0,
@@ -2835,20 +2814,20 @@ export const api = createApi({
                   imageFiles.length + videoFiles.length + (excel ? 1 : 0),
               });
               console.log(
-                '❌ Error Message:',
+                'âŒ Error Message:',
                 errorData?.message ||
                   errorData?.error ||
                   errorData?.rawError ||
                   'Unknown error',
               );
-              console.log('📄 Error Data:', errorData);
+              console.log('ðŸ“„ Error Data:', errorData);
               console.log(
-                '📝 Error Text (first 500 chars):',
+                'ðŸ“ Error Text (first 500 chars):',
                 errorText.substring(0, 500),
               );
-              console.log('⏱️  Total Duration:', `${totalDuration}ms`);
+              console.log('â±ï¸  Total Duration:', `${totalDuration}ms`);
               console.log(
-                '═══════════════════════════════════════════════════════════',
+                'â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•',
               );
               console.log('');
             }
@@ -2914,18 +2893,18 @@ export const api = createApi({
           if (__DEV__) {
             console.log('');
             console.log(
-              '═══════════════════════════════════════════════════════════',
+              'â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•',
             );
-            console.log('💥 [uploadDesign] EXCEPTION OCCURRED');
+            console.log('ðŸ’¥ [uploadDesign] EXCEPTION OCCURRED');
             console.log(
-              '═══════════════════════════════════════════════════════════',
+              'â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•',
             );
-            console.error('❌ Error:', error);
-            console.error('❌ Error Message:', error.message);
-            console.error('❌ Error Stack:', error.stack);
-            console.log('⏱️  Total Duration:', `${totalDuration}ms`);
+            console.error('âŒ Error:', error);
+            console.error('âŒ Error Message:', error.message);
+            console.error('âŒ Error Stack:', error.stack);
+            console.log('â±ï¸  Total Duration:', `${totalDuration}ms`);
             console.log(
-              '═══════════════════════════════════════════════════════════',
+              'â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•',
             );
             console.log('');
           }
@@ -2989,9 +2968,9 @@ export const api = createApi({
         return {
           url: `/api/enquiries/${enquiryId}/upload/${designType}${versionParam}`,
           method: 'PUT',
-          body: {
-            IsApprovedVersion: true,
-          },
+          body: designType === 'cad'
+            ? { IsFinalVersion: true }
+            : { IsApprovedVersion: true },
         };
       },
       invalidatesTags: (result, error, { enquiryId }) => [
@@ -3019,12 +2998,12 @@ export const api = createApi({
         const startTime = Date.now();
 
         if (__DEV__) {
-          console.log('💾 [savePricing API] ===== START API CALL =====');
+          console.log('ðŸ’¾ [savePricing API] ===== START API CALL =====');
           console.log(
-            '💾 [savePricing API] Timestamp:',
+            'ðŸ’¾ [savePricing API] Timestamp:',
             new Date().toISOString(),
           );
-          console.log('💾 [savePricing API] Parameters:', {
+          console.log('ðŸ’¾ [savePricing API] Parameters:', {
             enquiryId,
             designType,
             version,
@@ -3051,7 +3030,7 @@ export const api = createApi({
         const endpoint = `/api/enquiries/${enquiryId}/upload/${designType}${versionParam}`;
 
         if (__DEV__) {
-          console.log('💾 [savePricing API] Request details:', {
+          console.log('ðŸ’¾ [savePricing API] Request details:', {
             url: endpoint,
             method: 'PUT',
             versionParam,
@@ -3112,50 +3091,50 @@ export const api = createApi({
         // Log the exact body being sent to verify ClientPricingMessage is included
         if (__DEV__) {
           console.log(
-            '💾 [savePricing API] ========== FINAL REQUEST BODY ==========',
+            'ðŸ’¾ [savePricing API] ========== FINAL REQUEST BODY ==========',
           );
           console.log(
-            '💾 [savePricing API] Request body type:',
+            'ðŸ’¾ [savePricing API] Request body type:',
             typeof requestBody,
           );
           console.log(
-            '💾 [savePricing API] Request body is object:',
+            'ðŸ’¾ [savePricing API] Request body is object:',
             typeof requestBody === 'object' && !Array.isArray(requestBody),
           );
           console.log(
-            '💾 [savePricing API] Has Pricing key:',
+            'ðŸ’¾ [savePricing API] Has Pricing key:',
             'Pricing' in requestBody,
           );
           console.log(
-            '💾 [savePricing API] Pricing array length:',
+            'ðŸ’¾ [savePricing API] Pricing array length:',
             requestBody?.Pricing?.length || 0,
           );
           requestBody?.Pricing?.forEach((entry, idx) => {
             console.log(
-              `💾 [savePricing API] Entry ${
+              `ðŸ’¾ [savePricing API] Entry ${
                 idx + 1
               } ClientPricingMessage in body:`,
               entry.ClientPricingMessage || 'MISSING',
             );
             console.log(
-              `💾 [savePricing API] Entry ${
+              `ðŸ’¾ [savePricing API] Entry ${
                 idx + 1
               } has ClientPricingMessage key:`,
               'ClientPricingMessage' in entry,
             );
             console.log(
-              `💾 [savePricing API] Entry ${
+              `ðŸ’¾ [savePricing API] Entry ${
                 idx + 1
               } ClientPricingMessage value:`,
               JSON.stringify(entry.ClientPricingMessage),
             );
           });
           console.log(
-            '💾 [savePricing API] Full request body JSON:',
+            'ðŸ’¾ [savePricing API] Full request body JSON:',
             JSON.stringify(requestBody, null, 2),
           );
           console.log(
-            '💾 [savePricing API] =========================================',
+            'ðŸ’¾ [savePricing API] =========================================',
           );
         }
 
@@ -3164,13 +3143,13 @@ export const api = createApi({
         if (__DEV__) {
           const stringifiedBody = JSON.stringify(requestBody);
           console.log(
-            '💾 [savePricing API] ========== BODY SERIALIZATION CHECK ==========',
+            'ðŸ’¾ [savePricing API] ========== BODY SERIALIZATION CHECK ==========',
           );
           console.log(
-            '💾 [savePricing API] Body will be serialized by RTK Query',
+            'ðŸ’¾ [savePricing API] Body will be serialized by RTK Query',
           );
           console.log(
-            '💾 [savePricing API] Body length (when stringified):',
+            'ðŸ’¾ [savePricing API] Body length (when stringified):',
             stringifiedBody.length,
             'characters',
           );
@@ -3179,7 +3158,7 @@ export const api = createApi({
             '"ClientPricingMessage":"this is from the mobile test"';
           const entry2MessageIndex = stringifiedBody.indexOf(entry2FullMessage);
           console.log(
-            '💾 [savePricing API] Entry 2 full message found at index:',
+            'ðŸ’¾ [savePricing API] Entry 2 full message found at index:',
             entry2MessageIndex !== -1 ? entry2MessageIndex : 'NOT FOUND',
           );
           if (entry2MessageIndex === -1) {
@@ -3188,12 +3167,12 @@ export const api = createApi({
               /"ClientPricingMessage":"this is from the mobile[^"]*"/,
             );
             console.log(
-              '💾 [savePricing API] Entry 2 message found (partial):',
+              'ðŸ’¾ [savePricing API] Entry 2 message found (partial):',
               entry2Partial ? entry2Partial[0] : 'NOT FOUND',
             );
           }
           console.log(
-            '💾 [savePricing API] =========================================',
+            'ðŸ’¾ [savePricing API] =========================================',
           );
         }
 
@@ -3212,7 +3191,7 @@ export const api = createApi({
       ],
       transformResponse: (response, meta, arg) => {
         if (__DEV__) {
-          console.log('✅ [savePricing API] Response received:', {
+          console.log('âœ… [savePricing API] Response received:', {
             response,
             responseType: typeof response,
             responseKeys: response ? Object.keys(response) : null,
@@ -3224,18 +3203,18 @@ export const api = createApi({
       },
       transformErrorResponse: (response, meta, arg) => {
         if (__DEV__) {
-          console.error('❌ [savePricing API] ===== ERROR RESPONSE =====');
-          console.error('❌ [savePricing API] Error Status:', response.status);
-          console.error('❌ [savePricing API] Error Data:', response.data);
+          console.error('âŒ [savePricing API] ===== ERROR RESPONSE =====');
+          console.error('âŒ [savePricing API] Error Status:', response.status);
+          console.error('âŒ [savePricing API] Error Data:', response.data);
           console.error(
-            '❌ [savePricing API] Error Data Type:',
+            'âŒ [savePricing API] Error Data Type:',
             typeof response.data,
           );
           console.error(
-            '❌ [savePricing API] Full Error Response:',
+            'âŒ [savePricing API] Full Error Response:',
             JSON.stringify(response, null, 2),
           );
-          console.error('❌ [savePricing API] Request Args:', {
+          console.error('âŒ [savePricing API] Request Args:', {
             enquiryId: arg?.enquiryId,
             designType: arg?.designType,
             version: arg?.version,
@@ -3245,25 +3224,25 @@ export const api = createApi({
           if (response.data) {
             if (typeof response.data === 'string') {
               console.error(
-                '❌ [savePricing API] Error message (string):',
+                'âŒ [savePricing API] Error message (string):',
                 response.data,
               );
             } else {
               console.error(
-                '❌ [savePricing API] Error message:',
+                'âŒ [savePricing API] Error message:',
                 response.data?.message,
               );
               console.error(
-                '❌ [savePricing API] Error error:',
+                'âŒ [savePricing API] Error error:',
                 response.data?.error,
               );
               console.error(
-                '❌ [savePricing API] Error details:',
+                'âŒ [savePricing API] Error details:',
                 response.data?.details,
               );
             }
           }
-          console.error('❌ [savePricing API] ===== END ERROR LOG =====');
+          console.error('âŒ [savePricing API] ===== END ERROR LOG =====');
         }
 
         return {
@@ -3286,10 +3265,9 @@ export const api = createApi({
         return {
           url: `/api/enquiries/${enquiryId}/upload/${designType}${versionParam}`,
           method: 'PUT',
-          body: {
-            IsApprovedVersion: false,
-            ReasonForRejection: reason || '',
-          },
+          body: designType === 'cad'
+            ? { IsFinalVersion: false, ReasonForRejection: reason || '' }
+            : { IsApprovedVersion: false, ReasonForRejection: reason || '' },
         };
       },
       invalidatesTags: (result, error, { enquiryId }) => [
@@ -3387,14 +3365,14 @@ export const api = createApi({
         const startTime = Date.now();
 
         if (__DEV__) {
-          console.log('🚀 [uploadReferenceImages] ===== START UPLOAD =====');
+          console.log('ðŸš€ [uploadReferenceImages] ===== START UPLOAD =====');
           console.log(
-            '🚀 [uploadReferenceImages] Timestamp:',
+            'ðŸš€ [uploadReferenceImages] Timestamp:',
             new Date().toISOString(),
           );
-          console.log('🚀 [uploadReferenceImages] Enquiry ID:', enquiryId);
+          console.log('ðŸš€ [uploadReferenceImages] Enquiry ID:', enquiryId);
           console.log(
-            '🚀 [uploadReferenceImages] Total files received:',
+            'ðŸš€ [uploadReferenceImages] Total files received:',
             images?.length || 0,
           );
         }
@@ -3404,7 +3382,7 @@ export const api = createApi({
           if (!token) {
             if (__DEV__) {
               console.error(
-                '❌ [uploadReferenceImages] Authentication token not found',
+                'âŒ [uploadReferenceImages] Authentication token not found',
               );
             }
             return {
@@ -3417,7 +3395,7 @@ export const api = createApi({
 
           if (__DEV__) {
             console.log(
-              '✅ [uploadReferenceImages] Authentication token found',
+              'âœ… [uploadReferenceImages] Authentication token found',
             );
           }
 
@@ -3436,7 +3414,7 @@ export const api = createApi({
 
           // Log input parameters BEFORE processing
           if (__DEV__) {
-            console.log('🔍 [uploadReferenceImages] Input parameters:', {
+            console.log('ðŸ” [uploadReferenceImages] Input parameters:', {
               enquiryId,
               imagesCount: images?.length || 0,
               images:
@@ -3484,7 +3462,7 @@ export const api = createApi({
               // Log each file object being created
               if (__DEV__) {
                 console.log(
-                  `🔍 [uploadReferenceImages] File ${index} (${
+                  `ðŸ” [uploadReferenceImages] File ${index} (${
                     isVideo ? 'VIDEO' : 'IMAGE'
                   }):`,
                   {
@@ -3517,7 +3495,7 @@ export const api = createApi({
           }
 
           if (__DEV__) {
-            console.log('🔍 [uploadReferenceImages] Separated files:', {
+            console.log('ðŸ” [uploadReferenceImages] Separated files:', {
               imageFilesCount: imageFiles.length,
               videoFilesCount: videoFiles.length,
             });
@@ -3535,8 +3513,8 @@ export const api = createApi({
 
           // Upload images and videos together in a single request to /reference endpoint
           if (__DEV__) {
-            console.log('📦 [uploadReferenceImages] Creating FormData...');
-            console.log('📦 [uploadReferenceImages] Will add to FormData:', {
+            console.log('ðŸ“¦ [uploadReferenceImages] Creating FormData...');
+            console.log('ðŸ“¦ [uploadReferenceImages] Will add to FormData:', {
               imagesCount: imageFiles.length,
               videosCount: videoFiles.length,
             });
@@ -3548,14 +3526,14 @@ export const api = createApi({
           if (imageFiles.length > 0) {
             if (__DEV__) {
               console.log(
-                `📎 [uploadReferenceImages] Adding ${imageFiles.length} image(s) to FormData...`,
+                `ðŸ“Ž [uploadReferenceImages] Adding ${imageFiles.length} image(s) to FormData...`,
               );
             }
             imageFiles.forEach((file, index) => {
               formData.append('images', file);
               if (__DEV__) {
                 console.log(
-                  `  ✓ Image ${index + 1}: ${file.name} (${file.type})`,
+                  `  âœ“ Image ${index + 1}: ${file.name} (${file.type})`,
                 );
               }
             });
@@ -3565,14 +3543,14 @@ export const api = createApi({
           if (videoFiles.length > 0) {
             if (__DEV__) {
               console.log(
-                `🎬 [uploadReferenceImages] Adding ${videoFiles.length} video(s) to FormData...`,
+                `ðŸŽ¬ [uploadReferenceImages] Adding ${videoFiles.length} video(s) to FormData...`,
               );
             }
             videoFiles.forEach((file, index) => {
               formData.append('videos', file);
               if (__DEV__) {
                 console.log(
-                  `  ✓ Video ${index + 1}: ${file.name} (${file.type})`,
+                  `  âœ“ Video ${index + 1}: ${file.name} (${file.type})`,
                 );
               }
             });
@@ -3585,31 +3563,31 @@ export const api = createApi({
           if (__DEV__) {
             console.log('');
             console.log(
-              '═══════════════════════════════════════════════════════════',
+              'â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•',
             );
-            console.log('✅ [VERIFICATION] ENDPOINT VERIFICATION');
+            console.log('âœ… [VERIFICATION] ENDPOINT VERIFICATION');
             console.log(
-              '═══════════════════════════════════════════════════════════',
+              'â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•',
             );
-            console.log('📍 Endpoint Path:', endpoint);
-            console.log('🌐 Full URL:', fullUrl);
+            console.log('ðŸ“ Endpoint Path:', endpoint);
+            console.log('ðŸŒ Full URL:', fullUrl);
             console.log(
-              '✅ Using /reference endpoint:',
-              endpoint.includes('/reference') ? 'YES ✓' : 'NO ✗',
-            );
-            console.log(
-              '❌ Using old /videos endpoint:',
-              endpoint.includes('/videos') ? 'YES ✗ (WRONG!)' : 'NO ✓',
+              'âœ… Using /reference endpoint:',
+              endpoint.includes('/reference') ? 'YES âœ“' : 'NO âœ—',
             );
             console.log(
-              '📝 Note: Videos are now uploaded via /reference endpoint',
+              'âŒ Using old /videos endpoint:',
+              endpoint.includes('/videos') ? 'YES âœ— (WRONG!)' : 'NO âœ“',
             );
             console.log(
-              '═══════════════════════════════════════════════════════════',
+              'ðŸ“ Note: Videos are now uploaded via /reference endpoint',
+            );
+            console.log(
+              'â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•',
             );
             console.log('');
 
-            console.log('📤 [uploadReferenceImages] Preparing HTTP Request:', {
+            console.log('ðŸ“¤ [uploadReferenceImages] Preparing HTTP Request:', {
               method: 'POST',
               url: fullUrl,
               endpoint: endpoint,
@@ -3626,7 +3604,7 @@ export const api = createApi({
               totalFiles: imageFiles.length + videoFiles.length,
             });
 
-            console.log('📋 [uploadReferenceImages] FormData Summary:', {
+            console.log('ðŸ“‹ [uploadReferenceImages] FormData Summary:', {
               images: imageFiles.map(
                 (f, i) => `${i + 1}. ${f.name} (${f.type})`,
               ),
@@ -3637,10 +3615,10 @@ export const api = createApi({
           }
 
           if (__DEV__) {
-            console.log('🌐 [uploadReferenceImages] Sending HTTP Request...');
-            console.log('🌐 [uploadReferenceImages] Request URL:', fullUrl);
-            console.log('🌐 [uploadReferenceImages] Request Method: POST');
-            console.log('🌐 [uploadReferenceImages] Request Headers:', {
+            console.log('ðŸŒ [uploadReferenceImages] Sending HTTP Request...');
+            console.log('ðŸŒ [uploadReferenceImages] Request URL:', fullUrl);
+            console.log('ðŸŒ [uploadReferenceImages] Request Method: POST');
+            console.log('ðŸŒ [uploadReferenceImages] Request Headers:', {
               Authorization: `Bearer ${token.substring(0, 20)}...`,
               'Content-Type': 'multipart/form-data (auto-set by fetch)',
             });
@@ -3659,7 +3637,7 @@ export const api = createApi({
           const requestDuration = Date.now() - requestStartTime;
 
           if (__DEV__) {
-            console.log('📡 [uploadReferenceImages] Response received:', {
+            console.log('ðŸ“¡ [uploadReferenceImages] Response received:', {
               status: response.status,
               statusText: response.statusText,
               ok: response.ok,
@@ -3674,30 +3652,30 @@ export const api = createApi({
             if (__DEV__) {
               console.log('');
               console.log(
-                '═══════════════════════════════════════════════════════════',
+                'â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•',
               );
-              console.log('✅ [uploadReferenceImages] UPLOAD SUCCESS');
+              console.log('âœ… [uploadReferenceImages] UPLOAD SUCCESS');
               console.log(
-                '═══════════════════════════════════════════════════════════',
+                'â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•',
               );
               console.log(
-                '📊 Response Status:',
+                'ðŸ“Š Response Status:',
                 response.status,
                 response.statusText,
               );
-              console.log('📦 Response Data:', JSON.stringify(data, null, 2));
-              console.log('📈 Upload Summary:', {
+              console.log('ðŸ“¦ Response Data:', JSON.stringify(data, null, 2));
+              console.log('ðŸ“ˆ Upload Summary:', {
                 imagesUploaded: imageFiles.length,
                 videosUploaded: videoFiles.length,
                 totalFilesUploaded: imageFiles.length + videoFiles.length,
               });
-              console.log('⏱️  Total Duration:', `${totalDuration}ms`);
-              console.log('🌐 Endpoint Used:', endpoint);
+              console.log('â±ï¸  Total Duration:', `${totalDuration}ms`);
+              console.log('ðŸŒ Endpoint Used:', endpoint);
               console.log(
-                '✅ Verified: Using /reference endpoint (not /videos)',
+                'âœ… Verified: Using /reference endpoint (not /videos)',
               );
               console.log(
-                '═══════════════════════════════════════════════════════════',
+                'â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•',
               );
               console.log('');
             }
@@ -3716,7 +3694,7 @@ export const api = createApi({
 
             if (__DEV__) {
               console.log(
-                '⚠️  [uploadReferenceImages] Response indicates error (status:',
+                'âš ï¸  [uploadReferenceImages] Response indicates error (status:',
                 response.status,
                 ')',
               );
@@ -3744,41 +3722,41 @@ export const api = createApi({
             if (__DEV__) {
               console.log('');
               console.log(
-                '═══════════════════════════════════════════════════════════',
+                'â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•',
               );
-              console.log('❌ [uploadReferenceImages] UPLOAD FAILED');
+              console.log('âŒ [uploadReferenceImages] UPLOAD FAILED');
               console.log(
-                '═══════════════════════════════════════════════════════════',
+                'â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•',
               );
               console.log(
-                '📊 Response Status:',
+                'ðŸ“Š Response Status:',
                 response.status,
                 response.statusText,
               );
-              console.log('🌐 Endpoint Used:', endpoint);
+              console.log('ðŸŒ Endpoint Used:', endpoint);
               console.log(
-                '✅ Verified: Using /reference endpoint (not /videos)',
+                'âœ… Verified: Using /reference endpoint (not /videos)',
               );
-              console.log('📦 Files Attempted:', {
+              console.log('ðŸ“¦ Files Attempted:', {
                 imagesCount: imageFiles.length,
                 videosCount: videoFiles.length,
                 totalFiles: imageFiles.length + videoFiles.length,
               });
               console.log(
-                '❌ Error Message:',
+                'âŒ Error Message:',
                 errorData?.message ||
                   errorData?.error ||
                   errorData?.rawError ||
                   'Unknown error',
               );
-              console.log('📄 Error Data:', errorData);
+              console.log('ðŸ“„ Error Data:', errorData);
               console.log(
-                '📝 Error Text (first 500 chars):',
+                'ðŸ“ Error Text (first 500 chars):',
                 errorText.substring(0, 500),
               );
-              console.log('⏱️  Total Duration:', `${totalDuration}ms`);
+              console.log('â±ï¸  Total Duration:', `${totalDuration}ms`);
               console.log(
-                '═══════════════════════════════════════════════════════════',
+                'â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•',
               );
               console.log('');
             }
@@ -3796,18 +3774,18 @@ export const api = createApi({
           if (__DEV__) {
             console.log('');
             console.log(
-              '═══════════════════════════════════════════════════════════',
+              'â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•',
             );
-            console.log('💥 [uploadReferenceImages] EXCEPTION OCCURRED');
+            console.log('ðŸ’¥ [uploadReferenceImages] EXCEPTION OCCURRED');
             console.log(
-              '═══════════════════════════════════════════════════════════',
+              'â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•',
             );
-            console.error('❌ Error:', error);
-            console.error('❌ Error Message:', error.message);
-            console.error('❌ Error Stack:', error.stack);
-            console.log('⏱️  Total Duration:', `${totalDuration}ms`);
+            console.error('âŒ Error:', error);
+            console.error('âŒ Error Message:', error.message);
+            console.error('âŒ Error Stack:', error.stack);
+            console.log('â±ï¸  Total Duration:', `${totalDuration}ms`);
             console.log(
-              '═══════════════════════════════════════════════════════════',
+              'â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•',
             );
             console.log('');
           }
@@ -3895,7 +3873,6 @@ export const api = createApi({
       },
     }),
 
-    // ==================== METAL PRICES ====================
     getMetalPrices: builder.query({
       query: (useCache = false, useFullEndpoint = false) => {
         const cacheBuster = useCache ? '' : `?t=${Date.now()}`;
@@ -3904,7 +3881,7 @@ export const api = createApi({
           ? `/api/metal-prices${cacheBuster}`
           : `/api/metal-prices/latest${cacheBuster}`;
         if (__DEV__ && useFullEndpoint) {
-          console.log('📥 Using full endpoint instead of /latest');
+          console.log('ðŸ“¥ Using full endpoint instead of /latest');
         }
         return endpoint;
       },
@@ -4085,9 +4062,9 @@ export const api = createApi({
           price: data.price,
         };
         if (__DEV__) {
-          console.log(`📤 API: Updating ${metal} price:`, payload);
-          console.log(`📤 API: Date format: "${dateValue}"`);
-          console.log(`📤 API: Full URL: /api/metal-prices/${metal}`);
+          console.log(`ðŸ“¤ API: Updating ${metal} price:`, payload);
+          console.log(`ðŸ“¤ API: Date format: "${dateValue}"`);
+          console.log(`ðŸ“¤ API: Full URL: /api/metal-prices/${metal}`);
         }
         return {
           url: `/api/metal-prices/${metal}`,
@@ -4098,30 +4075,30 @@ export const api = createApi({
       transformResponse: (response, meta, arg) => {
         if (__DEV__) {
           console.log(
-            `📥 API: ${arg.metal} update raw response:`,
+            `ðŸ“¥ API: ${arg.metal} update raw response:`,
             JSON.stringify(response, null, 2),
           );
-          console.log(`📥 API: Response type:`, typeof response);
-          console.log(`📥 API: Response is null:`, response === null);
+          console.log(`ðŸ“¥ API: Response type:`, typeof response);
+          console.log(`ðŸ“¥ API: Response is null:`, response === null);
 
           // Check HTTP status from meta
           const status = meta?.response?.status;
-          console.log(`📥 API: HTTP Status Code:`, status);
+          console.log(`ðŸ“¥ API: HTTP Status Code:`, status);
 
           if (status === 200) {
-            console.log(`✅ PUT Request SUCCEEDED (200 OK)`);
+            console.log(`âœ… PUT Request SUCCEEDED (200 OK)`);
           } else if (status === 204) {
             console.log(
-              `✅ PUT Request SUCCEEDED (204 No Content - normal for PUT)`,
+              `âœ… PUT Request SUCCEEDED (204 No Content - normal for PUT)`,
             );
           } else if (status >= 400) {
-            console.error(`❌ PUT Request FAILED with status:`, status);
+            console.error(`âŒ PUT Request FAILED with status:`, status);
           } else {
-            console.log(`⚠️ PUT Request status:`, status);
+            console.log(`âš ï¸ PUT Request status:`, status);
           }
 
-          console.log(`📥 API: Response Headers:`, meta?.response?.headers);
-          console.log(`📥 API: Full Meta:`, JSON.stringify(meta, null, 2));
+          console.log(`ðŸ“¥ API: Response Headers:`, meta?.response?.headers);
+          console.log(`ðŸ“¥ API: Full Meta:`, JSON.stringify(meta, null, 2));
         }
 
         // Backend returns full document with arrays: { gold: [{date, price}, ...], silver: [...], platinum: [...] }
@@ -4156,7 +4133,7 @@ export const api = createApi({
 
               if (__DEV__) {
                 console.log(
-                  `💰 Processed ${metalKey}:`,
+                  `ðŸ’° Processed ${metalKey}:`,
                   processedResponse[metalKey],
                 );
               }
@@ -4165,7 +4142,7 @@ export const api = createApi({
 
           if (__DEV__) {
             console.log(
-              `📊 Processed Response:`,
+              `ðŸ“Š Processed Response:`,
               JSON.stringify(processedResponse, null, 2),
             );
           }
@@ -4253,7 +4230,7 @@ export const api = createApi({
 
         // Dev Logs
         if (__DEV__) {
-          console.log('📤 Image Pricing Payload:', {
+          console.log('ðŸ“¤ Image Pricing Payload:', {
             image: image?.name || image?.fileName || image,
             clientId,
             stoneType,
@@ -4271,7 +4248,7 @@ export const api = createApi({
       transformResponse: response => {
         if (__DEV__) {
           console.log(
-            '✅ [calculatePricing] Response:',
+            'âœ… [calculatePricing] Response:',
             JSON.stringify(response, null, 2),
           );
         }
@@ -4280,7 +4257,7 @@ export const api = createApi({
       transformErrorResponse: response => {
         if (__DEV__) {
           console.error(
-            '❌ [calculatePricing] Error:',
+            'âŒ [calculatePricing] Error:',
             JSON.stringify(response, null, 2),
           );
 
@@ -4318,25 +4295,24 @@ export const api = createApi({
         };
       },
     }),
-    // ==================== PRICING CALCULATION ====================
     calculatePricing: builder.mutation({
-      query: ({ details, clientId }) => {
+      query: ({ details, clientId, isRecalculate = false }) => {
         if (__DEV__) {
           console.log(
-            '💰 [calculatePricing] Payload:',
-            JSON.stringify({ details, clientId }, null, 2),
+            'ðŸ’° [calculatePricing] Payload:',
+            JSON.stringify({ details, clientId, isRecalculate }, null, 2),
           );
         }
         return {
           url: '/api/enquiries/pricingCalculate',
           method: 'POST',
-          body: { details, clientId },
+          body: { details, clientId, isRecalculate },
         };
       },
       transformResponse: response => {
         if (__DEV__) {
           console.log(
-            '✅ [calculatePricing] Response:',
+            'âœ… [calculatePricing] Response:',
             JSON.stringify(response, null, 2),
           );
         }
@@ -4345,7 +4321,7 @@ export const api = createApi({
       transformErrorResponse: response => {
         if (__DEV__) {
           console.error(
-            '❌ [calculatePricing] Error:',
+            'âŒ [calculatePricing] Error:',
             JSON.stringify(response, null, 2),
           );
 
@@ -4384,7 +4360,6 @@ export const api = createApi({
       },
     }),
 
-    // ==================== CHATS ====================
     // Get chat by enquiry ID with type
     getChatByEnquiry: builder.query({
       query: ({ enquiryId, type }) => {
@@ -4417,7 +4392,7 @@ export const api = createApi({
         params.append('page', '1');
         const url = `/api/chats?${params.toString()}`;
         if (__DEV__) {
-          console.log('✅✅✅ getChatsByEnquiryV2 (NEW CODE) ✅✅✅');
+          console.log('âœ…âœ…âœ… getChatsByEnquiryV2 (NEW CODE) âœ…âœ…âœ…');
         }
         return url;
       },
@@ -4559,7 +4534,7 @@ export const api = createApi({
       transformErrorResponse: (response, meta, arg) => {
         if (__DEV__) {
           const { enquiryId } = arg || {};
-          console.error('❌ getChatsByEnquiryV2 API Error:', {
+          console.error('âŒ getChatsByEnquiryV2 API Error:', {
             enquiryId,
             status: response.status,
             originalStatus: response.originalStatus,
@@ -4817,7 +4792,7 @@ export const api = createApi({
               if (__DEV__) {
                 if (lastMessageSenderName) {
                 } else if (lastMessageSenderId) {
-                  // console.log('[API] ❌ Have SenderId but no name from LastMessage:', {
+                  // console.log('[API] âŒ Have SenderId but no name from LastMessage:', {
                   //   senderId: lastMessageSenderId,
                   //   hasSender: !!lastMessageObj.Sender,
                   //   senderType: typeof lastMessageObj.Sender,
@@ -5054,7 +5029,7 @@ export const api = createApi({
               // This is a fallback - backend should provide UnreadCount
               if (__DEV__) {
                 console.log(
-                  '[API] 🔄 Attempting to infer unread from LastMessage:',
+                  '[API] ðŸ”„ Attempting to infer unread from LastMessage:',
                   {
                     chatId: chatId,
                     lastMessageIsRead,
@@ -5169,7 +5144,7 @@ export const api = createApi({
 
           // Log the raw response for debugging
           if (__DEV__) {
-            console.log('📥 Raw API Response:', {
+            console.log('ðŸ“¥ Raw API Response:', {
               hasData: !!data,
               dataKeys: data ? Object.keys(data) : [],
               isArray: Array.isArray(data),
@@ -5188,14 +5163,14 @@ export const api = createApi({
             messagesArray = data.Data;
             nextCursor = data.NextCursor || data.nextCursor || null;
             if (__DEV__) {
-              console.log('✅ Using format: data.Data (capital D)');
+              console.log('âœ… Using format: data.Data (capital D)');
             }
           } else if (data && data.data && Array.isArray(data.data)) {
             // Format: { data: [...], nextCursor: "..." }
             messagesArray = data.data;
             nextCursor = data.nextCursor || data.NextCursor || null;
             if (__DEV__) {
-              console.log('✅ Using format: data.data (lowercase d)');
+              console.log('âœ… Using format: data.data (lowercase d)');
             }
           } else if (data && data.messages && Array.isArray(data.messages)) {
             // Format: { messages: [...], nextCursor: "..." }
@@ -5258,9 +5233,9 @@ export const api = createApi({
 
               // For image/file messages, set appropriate text
               if (messageType === 'image' && !text) {
-                text = '📷 Image';
+                text = 'ðŸ“· Image';
               } else if (messageType === 'file' && !text) {
-                text = mediaName || '📎 File';
+                text = mediaName || 'ðŸ“Ž File';
               }
 
               return {
@@ -5403,7 +5378,7 @@ export const api = createApi({
           if (__DEV__) {
             if (isNetworkError) {
               console.warn(
-                '⚠️ Network error fetching messages (server may be unreachable):',
+                'âš ï¸ Network error fetching messages (server may be unreachable):',
                 errorMessage,
               );
             } else {
@@ -5421,7 +5396,6 @@ export const api = createApi({
       },
     }),
 
-    // ==================== PUSH NOTIFICATION TOKENS ====================
     registerPushToken: builder.mutation({
       query: ({ token, device }) => {
         const payload = {
@@ -5458,7 +5432,6 @@ export const api = createApi({
       invalidatesTags: [{ type: 'DeviceToken', id: 'CURRENT' }],
     }),
 
-    // ==================== NOTIFICATIONS ====================
     getNotifications: builder.query({
       query: (params = {}) => {
         const { limit } = params;

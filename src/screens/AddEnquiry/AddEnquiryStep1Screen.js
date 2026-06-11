@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   StyleSheet,
@@ -224,7 +224,6 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
         mediaType: projectType,
       }).unwrap();
       
-      console.log('✅ Parsed data from API:', result);
       
       // Store parsed data and missing fields
       setParsedData(result.parsed);
@@ -380,17 +379,13 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
       const hasTitle = parsedData?.Name || missingFieldsData.Name;
       if (!hasTitle) {
         newErrors.title = 'Name of the piece is required';
-        console.log('❌ Title validation failed (AI parsing flow)');
       } else {
-        console.log('✅ Title validation passed (AI parsing flow):', hasTitle);
       }
     } else {
       // Manual flow - title must be in formData
       if (!formData.title.trim()) {
         newErrors.title = 'Name of the piece is required';
-        console.log('❌ Title validation failed (manual flow)');
       } else {
-        console.log('✅ Title validation passed (manual flow)');
       }
     }
 
@@ -402,39 +397,31 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
         const hasClient = parsedData?.ClientId || missingFieldsData.ClientId || formData.clientId;
         if (!hasClient) {
           newErrors.clientId = 'Client is required';
-          console.log('❌ Client validation failed (AI parsing flow)');
         } else {
-          console.log('✅ Client validation passed (from parsedData/missingFields/formData):', hasClient);
         }
       } else {
         // Manual flow (parsing failed or user chose "Fill Manually")
         // Use old validation logic - client must be in formData
         if (!formData.clientId && !formData.clientName.trim()) {
           newErrors.clientId = 'Client is required';
-          console.log('❌ Client validation failed (manual flow, no client selected)');
         } else {
-          console.log('✅ Client validation passed (manual flow)');
         }
       }
     } else {
       // Client user - should have clientId from user object
       if (!formData.clientId && !user?.clientId) {
         newErrors.clientId = 'Client is required';
-        console.log('❌ Client validation failed (client user, no clientId)');
       } else {
-        console.log('✅ Client validation passed (client user)');
       }
     }
 
     const st = String(formData.status || '').trim();
     if (!st) {
       newErrors.status = 'Status is required';
-      console.log('❌ Status validation failed');
     }
 
     if (isClient && !formData.metalQuality) {
       newErrors.metalQuality = 'Metal quality is required';
-      console.log('❌ Metal quality validation failed');
     }
 
     console.log('🔍 [validateForm] Validation complete. Errors:', newErrors);
@@ -455,7 +442,6 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
 
     if (isClient) {
       if (currentStep === 1) {
-        console.log('✅ [validateCurrentStep] Step 1 - no validation needed');
         return true;
       }
       
@@ -465,37 +451,30 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
         const hasTitle = parsedData?.Name || missingFieldsData.Name;
         if (!hasTitle) {
           stepErrors.title = 'Name of the piece is required';
-          console.log('❌ Title validation failed (AI parsing flow)');
         }
         
         const hasClient = formData.clientId || user?.clientId;
         if (!hasClient) {
           stepErrors.clientId = 'Client is required';
-          console.log('❌ Client validation failed (AI parsing flow)');
         }
         
         const hasMetalQuality = parsedData?.Metal?.Quality || missingFieldsData.MetalQuality || formData.metalQuality;
         if (!hasMetalQuality) {
           stepErrors.metalQuality = 'Metal quality is required';
-          console.log('❌ Metal quality validation failed (AI parsing flow)');
         }
       } else {
         // Manual flow - check formData
         if (!formData.title.trim()) {
           stepErrors.title = 'Name of the piece is required';
-          console.log('❌ Title validation failed (manual flow)');
         }
         if (!formData.clientId && !formData.clientName.trim()) {
           stepErrors.clientId = 'Client is required';
-          console.log('❌ Client validation failed (manual flow)');
         }
         if (!formData.metalQuality) {
           stepErrors.metalQuality = 'Metal quality is required';
-          console.log('❌ Metal quality validation failed (manual flow)');
         }
       }
     } else if (currentStep === 1) {
-      console.log('✅ [validateCurrentStep] Step 1 - no validation needed');
       return true;
     } else if (currentStep === 2) {
       // Admin step 2 validation
@@ -504,23 +483,19 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
         const hasTitle = parsedData?.Name || missingFieldsData.Name;
         if (!hasTitle) {
           stepErrors.title = 'Name of the piece is required';
-          console.log('❌ Title validation failed (AI parsing flow)');
         }
         
         const hasClient = parsedData?.ClientId || missingFieldsData.ClientId || formData.clientId;
         if (!hasClient) {
           stepErrors.clientId = 'Client is required';
-          console.log('❌ Client validation failed (AI parsing flow)');
         }
       } else {
         // Manual flow - check formData
         if (!formData.title.trim()) {
           stepErrors.title = 'Name of the piece is required';
-          console.log('❌ Title validation failed (manual flow)');
         }
         if (!formData.clientId && !formData.clientName.trim()) {
           stepErrors.clientId = 'Client is required';
-          console.log('❌ Client validation failed (manual flow)');
         }
       }
     }
@@ -631,29 +606,15 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
   };
 
   const handleSubmit = async () => {
-    console.log('🚀 [handleSubmit] ===== FUNCTION CALLED =====');
-    console.log('🚀 Current Step:', currentStep);
-    console.log('🚀 TextSubmitted:', TextSubmitted);
-    console.log('🚀 parsedData:', parsedData);
-    console.log('🚀 Form Data:', formData);
-    console.log('🚀 Missing Fields Data:', missingFieldsData);
-    console.log('🚀 Reference Images Count:', referenceImages.length);
-    
     if (!validateForm()) {
-      console.log('❌ [handleSubmit] Form validation failed!');
-      console.log('❌ Validation Errors:', errors);
       return;
     }
-    
-    console.log('✅ [handleSubmit] Form validation passed!');
 
     if (!user?.id) {
-      console.log('❌ [handleSubmit] User ID not found!');
       showAlert('Error', 'User not found. Please login again.', 'error');
       return;
     }
     
-    console.log('✅ [handleSubmit] User ID found:', user.id);
 
     try {
       // Check if this is AI parsing flow or manual flow
@@ -739,9 +700,6 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
           referenceImages: referenceImages,
         }).unwrap();
 
-        console.log('✅ [AI PARSING FLOW] Enquiry submitted successfully!');
-        console.log('✅ Full Response Structure:', JSON.stringify(result, null, 2));
-        console.log('✅ Response Type:', typeof result);
         
         // Try multiple ways to extract enquiry ID
         let enquiryId = null;
@@ -830,33 +788,19 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
               text: 'Done',
               style: 'cancel',
               onPress: () => {
-                console.log('✅ User clicked "Done" - navigating to Enquiries tab');
                 navigation.navigate('MainTabs', { screen: 'Enquiries' });
               },
             },
             {
               text: 'Chat with us',
               onPress: () => {
-                console.log('💬 User clicked "Chat with us"');
-                console.log('💬 Enquiry ID:', enquiryId);
-                console.log('💬 Enquiry Payload:', enquiryPayload);
-                
                 if (enquiryId) {
-                  console.log('✅ Enquiry ID exists - navigating to ChatDetail');
-                  console.log('✅ Navigation params:', {
-                    screen: 'ChatDetail',
-                    enquiryId,
-                    enquiry: enquiryPayload,
-                  });
-                  
                   navigation.navigate('ChatDetail', {
                     enquiryId,
                     enquiry: enquiryPayload,
                   });
                   
-                  console.log('✅ Navigation.navigate() called successfully');
                 } else {
-                  console.log('❌ No enquiry ID - navigating to Enquiries tab instead');
                   navigation.navigate('MainTabs', { screen: 'Enquiries' });
                 }
               },
@@ -940,9 +884,6 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
           referenceImages: [], // No images in manual flow
         }).unwrap();
         
-        console.log('✅ [MANUAL FLOW] Enquiry submitted successfully!');
-        console.log('✅ Full Response Structure:', JSON.stringify(result, null, 2));
-        console.log('✅ Response Type:', typeof result);
         
         // Try multiple ways to extract enquiry ID (same as AI flow)
         let enquiryId = null;
@@ -992,11 +933,6 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
           showAlert('Error', 'Failed to create enquiry. Enquiry ID not returned.', 'error');
           return;
         }
-
-        console.log('✅ Enquiry created successfully (OLD CODE):', {
-          'Enquiry ID': enquiryId,
-          'Name': enquiryData.Name,
-        });
 
         const formDataForUpload = {
           ...formData,
@@ -1699,24 +1635,13 @@ const AddEnquiryStep1Screen = ({ route, navigation }) => {
     console.log('🔘 Role:', roleLower);
     
     if (!validateCurrentStep()) {
-      console.log('❌ [onPrimaryPress] Validation failed!');
-      console.log('❌ Errors:', errors);
       return;
     }
     
-    console.log('✅ [onPrimaryPress] Validation passed!');
     
     // If we're on the last step, validateCurrentStep already ran full validation
     if (currentStep === totalSteps) {
       console.log('🎯 [onPrimaryPress] Calling handleSubmit...');
-      console.log('📊 [DATA SNAPSHOT] ===== BEFORE SUBMIT =====');
-      console.log('📊 formData:', JSON.stringify(formData, null, 2));
-      console.log('📊 parsedData:', JSON.stringify(parsedData, null, 2));
-      console.log('📊 missingFieldsData:', JSON.stringify(missingFieldsData, null, 2));
-      console.log('📊 referenceImages count:', referenceImages.length);
-      console.log('📊 user.id:', user?.id);
-      console.log('📊 user.clientId:', user?.clientId);
-      console.log('📊 ==========================================');
       handleSubmit();
     } else {
       console.log('➡️ [onPrimaryPress] Going to next step...');

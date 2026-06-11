@@ -20,6 +20,7 @@ import {
   useGetEnquiriesQuery,
   useGetEnquiryByIdQuery,
   useGetUsersQuery,
+  useGetStatusesQuery,
   useUpdateEnquiryMutation,
   useDeleteEnquiryMutation,
 } from '../../store/api';
@@ -28,6 +29,8 @@ import NewCard from '../../components/cards/NewCard';
 import Icon from '../../components/common/Icon';
 import BrandedAlert from '../../components/common/BrandedAlert';
 import CreateEnquiryModal from '../EditEnquiry/createEnquiryModal';
+import QuotationModal from '../../components/modals/QuotationModal';
+import FinalLookModal from '../../components/modals/FinalLookModal';
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
 
@@ -35,23 +38,25 @@ import { fonts } from '../../constants/fonts';
 const PAGE_SIZE = 30;
 
 const TABS = [
-  { key: 'all',       label: 'All' },
-  { key: 'assigned',  label: 'Assigned',  hasDropdown: true },
-  { key: 'status',    label: 'By Status', hasDropdown: true },
-  { key: 'new',       label: 'New' },
-  { key: 'coral',     label: 'Coral' },
-  { key: 'cad',       label: 'CAD' },
-  { key: 'quotation', label: 'Quotation' },
-  { key: 'shipped',  label: 'Shipped' },
+  { key: 'all',          label: 'All' },
+  { key: 'assigned',     label: 'Assigned',    hasDropdown: true },
+  { key: 'status',       label: 'By Status',   hasDropdown: true },
+  { key: 'new',          label: 'New' },
+  { key: 'coral',        label: 'Coral' },
+  { key: 'cad',          label: 'CAD' },
+  { key: 'approved_cad', label: 'Approved CAD' },
+  { key: 'quotation',    label: 'Quotation' },
+  { key: 'shipped',      label: 'Shipped' },
 ];
 
 // Status values sent to the API for each tab
 const TAB_STATUS_MAP = {
-  new:       ['Enquiry Created', 'enquiry_created', 'Pending', 'pending', 'New', 'new'],
-  coral:     ['Coral', 'coral'],
-  cad:       ['CAD', 'cad', 'Cad'],
-  quotation: ['Quotation', 'quotation'],
-  shipped:  ['Shipped', 'shipped', 'Shipment', 'shipment'],
+  new:          ['Enquiry Created', 'enquiry_created', 'Pending', 'pending', 'New', 'new'],
+  coral:        ['Coral', 'coral'],
+  cad:          ['CAD', 'cad', 'Cad'],
+  approved_cad: ['Approved Cad', 'approved cad', 'Approved CAD'],
+  quotation:    ['Quotation', 'quotation'],
+  shipped:      ['Shipped', 'shipped', 'Shipment', 'shipment'],
 };
 
 const STATUS_OPTIONS = [
@@ -204,13 +209,14 @@ const validateClField = (type, value) => {
 
 // ─── Card with action bar ─────────────────────────────────────────────────────
 const EnquiryCardItem = React.memo(({
-  enquiry, navigation, onPreview, onSummary, onChecklist, onUpdate, onDelete, activeTab, isExpandedAll,
+  enquiry, navigation, onPreview, onSummary, onChecklist, onUpdate, onDelete, onViewQuotation, onFinalLook, activeTab, isExpandedAll,
 }) => (
   <View style={styles.cardWrapper}>
     <NewCard
       item={enquiry}
       navigation={navigation}
-      onViewQuotation={() => {}}
+      onViewQuotation={onViewQuotation}
+      onFinalLook={onFinalLook}
       currentTab={activeTab}
       onUpdateEnquiry={onUpdate}
       onDeleteEnquiry={onDelete}
@@ -271,6 +277,11 @@ const ClientHandlerEnquiryScreen = ({ navigation, route }) => {
   const [checklistDirty,     setChecklistDirty]     = useState(false);
   const [checklistSaving,    setChecklistSaving]    = useState(false);
   const [showCreateModal,    setShowCreateModal]    = useState(false);
+  const [showQuotationModal, setShowQuotationModal] = useState(false);
+  const [quotationEnquiryId, setQuotationEnquiryId] = useState(null);
+  const [showFinalLookModal, setShowFinalLookModal] = useState(false);
+  const [finalLookEnquiryId, setFinalLookEnquiryId] = useState(null);
+  const [finalLookClientName, setFinalLookClientName] = useState('');
 
   // ── Alert ─────────────────────────────────────────────────────────────────
   const [alertCfg, setAlertCfg] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
@@ -345,6 +356,7 @@ const ClientHandlerEnquiryScreen = ({ navigation, route }) => {
   }, [user, page, activeTab, assignedUserId, statusValues, clientId, searchQuery]);
 
   const { data, isLoading, isFetching, refetch } = useGetEnquiriesQuery(queryParams, { skip: !user });
+  const { data: statusesData } = useGetStatusesQuery();
   const [updateEnquiry] = useUpdateEnquiryMutation();
   const [deleteEnquiry] = useDeleteEnquiryMutation();
 
@@ -522,6 +534,29 @@ const ClientHandlerEnquiryScreen = ({ navigation, route }) => {
     }
   }, [checklistEnquiryId, checklistDirty, editableChecklist, checklistErrors, checklistData, updateEnquiry, showAlert]);
 
+  // ── Quotation handler ─────────────────────────────────────────────────────
+  const handleViewQuotation = useCallback((enquiry) => {
+    const id = enquiry?._id || enquiry?.id || enquiry?.Id;
+    setQuotationEnquiryId(id);
+    setShowQuotationModal(true);
+  }, []);
+
+  // ── Final Look handler ────────────────────────────────────────────────────
+  const handleFinalLook = useCallback((enquiry) => {
+    const id = enquiry?._id || enquiry?.id || enquiry?.Id;
+    const name = enquiry?.clientName || enquiry?.ClientName || '';
+    setFinalLookEnquiryId(id);
+    setFinalLookClientName(name);
+    setShowFinalLookModal(true);
+  }, []);
+
+
+  const handleApproveWithoutDesigner = useCallback(async (enquiryId) => {
+    const prodStatus = statusesData?.find(s => s.name?.toLowerCase() === 'production');
+    const statusName = prodStatus?.name || 'Production';
+    await updateEnquiry({ id: enquiryId, Status: statusName, ApprovedDate: new Date().toISOString() }).unwrap();
+  }, [updateEnquiry, statusesData]);
+
   // ── Render helpers ────────────────────────────────────────────────────────
   const renderItem = useCallback(({ item }) => (
     <EnquiryCardItem
@@ -534,8 +569,10 @@ const ClientHandlerEnquiryScreen = ({ navigation, route }) => {
       onChecklist={handleChecklist}
       onUpdate={handleUpdate}
       onDelete={handleDelete}
+      onViewQuotation={handleViewQuotation}
+      onFinalLook={handleFinalLook}
     />
-  ), [navigation, activeTab, isExpandedAll, handlePreview, handleSummary, handleChecklist, handleUpdate, handleDelete]);
+  ), [navigation, activeTab, isExpandedAll, handlePreview, handleSummary, handleChecklist, handleUpdate, handleDelete, handleViewQuotation, handleFinalLook]);
 
   const keyExtractor = useCallback((item, i) =>
     item?.id ? String(item.id) : item?._id ? String(item._id) : `i-${i}`, []);
@@ -1005,6 +1042,22 @@ const ClientHandlerEnquiryScreen = ({ navigation, route }) => {
         onClose={() => setShowCreateModal(false)}
         onEnquiryCreated={() => { setShowCreateModal(false); handleRefresh(); }}
         route={clientId ? { params: { clientId, clientName } } : undefined}
+      />
+
+      {/* ══ View Quotation ═══════════════════════════════════════════════ */}
+      <QuotationModal
+        visible={showQuotationModal}
+        enquiryId={quotationEnquiryId}
+        onClose={() => { setShowQuotationModal(false); setQuotationEnquiryId(null); }}
+      />
+
+      {/* ══ Final Look ════════════════════════════════════════════════════ */}
+      <FinalLookModal
+        visible={showFinalLookModal}
+        enquiryId={finalLookEnquiryId}
+        clientName={finalLookClientName}
+        onApprove={handleApproveWithoutDesigner}
+        onClose={() => { setShowFinalLookModal(false); setFinalLookEnquiryId(null); setFinalLookClientName(''); }}
       />
 
       <BrandedAlert

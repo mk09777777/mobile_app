@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+﻿import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -19,7 +19,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../../context/AuthContext';
 import { useClients } from '../../features/clients/clientsHooks';
 import { useStatusOptions } from '../../features/statuses/statusesHooks';
-import { useUpdateEnquiryMutation, useDeleteEnquiryMutation, useGetStatusStatisticsQuery, useGetEnquiryByIdQuery } from '../../store/api';
+import { useUpdateEnquiryMutation, useDeleteEnquiryMutation, useGetStatusesQuery, useGetStatusStatisticsQuery, useGetEnquiryByIdQuery } from '../../store/api';
 import {
   setFilters,
   setSearchQuery,
@@ -47,16 +47,9 @@ import useDeviceLayout from '../../hooks/useDeviceLayout';
 import * as pdfGeneratorModule from '../../utils/pdfGenerator';
 import StatusTabs from '../EnquiryStatusDashboard/Tabs';
 import CreateEnquiryModal from '../EditEnquiry/createEnquiryModal';
+import QuotationModal from '../../components/modals/QuotationModal';
+import FinalLookModal from '../../components/modals/FinalLookModal';
 
-// Debug: Log module import status
-if (__DEV__) {
-  console.log('EnquiryListScreen: pdfGeneratorModule imported:', {
-    moduleExists: !!pdfGeneratorModule,
-    moduleType: typeof pdfGeneratorModule,
-    hasDownloadAllEnquiriesPDF: pdfGeneratorModule ? typeof pdfGeneratorModule.downloadAllEnquiriesPDF : 'no module',
-    moduleKeys: pdfGeneratorModule ? Object.keys(pdfGeneratorModule) : 'no module',
-  });
-}
 
 const { width } = Dimensions.get('window');
 /** Items per API request (first load and each “Load more”). Not tied to screen size / grid columns. */
@@ -316,6 +309,8 @@ const EnquiryListScreen = ({ navigation }) => {
   const [updateEnquiry] = useUpdateEnquiryMutation();
   const [deleteEnquiry] = useDeleteEnquiryMutation();
   
+  const { data: statusesData } = useGetStatusesQuery();
+  
   // Fetch aggregate status statistics
   const { data: statusStatsData, refetch: refetchStatusStats } = useGetStatusStatisticsQuery();
   
@@ -323,6 +318,7 @@ const EnquiryListScreen = ({ navigation }) => {
   const [statusCounts, setStatusCounts] = useState({
     coral: 0,
     cad: 0,
+    approvedCad: 0,
     approval: 0,
     order: 0,
     production: 0,
@@ -337,6 +333,7 @@ const EnquiryListScreen = ({ navigation }) => {
       const counts = {
         coral: 0,
         cad: 0,
+        approvedCad: 0,
         approval: 0,
         order: 0,
         production: 0,
@@ -350,6 +347,7 @@ const EnquiryListScreen = ({ navigation }) => {
         const val = Number(item.count) || 0;
         if (name === 'coral' || name === 'coral pending') counts.coral += val;
         else if (name === 'cad' || name === 'cad pending') counts.cad += val;
+        else if (name === 'approved cad') counts.approvedCad += val;
         else if (name === 'design approval pending') counts.approval += val;
         else if (name === 'order placement') counts.order += val;
         else if (name === 'production') counts.production += val;
@@ -360,9 +358,6 @@ const EnquiryListScreen = ({ navigation }) => {
       
       setStatusCounts(counts);
       
-      if (__DEV__) {
-        console.log('📊 Updated status counts:', counts);
-      }
     }
   }, [statusStatsData]);
 
@@ -435,6 +430,11 @@ const EnquiryListScreen = ({ navigation }) => {
 
   const [isPdfModalVisible, setIsPdfModalVisible] = useState(false);
   const [selectedPdfUrl, setSelectedPdfUrl] = useState(null);
+  const [showQuotationModal,  setShowQuotationModal]  = useState(false);
+  const [quotationEnquiryId,  setQuotationEnquiryId]  = useState(null);
+  const [showFinalLookModal,  setShowFinalLookModal]  = useState(false);
+  const [finalLookEnquiryId,  setFinalLookEnquiryId]  = useState(null);
+  const [finalLookClientName, setFinalLookClientName] = useState('');
 
   // Local search input value — updates immediately for responsive UI
   // Actual Redux dispatch (which triggers API refetch) is debounced by 2 seconds
@@ -615,22 +615,6 @@ const EnquiryListScreen = ({ navigation }) => {
       const token = await AsyncStorage.getItem('token');
       const apiUrl = `${API_BASE_URL}/api/enquiries/search?${params.toString()}`;
 
-      if (__DEV__) {
-        console.log('🔍 [ENQUIRY LIST] Fetch Query:', {
-          userRole: user?.role,
-          filters: filters,
-          selectedStatuses: selectedStatuses,
-          filtersStatus: filters.status,
-          filtersStatusType: typeof filters.status,
-          filtersStatusIsArray: Array.isArray(filters.status),
-          resolvedFilters: resolvedFilters,
-          resolvedFiltersStatus: resolvedFilters.status,
-          resolvedFiltersStatusType: typeof resolvedFilters.status,
-          resolvedFiltersStatusIsArray: Array.isArray(resolvedFilters.status),
-          queryString: params.toString(),
-          fullUrl: apiUrl,
-        });
-      }
 
       const response = await fetch(apiUrl, {
         headers: {
@@ -649,29 +633,6 @@ const EnquiryListScreen = ({ navigation }) => {
         return;
       }
 
-      if (__DEV__) {
-        console.log('📥 [ENQUIRY LIST] ========== RAW API RESPONSE ==========');
-        console.log('📥 [ENQUIRY LIST] Payload Keys:', Object.keys(payload || {}));
-        console.log('📥 [ENQUIRY LIST] Data Length:', payload?.data?.length || payload?.length || 0);
-        console.log('📥 [ENQUIRY LIST] Filters Applied:', filters.status);
-        console.log('📥 [ENQUIRY LIST] Selected Statuses:', selectedStatuses);
-        
-        // Log first enquiry in full detail
-        if (payload?.data?.[0]) {
-          console.log('📥 [ENQUIRY LIST] FIRST ENQUIRY (FULL):', JSON.stringify(payload.data[0], null, 2));
-          console.log('📥 [ENQUIRY LIST] ⚠️ CRITICAL: Check if CurrentStatus or Status field exists above!');
-          console.log('📥 [ENQUIRY LIST] ⚠️ If missing, your BACKEND needs to be fixed!');
-        }
-        
-        console.log('📥 [ENQUIRY LIST] First 5 Enquiries Status Fields:');
-        payload?.data?.slice(0, 5).forEach((e, i) => {
-          console.log(`  ${i + 1}. Name: ${e?.Name || 'N/A'}`);
-          console.log(`     Status: ${e?.Status || 'undefined'}`);
-          console.log(`     CurrentStatus: ${e?.CurrentStatus || 'undefined'}`);
-          console.log(`     All Keys: ${Object.keys(e || {}).join(', ')}`);
-        });
-        console.log('📥 [ENQUIRY LIST] =======================================');
-      }
 
       const data = Array.isArray(payload?.data)
         ? payload.data
@@ -718,20 +679,7 @@ const EnquiryListScreen = ({ navigation }) => {
           return selectedCanonical.some(sel => sel === itemCanon);
         });
 
-        if (__DEV__) {
-          console.log('🔍 [ENQUIRY LIST] Frontend Status Filter Applied:', {
-            totalBeforeFilter: normalized.length,
-            totalAfterFilter: filteredData.length,
-            selectedStatuses: statusFilterList,
-            selectedCanonical,
-            sampleItemStatuses: normalized.slice(0, 5).map(e => ({
-              raw: e?.CurrentStatus || e?.Status || 'N/A',
-              canonical: canonicalStatusForFilter(e?.CurrentStatus || e?.Status || ''),
-            })),
-            filteredStatuses: filteredData.map(e => e?.CurrentStatus || e?.Status || 'N/A').slice(0, 5),
-          });
         }
-      }
 
       // Frontend filtering workaround for assignedTo
       if (resolvedFilters.assignedTo && resolvedFilters.assignedTo !== 'all' && resolvedFilters.assignedTo !== 'All') {
@@ -829,9 +777,6 @@ const EnquiryListScreen = ({ navigation }) => {
     React.useCallback(() => {
       if (user && refetchStatusStats) {
         refetchStatusStats();
-        if (__DEV__) {
-          console.log('🔄 Screen focused - refetching status statistics');
-        }
       }
     }, [user])
   );
@@ -900,9 +845,6 @@ const EnquiryListScreen = ({ navigation }) => {
     try {
       scrollPositionRef.current = offsetY;
       await AsyncStorage.setItem(scrollPositionKey, String(offsetY));
-      if (__DEV__) {
-        console.log('💾 [ENQUIRY LIST] Saved scroll position:', offsetY);
-      }
     } catch (error) {
       if (__DEV__) {
         console.warn('Failed to save scroll position:', error);
@@ -922,9 +864,6 @@ const EnquiryListScreen = ({ navigation }) => {
           setTimeout(() => {
             if (flatListRef.current) {
               flatListRef.current.scrollToOffset({ offset: offsetY, animated: false });
-              if (__DEV__) {
-                console.log('📍 [ENQUIRY LIST] Restored scroll position:', offsetY);
-              }
             }
           }, 200);
         }
@@ -968,9 +907,6 @@ const EnquiryListScreen = ({ navigation }) => {
       dispatch(setSelectedStatus('All'));
       dispatch(setSelectedStatuses([]));
       dispatch(setSelectedClient('All'));
-      if (__DEV__) {
-        console.log('🧹 [ENQUIRY LIST] Clearing all filters on unmount');
-      }
     };
   }, [dispatch, saveScrollPosition]);
 
@@ -1098,15 +1034,6 @@ const EnquiryListScreen = ({ navigation }) => {
   const clients = Array.isArray(clientsData) ? clientsData : [];
 
   // Debug clients API response (in useEffect to avoid hook order issues)
-  useEffect(() => {
-    if (__DEV__ && clientsData) {
-      console.log('Clients API Response:', {
-        dataLength: Array.isArray(clientsData) ? clientsData.length : 'not array',
-        firstClient: Array.isArray(clientsData) && clientsData.length > 0 ? clientsData[0] : null,
-        error: clientsError
-      });
-    }
-  }, [clientsData, clientsError]);
 
   // Local UI state
   const [showFilters, setShowFilters] = useState(false);
@@ -1137,9 +1064,6 @@ const EnquiryListScreen = ({ navigation }) => {
   const clientNameMap = useMemo(() => {
     const map = new Map();
     if (!clients || clients.length === 0) {
-      if (__DEV__) {
-        console.log('No clients data available yet');
-      }
       return map;
     }
 
@@ -1157,11 +1081,6 @@ const EnquiryListScreen = ({ navigation }) => {
         map.set(cleanId.trim(), client.name);
       }
     });
-
-    if (__DEV__) {
-      console.log('Client Name Map created with', map.size, 'entries');
-      console.log('Sample client IDs in map:', Array.from(map.keys()).slice(0, 5));
-    }
 
     return map;
   }, [clients]);
@@ -1640,12 +1559,32 @@ const EnquiryListScreen = ({ navigation }) => {
   // }, [isLoadingMore, isInitialLoading, isFetching, hasMore, currentPage, totalPages, displayEnquiries]);
 
   // Render enquiry card item for FlatList
-  const handleViewQuotation = useCallback((pdfUrl) => {
-    // For now, use a dummy URL if none is provided, as requested.
-    const urlToShow = pdfUrl || 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf';
-    setSelectedPdfUrl(urlToShow);
-    setIsPdfModalVisible(true);
+  const handleViewQuotation = useCallback((enquiry) => {
+    if (enquiry && typeof enquiry === 'object') {
+      const id = enquiry?._id || enquiry?.id || enquiry?.Id;
+      setQuotationEnquiryId(id);
+      setShowQuotationModal(true);
+    } else {
+      // Legacy: URL string fallback
+      const urlToShow = enquiry || 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf';
+      setSelectedPdfUrl(urlToShow);
+      setIsPdfModalVisible(true);
+    }
   }, []);
+
+  const handleFinalLook = useCallback((enquiry) => {
+    const id = enquiry?._id || enquiry?.id || enquiry?.Id;
+    const name = enquiry?.clientName || enquiry?.ClientName || '';
+    setFinalLookEnquiryId(id);
+    setFinalLookClientName(name);
+    setShowFinalLookModal(true);
+  }, []);
+
+  const handleApproveWithoutDesigner = useCallback(async (enquiryId) => {
+    const prodStatus = statusesData?.find(s => s.name?.toLowerCase() === 'production');
+    const statusName = prodStatus?.name || 'Production';
+    await updateEnquiry({ id: enquiryId, Status: statusName, ApprovedDate: new Date().toISOString() }).unwrap();
+  }, [updateEnquiry, statusesData]);
 
   const handleClosePdfModal = useCallback(() => {
     setIsPdfModalVisible(false);
@@ -1653,86 +1592,69 @@ const EnquiryListScreen = ({ navigation }) => {
   }, []);
 
   const handleUpdateEnquiry = useCallback(async (updateData) => {
+    const { skipConfirm, ...data } = updateData;
+
+    const doUpdate = async () => {
+      const payload = { id: data.id };
+      const status = data.Status || data.status;
+      const assignedTo = data.AssignedTo || data.assignedTo;
+      if (status) {
+        payload.Status = status;
+        payload.CurrentStatus = status;
+      }
+      if (assignedTo) {
+        payload.AssignedTo = assignedTo;
+      }
+      Object.keys(data).forEach(key => {
+        if (key !== 'id' && key !== 'Status' && key !== 'status' && key !== 'AssignedTo' && key !== 'assignedTo' && !payload[key]) {
+          payload[key] = data[key];
+        }
+      });
+      await updateEnquiry(payload).unwrap();
+      if (refetchStatusStats) await refetchStatusStats();
+      await fetchEnquiries({ pageToLoad: 1, append: false, suppressInlineLoader: false });
+    };
+
+    if (skipConfirm) {
+      try {
+        await doUpdate();
+        return true;
+      } catch (err) {
+        console.error('updateEnquiry silent fail:', err?.data || err?.message || err);
+        return false;
+      }
+    }
+
     return new Promise((resolve) => {
+      const status = data.Status || data.status;
+      const assignedTo = data.AssignedTo || data.assignedTo;
       let actionName = 'Update Enquiry';
       let actionMessage = 'Are you sure you want to update this enquiry?';
-
-      if (updateData.assignedTo && updateData.status) {
-        // When both assignedTo and status are provided (assignment case)
+      if (assignedTo && status) {
         actionName = 'Assign Enquiry';
         actionMessage = 'Are you sure you want to assign this enquiry to the selected user?';
-      } else if (updateData.status) {
+      } else if (status) {
         actionName = 'Update Status';
-        actionMessage = `Are you sure you want to change the status to "${updateData.status}"?`;
-      } else if (updateData.assignedTo) {
+        actionMessage = `Are you sure you want to change the status to "${status}"?`;
+      } else if (assignedTo) {
         actionName = 'Reassign Enquiry';
         actionMessage = 'Are you sure you want to reassign this enquiry?';
       }
 
-      showAlert(
-        actionName,
-        actionMessage,
-        'warning',
-        [
-          {
-            text: 'Cancel',
-            style: 'cancel',
-            onPress: () => resolve(false),
+      showAlert(actionName, actionMessage, 'warning', [
+        { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+        {
+          text: 'Confirm',
+          onPress: async () => {
+            try {
+              await doUpdate();
+              resolve(true);
+            } catch {
+              resolve(false);
+            }
           },
-          {
-            text: 'Confirm',
-            onPress: async () => {
-              try {
-                console.log('🔄 Updating enquiry:', updateData);
-                
-                // Build payload with proper field mapping
-                const payload = {
-                  id: updateData.id,
-                };
-                
-                // If status is being updated, set ALL status-related fields
-                if (updateData.status) {
-                  payload.status = updateData.status;
-                  payload.Status = updateData.status;
-                  payload.CurrentStatus = updateData.status;
-                }
-                
-                // If assignedTo is being updated, set ALL assignment-related fields
-                if (updateData.assignedTo) {
-                  payload.assignedTo = updateData.assignedTo;
-                  payload.AssignedTo = updateData.assignedTo;
-                }
-                
-                // Copy any other fields from updateData
-                Object.keys(updateData).forEach(key => {
-                  if (key !== 'id' && key !== 'status' && key !== 'assignedTo' && !payload[key]) {
-                    payload[key] = updateData[key];
-                  }
-                });
-                
-                console.log('📦 Final payload:', JSON.stringify(payload, null, 2));
-                
-                // Call RTK mutation
-                await updateEnquiry(payload).unwrap();
-                console.log('✅ Successfully updated!');
-                
-                // Refetch aggregate counts
-                if (refetchStatusStats) {
-                  await refetchStatusStats();
-                }
-                
-                // Trigger refresh after update
-                await fetchEnquiries({ pageToLoad: 1, append: false, suppressInlineLoader: false });
-                
-                resolve(true);
-              } catch (error) {
-                console.error('❌ Failed to update:', error);
-                resolve(false);
-              }
-            },
-          },
-        ]
-      );
+        },
+      ]);
     });
   }, [updateEnquiry, fetchEnquiries, refetchStatusStats]);
 
@@ -1757,7 +1679,6 @@ const EnquiryListScreen = ({ navigation }) => {
                 
                 // Call RTK mutation
                 await deleteEnquiry(enquiryId).unwrap();
-                console.log('✅ Successfully deleted!');
                 
                 // Refetch aggregate counts
                 if (refetchStatusStats) {
@@ -1789,7 +1710,7 @@ const EnquiryListScreen = ({ navigation }) => {
 
     try {
       return (
-        <View style={isClientView ? styles.cardWrapper : null}>
+        <View style={styles.cardWrapper}>
           <NewCard
             item={enquiry}
             navigation={navigation}
@@ -1798,48 +1719,47 @@ const EnquiryListScreen = ({ navigation }) => {
             onUpdateEnquiry={handleUpdateEnquiry}
             onDeleteEnquiry={handleDeleteEnquiry}
             isExpandedAll={!!isExpandedAll}
+            onFinalLook={handleFinalLook}
             onPress={() => navigation.navigate('SingleEnquiry', {
               enquiryId: enquiry.id || enquiry._id,
               enquiry: enquiry,
             })}
           />
-          {isClientView && (
-            <View style={styles.enquiryActionBar}>
-              <View style={styles.enquiryActionDivider} />
-              <View style={styles.enquiryActions}>
-                <TouchableOpacity
-                  style={styles.enquiryActionBtn}
-                  onPress={() => setPreviewEnquiry(enquiry)}
-                  activeOpacity={0.7}
-                >
-                  <Icon name="remove-red-eye" size={15} color={colors.primary} />
-                  <Text style={styles.enquiryActionText}>Preview</Text>
-                </TouchableOpacity>
+          <View style={styles.enquiryActionBar}>
+            <View style={styles.enquiryActionDivider} />
+            <View style={styles.enquiryActions}>
+              <TouchableOpacity
+                style={styles.enquiryActionBtn}
+                onPress={() => setPreviewEnquiry(enquiry)}
+                activeOpacity={0.7}
+              >
+                <Icon name="remove-red-eye" size={15} color={colors.primary} />
+                <Text style={styles.enquiryActionText}>Preview</Text>
+              </TouchableOpacity>
 
-                <View style={styles.enquiryActionSep} />
+              <View style={styles.enquiryActionSep} />
 
-                <TouchableOpacity
-                  style={styles.enquiryActionBtn}
-                  onPress={() => setSummaryEnquiryId(enquiry.id || enquiry._id)}
-                  activeOpacity={0.7}
-                >
-                  <Icon name="assessment" size={15} color={colors.primary} />
-                  <Text style={styles.enquiryActionText}>Summary</Text>
-                </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.enquiryActionBtn}
+                onPress={() => setSummaryEnquiryId(enquiry.id || enquiry._id)}
+                activeOpacity={0.7}
+              >
+                <Icon name="assessment" size={15} color={colors.primary} />
+                <Text style={styles.enquiryActionText}>Summary</Text>
+              </TouchableOpacity>
 
-                <View style={styles.enquiryActionSep} />
+              <View style={styles.enquiryActionSep} />
 
-                <TouchableOpacity
-                  style={styles.enquiryActionBtn}
-                  onPress={() => setChecklistEnquiryId(enquiry.id || enquiry._id)}
-                  activeOpacity={0.7}
-                >
-                  <Icon name="fact-check" size={15} color={colors.primary} />
-                  <Text style={styles.enquiryActionText}>Checklist</Text>
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity
+                style={styles.enquiryActionBtn}
+                onPress={() => setChecklistEnquiryId(enquiry.id || enquiry._id)}
+                activeOpacity={0.7}
+              >
+                <Icon name="fact-check" size={15} color={colors.primary} />
+                <Text style={styles.enquiryActionText}>Checklist</Text>
+              </TouchableOpacity>
             </View>
-          )}
+          </View>
         </View>
       );
     } catch (error) {
@@ -1848,7 +1768,7 @@ const EnquiryListScreen = ({ navigation }) => {
       }
       return null;
     }
-  }, [navigation, handleViewQuotation, activeTab, handleUpdateEnquiry, handleDeleteEnquiry]);
+  }, [navigation, handleViewQuotation, activeTab, handleUpdateEnquiry, handleDeleteEnquiry, handleFinalLook]);
 
   // Render list header - no longer needed as chips are moved outside FlatList
   const renderListHeader = () => {
@@ -2681,6 +2601,21 @@ const EnquiryListScreen = ({ navigation }) => {
           </View>
         </View>
       </Modal>
+      {/* ══ Quotation Modal ══════════════════════════════════════════════ */}
+      <QuotationModal
+        visible={showQuotationModal}
+        enquiryId={quotationEnquiryId}
+        onClose={() => { setShowQuotationModal(false); setQuotationEnquiryId(null); }}
+      />
+
+      <FinalLookModal
+        visible={showFinalLookModal}
+        enquiryId={finalLookEnquiryId}
+        clientName={finalLookClientName}
+        onApprove={handleApproveWithoutDesigner}
+        onClose={() => { setShowFinalLookModal(false); setFinalLookEnquiryId(null); setFinalLookClientName(''); }}
+      />
+
       <BrandedAlert
         visible={alertConfig.visible}
         title={alertConfig.title}
