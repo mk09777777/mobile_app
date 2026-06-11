@@ -74,7 +74,7 @@ const buildHtml = ({ enquiry, pricingResult, stones, metal, charges, clientName 
     <tr style="${i % 2 === 0 ? 'background:#f9f9f9' : ''}">
       <td>${s.Type || '-'}</td><td>${s.Color || '-'}</td><td>${s.Shape || '-'}</td>
       <td>${s.MmSize || '-'}</td><td>${s.SieveSize || '-'}</td>
-      <td>${s.Weight ?? 0}</td><td>${s.Pcs ?? 0}</td><td>${s.CtWeight ?? 0}</td>
+      <td>${s.Weight ?? 0}</td><td>${s.Pcs ?? 0}</td><td>${s.CtWeight ?? s.Carat ?? 0}</td>
       <td>${s.Markup ?? 0}</td><td>$${num(s.Price).toFixed(2)}</td>
     </tr>`).join('');
 
