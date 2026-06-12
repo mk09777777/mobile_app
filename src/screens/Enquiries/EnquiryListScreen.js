@@ -8,6 +8,7 @@ import {
   RefreshControl,
   Modal,
   Text,
+  TextInput,
   Dimensions,
   ActivityIndicator,
 } from 'react-native';
@@ -52,8 +53,20 @@ import FinalLookModal from '../../components/modals/FinalLookModal';
 
 
 const { width } = Dimensions.get('window');
-/** Items per API request (first load and each “Load more”). Not tied to screen size / grid columns. */
+/** Items per API request (first load and each "Load more"). Not tied to screen size / grid columns. */
 const PAGE_SIZE = 20;
+
+const CL_FIELDS = [
+  { key: 'Engraving',           label: 'Engraving',             multiline: false, keyboardType: 'default',     placeholder: 'e.g. Custom text or NA' },
+  { key: 'SizeLength',          label: 'Size (Length)',          multiline: false, keyboardType: 'decimal-pad', placeholder: 'e.g. 18.5 or NA'        },
+  { key: 'SizeRingSize',        label: 'Size (Ring Size)',       multiline: false, keyboardType: 'decimal-pad', placeholder: 'e.g. 7 or NA'           },
+  { key: 'DimensionsThickness', label: 'Dimensions (Thickness)', multiline: false, keyboardType: 'decimal-pad', placeholder: 'e.g. 2.5 or NA'         },
+  { key: 'DeliveryDate',        label: 'Delivery Date',          multiline: false, keyboardType: 'default',     placeholder: 'DD/MM/YYYY or NA'        },
+  { key: 'EnamelPaintwork',     label: 'Enamel / Paintwork',     multiline: true,  keyboardType: 'default',     placeholder: 'Describe or NA'          },
+  { key: 'RhodiumInstructions', label: 'Rhodium Instructions',   multiline: true,  keyboardType: 'default',     placeholder: 'Describe or NA'          },
+  { key: 'Components',          label: 'Components',             multiline: true,  keyboardType: 'default',     placeholder: 'List components or NA'   },
+  { key: 'Findings',            label: 'Findings',               multiline: true,  keyboardType: 'default',     placeholder: 'Describe findings or NA' },
+];
 
 /**
  * Collapse status strings so master-list labels match row CurrentStatus values.
@@ -1044,12 +1057,59 @@ const EnquiryListScreen = ({ navigation }) => {
   const { data: summaryEnquiry, isLoading: summaryLoading } = useGetEnquiryByIdQuery(summaryEnquiryId, { skip: !summaryEnquiryId });
   const [checklistEnquiryId, setChecklistEnquiryId] = useState(null);
   const { data: checklistEnquiry, isLoading: checklistLoading } = useGetEnquiryByIdQuery(checklistEnquiryId, { skip: !checklistEnquiryId });
+  const [editableChecklist,  setEditableChecklist]  = useState({});
+  const [checklistDirty,     setChecklistDirty]     = useState(false);
+  const [checklistSaving,    setChecklistSaving]    = useState(false);
+  const savedChecklistRef = useRef(null);
   const [refreshing, setRefreshing] = useState(false);
   const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
   const showAlert = (title, message, type = 'info', buttons = []) =>
     setAlertConfig({ visible: true, title, message, type, buttons });
   const hideAlert = () => setAlertConfig(prev => ({ ...prev, visible: false }));
-  
+
+  // Seed editable checklist whenever fresh data arrives (skip if we just saved)
+  useEffect(() => {
+    if (!checklistEnquiry) return;
+    const cl =
+      (checklistEnquiry?.Checklist && typeof checklistEnquiry.Checklist === 'object' && checklistEnquiry.Checklist) ||
+      (checklistEnquiry?._originalData?.Checklist && typeof checklistEnquiry._originalData.Checklist === 'object' && checklistEnquiry._originalData.Checklist) || null;
+    console.log('[Admin Checklist] seed effect fired, cl:', JSON.stringify(cl), 'enquiry keys:', Object.keys(checklistEnquiry));
+    console.log('[Admin Checklist] savedChecklistRef:', JSON.stringify(savedChecklistRef.current));
+    if (savedChecklistRef.current) {
+      const saved = savedChecklistRef.current;
+      savedChecklistRef.current = null;
+      const clStr = JSON.stringify(cl);
+      const savedStr = JSON.stringify(saved);
+      if (clStr === savedStr) {
+        console.log('[Admin Checklist] refetch matches saved data — skipping seed');
+        return;
+      }
+      console.log('[Admin Checklist] refetch differs from saved — allowing seed');
+    }
+    if (cl) {
+      const seed = {};
+      CL_FIELDS.forEach(f => { seed[f.key] = cl[f.key] != null ? String(cl[f.key]) : ''; });
+      console.log('[Admin Checklist] seeded editableChecklist from backend:', JSON.stringify(seed));
+      setEditableChecklist(seed);
+      setChecklistDirty(false);
+    } else {
+      console.log('[Admin Checklist] no cl from backend, seeding with NA defaults');
+      const seed = {};
+      CL_FIELDS.forEach(f => { seed[f.key] = 'NA'; });
+      setEditableChecklist(seed);
+      setChecklistDirty(false);
+    }
+  }, [checklistEnquiry]);
+
+  // Reset editable state when modal closes
+  useEffect(() => {
+    if (!checklistEnquiryId) {
+      setEditableChecklist({});
+      setChecklistDirty(false);
+      setChecklistSaving(false);
+    }
+  }, [checklistEnquiryId]);
+
   // Initialize activeTab based on user role
   const getInitialTab = () => {
     const role = user?.role?.toLowerCase();
@@ -1699,6 +1759,57 @@ const EnquiryListScreen = ({ navigation }) => {
       );
     });
   }, [deleteEnquiry, fetchEnquiries, refetchStatusStats]);
+
+  const handleChecklistFieldChange = useCallback((key, value) => {
+    setEditableChecklist(prev => ({ ...prev, [key]: value }));
+    setChecklistDirty(true);
+  }, []);
+
+  const handleSaveChecklist = useCallback(async () => {
+    if (!checklistEnquiryId || !checklistDirty) return;
+
+    console.log('[Admin Checklist] handleSaveChecklist start', {
+      checklistEnquiryId,
+      editableChecklist,
+      enquiryKeys: Object.keys(checklistEnquiry || {}),
+      hasChecklist: !!checklistEnquiry?.Checklist,
+      hasOriginalData: !!checklistEnquiry?._originalData?.Checklist,
+    });
+
+    setChecklistSaving(true);
+    try {
+      const existingCl =
+        (checklistEnquiry?.Checklist && typeof checklistEnquiry.Checklist === 'object' && checklistEnquiry.Checklist) ||
+        (checklistEnquiry?._originalData?.Checklist && typeof checklistEnquiry._originalData.Checklist === 'object' && checklistEnquiry._originalData.Checklist) || {};
+      console.log('[Admin Checklist] existingCl:', JSON.stringify(existingCl), 'source:', checklistEnquiry?.Checklist ? 'Checklist' : '_originalData');
+      let updatedChecklist = { ...existingCl, ...editableChecklist };
+      if (!updatedChecklist.GeneratedAt) {
+        updatedChecklist.GeneratedAt = new Date().toISOString();
+      }
+      console.log('[Admin Checklist] sending updatedChecklist:', JSON.stringify(updatedChecklist));
+      const currentStatus = checklistEnquiry?.status || checklistEnquiry?._originalData?.CurrentStatus || checklistEnquiry?._originalData?.Status;
+      const result = await updateEnquiry({ id: checklistEnquiryId, Status: currentStatus, Checklist: updatedChecklist }).unwrap();
+      console.log('[Admin Checklist] save result:', JSON.stringify(result));
+      // Store saved data so the seed effect can skip if refetch matches
+      savedChecklistRef.current = updatedChecklist;
+      setEditableChecklist(prev => {
+        const merged = { ...prev, ...editableChecklist };
+        Object.keys(updatedChecklist).forEach(k => {
+          if (CL_FIELDS.some(f => f.key === k)) {
+            merged[k] = String(updatedChecklist[k] ?? '');
+          }
+        });
+        return merged;
+      });
+      setChecklistDirty(false);
+      showAlert('Saved', 'Checklist updated successfully.', 'success', [{ text: 'OK' }]);
+    } catch (e) {
+      console.error('[Admin Checklist] save error:', e?.data || e?.message || e);
+      showAlert('Error', e?.data?.message || 'Failed to save checklist. Please try again.', 'error');
+    } finally {
+      setChecklistSaving(false);
+    }
+  }, [checklistEnquiryId, checklistDirty, editableChecklist, checklistEnquiry, updateEnquiry, showAlert]);
 
   const renderEnquiryItem = useCallback(({ item: enquiry, currentTab, isExpandedAll }) => {
     if (!enquiry || !enquiry.id) {
@@ -2712,7 +2823,12 @@ const EnquiryListScreen = ({ navigation }) => {
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox2}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Checklist</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalTitle}>Checklist</Text>
+                {checklistDirty && (
+                  <Text style={styles.clUnsavedBadge}>● Unsaved changes</Text>
+                )}
+              </View>
               <TouchableOpacity onPress={() => setChecklistEnquiryId(null)}>
                 <Icon name="close" size={24} color={colors.textSecondary} />
               </TouchableOpacity>
@@ -2721,58 +2837,61 @@ const EnquiryListScreen = ({ navigation }) => {
               <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 }}>
                 <ActivityIndicator size="large" color={colors.primary} />
               </View>
-            ) : checklistEnquiry && (
-              <ScrollView showsVerticalScrollIndicator={false}>
-                {(() => {
-                  // Checklist is a JSON object from the backend, not HTML
-                  const cl =
-                    (checklistEnquiry.Checklist && typeof checklistEnquiry.Checklist === 'object' && checklistEnquiry.Checklist) ||
-                    (checklistEnquiry._originalData?.Checklist && typeof checklistEnquiry._originalData.Checklist === 'object' && checklistEnquiry._originalData.Checklist) ||
-                    null;
-                  if (__DEV__) {
-                    console.log('📋 [Checklist modal] Checklist value:', JSON.stringify(cl));
-                  }
-                  if (!cl) {
-                    return (
-                      <View style={styles.detailCard}>
-                        <Text style={styles.detailValue}>No checklist found</Text>
-                      </View>
-                    );
-                  }
-                  // Field label map
-                  const FIELD_LABELS = {
-                    Engraving:           'Engraving',
-                    SizeLength:          'Size (Length)',
-                    SizeRingSize:        'Size (Ring Size)',
-                    DimensionsThickness: 'Dimensions (Thickness)',
-                    DeliveryDate:        'Delivery Date',
-                    EnamelPaintwork:     'Enamel / Paintwork',
-                    RhodiumInstructions: 'Rhodium Instructions',
-                    Components:          'Components',
-                    Findings:            'Findings',
-                  };
-                  const rows = Object.entries(FIELD_LABELS)
-                    .map(([key, label]) => ({ key, label, value: cl[key] }))
-                    .filter(r => r.value !== undefined && r.value !== null);
-                  if (cl.GeneratedAt) {
-                    // append generation date at bottom
-                    rows.push({ key: 'GeneratedAt', label: 'Generated At', value: new Date(cl.GeneratedAt).toLocaleString() });
-                  }
-                  return (
-                    <View style={styles.summaryContainer}>
-                      {rows.map(r => (
-                        <View key={r.key} style={styles.checklistRow}>
-                          <Text style={styles.checklistLabel}>{r.label}</Text>
-                          <Text style={[
-                            styles.checklistValue,
-                            String(r.value).toUpperCase() === 'NA' && styles.checklistValueNA,
-                          ]}>{String(r.value)}</Text>
-                        </View>
-                      ))}
+            ) : Object.keys(editableChecklist).length === 0 ? (
+              <View style={styles.emptyWrap}>
+                <Text style={styles.emptyText}>No checklist available</Text>
+              </View>
+            ) : (
+              <>
+                <ScrollView
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={{ paddingBottom: 12 }}
+                  keyboardShouldPersistTaps="handled"
+                >
+                  {CL_FIELDS.map(f => (
+                    <View key={f.key} style={styles.clEditRow}>
+                      <Text style={styles.clEditLabel}>{f.label}</Text>
+                      <TextInput
+                        style={[
+                          styles.clEditInput,
+                          f.multiline && styles.clEditInputMulti,
+                        ]}
+                        value={editableChecklist[f.key] ?? ''}
+                        onChangeText={v => handleChecklistFieldChange(f.key, v)}
+                        placeholder={f.placeholder}
+                        placeholderTextColor={colors.textSecondary}
+                        keyboardType={f.keyboardType}
+                        multiline={f.multiline}
+                        numberOfLines={f.multiline ? 3 : 1}
+                        textAlignVertical={f.multiline ? 'top' : 'center'}
+                        returnKeyType={f.multiline ? 'default' : 'next'}
+                        autoCorrect={false}
+                      />
                     </View>
-                  );
-                })()}
-              </ScrollView>
+                  ))}
+                </ScrollView>
+
+                <TouchableOpacity
+                  style={[
+                    styles.clSaveBtn,
+                    (!checklistDirty || checklistSaving) && styles.clSaveBtnDisabled,
+                  ]}
+                  onPress={handleSaveChecklist}
+                  disabled={!checklistDirty || checklistSaving}
+                  activeOpacity={0.85}
+                >
+                  {checklistSaving ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <>
+                      <Icon name="save" size={17} color="#fff" />
+                      <Text style={styles.clSaveBtnText}>
+                        {checklistDirty ? 'Save Changes' : 'Saved'}
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </>
             )}
           </View>
         </View>
@@ -3529,6 +3648,55 @@ const styles = StyleSheet.create({
   checklistValueNA: {
     color: colors.textSecondary,
     fontFamily: fonts.regular,
+  },
+
+  clUnsavedBadge: {
+    fontSize: 11,
+    fontFamily: fonts.medium,
+    color: colors.warning || '#F59E0B',
+    marginTop: 2,
+  },
+  clEditRow: {
+    marginBottom: 12,
+  },
+  clEditLabel: {
+    fontSize: fonts.sm,
+    fontFamily: fonts.medium,
+    color: colors.textPrimary,
+    marginBottom: 4,
+  },
+  clEditInput: {
+    borderWidth: 1,
+    borderColor: colors.borderLight || colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: fonts.sm,
+    fontFamily: fonts.regular,
+    color: colors.textPrimary,
+    backgroundColor: colors.background,
+  },
+  clEditInputMulti: {
+    minHeight: 72,
+    textAlignVertical: 'top',
+  },
+  clSaveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: colors.primary,
+    paddingVertical: 12,
+    borderRadius: 10,
+    marginTop: 8,
+  },
+  clSaveBtnDisabled: {
+    opacity: 0.5,
+  },
+  clSaveBtnText: {
+    fontSize: fonts.base,
+    fontFamily: fonts.bold,
+    color: '#fff',
   },
 });
 

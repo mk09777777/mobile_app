@@ -132,6 +132,7 @@ export default function ProductionSchedule() {
   const [todayScheduleData, setTodayScheduleData] = React.useState(null);
   const [todayLoading,      setTodayLoading]      = React.useState(false);
   const [showAllToday,      setShowAllToday]      = React.useState(false);
+  const [showAllStages,     setShowAllStages]     = React.useState(false);
 
   const windowDays = useMemo(
     () => daysBetween(selectedDates.startDate, selectedDates.endDate),
@@ -426,13 +427,13 @@ export default function ProductionSchedule() {
         visible={showTodayModal}
         animationType="slide"
         transparent
-        onRequestClose={() => { setShowTodayModal(false); setShowAllToday(false); }}
+        onRequestClose={() => { setShowTodayModal(false); setShowAllToday(false); setShowAllStages(false); }}
       >
         <View style={styles.container2}>
           <TouchableOpacity
             style={styles.overlayTop}
             activeOpacity={1}
-            onPress={() => { setShowTodayModal(false); setShowAllToday(false); }}
+            onPress={() => { setShowTodayModal(false); setShowAllToday(false); setShowAllStages(false); }}
           />
           <View style={styles.modalBox}>
             <View style={styles.handle} />
@@ -452,7 +453,7 @@ export default function ProductionSchedule() {
               </View>
               <TouchableOpacity
                 style={styles.closeBtn}
-                onPress={() => { setShowTodayModal(false); setShowAllToday(false); }}
+                onPress={() => { setShowTodayModal(false); setShowAllToday(false); setShowAllStages(false); }}
               >
                 <MaterialIcons name="close" size={18} color={colors.textLight} />
               </TouchableOpacity>
@@ -524,6 +525,49 @@ export default function ProductionSchedule() {
 
                 {(todayScheduleData?.startToday?.length || 0) === 0 && !todayLoading && (
                   <Text style={styles.emptyText}>No pieces scheduled for this day</Text>
+                )}
+
+                {/* Stage Load section */}
+                {todayScheduleData?.stageLoad && todayScheduleData.stageLoad.length > 0 && (
+                  <View style={{ marginTop: 20 }}>
+                    <View style={styles.stageLoadHeader}>
+                      <Text style={styles.stageLoadTitle}>Stage Load</Text>
+                      {todayScheduleData.stageLoad.length > 3 && (
+                        <TouchableOpacity onPress={() => setShowAllStages(v => !v)}>
+                          <Text style={styles.viewAllText}>
+                            {showAllStages ? 'Show Less' : `View All (${todayScheduleData.stageLoad.length})`}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                    {(showAllStages
+                      ? todayScheduleData.stageLoad
+                      : todayScheduleData.stageLoad.slice(0, 3)
+                    ).map((stageItem, idx) => {
+                      const util = stageItem.utilisation || 0;
+                      const barColor =
+                        util >= 95 ? '#EF4444' : util >= 80 ? '#F59E0B' : '#10B981';
+                      return (
+                        <View key={idx} style={styles.stageLoadItem}>
+                          <View style={styles.stageLoadMeta}>
+                            <Text style={styles.stageName}>{stageItem.stage}</Text>
+                            <Text style={styles.stageUtil}>{util.toFixed(1)}%</Text>
+                          </View>
+                          <View style={styles.stageLoadBarBg}>
+                            <View
+                              style={[
+                                styles.stageLoadBarFill,
+                                {
+                                  width: `${Math.min(util, 100)}%`,
+                                  backgroundColor: barColor,
+                                },
+                              ]}
+                            />
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
                 )}
               </ScrollView>
             )}
@@ -734,4 +778,36 @@ const styles = StyleSheet.create({
   todayCardMetaRow: { flexDirection: 'row', alignItems: 'center' },
   todayCardMeta:    { fontSize: 12, color: colors.textSecondary },
   todayCardDue:     { fontSize: 12, fontWeight: '600' },
+
+  // Stage Load section
+  stageLoadHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    paddingBottom: 8,
+  },
+  stageLoadTitle:  { fontSize: 13, fontWeight: '600', color: colors.textBlack },
+  stageLoadItem: {
+    marginBottom: 12,
+  },
+  stageLoadMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  stageUtil: { fontSize: 11, fontWeight: '600', color: colors.textSecondary },
+  stageLoadBarBg: {
+    height: 8,
+    backgroundColor: '#e5e7eb',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  stageLoadBarFill: {
+    height: '100%',
+    borderRadius: 4,
+  },
 });

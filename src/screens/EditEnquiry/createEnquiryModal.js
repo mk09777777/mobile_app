@@ -203,6 +203,34 @@ export default function CreateEnquiryModal({ visible, onClose, onEnquiryCreated,
       return;
     }
 
+    // Validation: check all required fields are filled
+    const isAIParsingFlow = textSubmitted && parsedData !== null;
+    const name = isAIParsingFlow ? (missingFieldsData.Name || parsedData?.Name || '').trim() : '';
+
+    // Check if name is filled
+    if (isAIParsingFlow && !name) {
+      showAlert('Missing Field', 'Please enter a name for the enquiry.', 'warning');
+      return;
+    }
+
+    // Check if all dynamic missing fields are filled
+    if (isAIParsingFlow && dynamicMissingFields.length > 0) {
+      const unfilled = dynamicMissingFields.find(field => {
+        const value = missingFieldsData[field.field];
+        return value === undefined || value === null || value === '';
+      });
+      if (unfilled) {
+        showAlert('Missing Field', `Please fill in: ${unfilled.label}`, 'warning');
+        return;
+      }
+    }
+
+    // Check if "Assign To" is selected
+    if (!assignedTo) {
+      showAlert('Missing Assignment', 'Please assign this enquiry to a team member.', 'warning');
+      return;
+    }
+
     try {
       const isAIParsingFlow = textSubmitted && parsedData !== null;
       let finalData;
@@ -476,7 +504,7 @@ export default function CreateEnquiryModal({ visible, onClose, onEnquiryCreated,
 
                 {/* Assign To — shown only after AI parsing, users filtered by parsed status */}
                 <View style={styles.assignRow}>
-                  <IconComponent name="person-add" size={16} color={colors.textSecondary} />
+                  <IconComponent name="person-add" size={16} color={assignedTo ? colors.primary : colors.error} />
                   {assignedTo ? (
                     <View style={styles.assignedBadge}>
                       <Text style={styles.assignedBadgeText}>{assignedTo.name}</Text>
@@ -485,15 +513,20 @@ export default function CreateEnquiryModal({ visible, onClose, onEnquiryCreated,
                       </TouchableOpacity>
                     </View>
                   ) : (
-                    <TouchableOpacity style={styles.assignBtn} onPress={() => setShowAssignModal(true)} activeOpacity={0.8}>
-                      <Text style={styles.assignBtnText}>Assign To</Text>
-                      <IconComponent name="arrow-drop-down" size={16} color={colors.primary} />
+                    <TouchableOpacity style={[styles.assignBtn, styles.assignBtnMissing]} onPress={() => setShowAssignModal(true)} activeOpacity={0.8}>
+                      <Text style={[styles.assignBtnText, styles.assignBtnTextMissing]}>Assign To *</Text>
+                      <IconComponent name="arrow-drop-down" size={16} color={colors.error} />
                     </TouchableOpacity>
                   )}
                 </View>
 
-                <TouchableOpacity onPress={handleSubmit} disabled={isSubmitting}>
-                  <View style={[styles.submitBtn, isSubmitting && styles.submitBtnDisabled]}>
+                {/* Validation message */}
+                {!assignedTo && (
+                  <Text style={styles.validationError}>⚠️ Assign to a team member to continue</Text>
+                )}
+
+                <TouchableOpacity onPress={handleSubmit} disabled={isSubmitting || !assignedTo}>
+                  <View style={[styles.submitBtn, (isSubmitting || !assignedTo) && styles.submitBtnDisabled]}>
                     {isSubmitting ? (
                       <ActivityIndicator size="small" color={colors.textWhite} />
                     ) : (
@@ -911,7 +944,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 12,
+    marginBottom: 4,
     minHeight: 32,
   },
   assignBtn: {
@@ -925,10 +958,24 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primaryExtraLight || colors.backgroundSecondary,
     gap: 2,
   },
+  assignBtnMissing: {
+    borderColor: colors.error,
+    backgroundColor: '#FEF2F2',
+  },
   assignBtnText: {
     fontSize: fonts.sm,
     fontFamily: fonts.medium,
     color: colors.primary,
+  },
+  assignBtnTextMissing: {
+    color: colors.error,
+  },
+  validationError: {
+    fontSize: fonts.xs,
+    color: colors.error,
+    marginLeft: 24,
+    marginBottom: 12,
+    fontFamily: fonts.regular,
   },
   assignedBadge: {
     flexDirection: 'row',
