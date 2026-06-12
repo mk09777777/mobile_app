@@ -559,6 +559,29 @@ const ClientHandlerEnquiryScreen = ({ navigation, route }) => {
     await updateEnquiry({ id: enquiryId, Status: statusName, ApprovedDate: new Date().toISOString() }).unwrap();
   }, [updateEnquiry, statusesData]);
 
+  // ── Quotation handler ─────────────────────────────────────────────────────
+  const handleViewQuotation = useCallback((enquiry) => {
+    const id = enquiry?._id || enquiry?.id || enquiry?.Id;
+    setQuotationEnquiryId(id);
+    setShowQuotationModal(true);
+  }, []);
+
+  // ── Final Look handler ────────────────────────────────────────────────────
+  const handleFinalLook = useCallback((enquiry) => {
+    const id = enquiry?._id || enquiry?.id || enquiry?.Id;
+    const name = enquiry?.clientName || enquiry?.ClientName || '';
+    setFinalLookEnquiryId(id);
+    setFinalLookClientName(name);
+    setShowFinalLookModal(true);
+  }, []);
+
+
+  const handleApproveWithoutDesigner = useCallback(async (enquiryId) => {
+    const prodStatus = statusesData?.find(s => s.name?.toLowerCase() === 'production');
+    const statusName = prodStatus?.name || 'Production';
+    await updateEnquiry({ id: enquiryId, Status: statusName, ApprovedDate: new Date().toISOString() }).unwrap();
+  }, [updateEnquiry, statusesData]);
+
   // ── Render helpers ────────────────────────────────────────────────────────
   const renderItem = useCallback(({ item }) => (
     <EnquiryCardItem
