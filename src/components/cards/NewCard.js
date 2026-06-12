@@ -11,7 +11,6 @@ import {
   View,
   Text,
   TextInput,
-  Alert,
   ActivityIndicator,
   ScrollView,
   Dimensions,
@@ -22,6 +21,7 @@ import {
   Platform,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Video from 'react-native-video';
 import { colors } from '../../constants/colors';
 import { fonts } from '../../constants/fonts';
 import { FILE_BASE_URL } from '../../config/apiConfig';
@@ -40,6 +40,27 @@ import {
 } from '../../store/api';
 
 const { width: screenWidth } = Dimensions.get('window');
+
+function ModalVideoItem({ uri }) {
+  const [paused, setPaused] = useState(true);
+  return (
+    <TouchableOpacity activeOpacity={1} onPress={() => setPaused(p => !p)} style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+      <Video
+        source={{ uri }}
+        style={styles.fullscreenImage}
+        resizeMode="contain"
+        paused={paused}
+        controls={false}
+        repeat={false}
+      />
+      {paused && (
+        <View style={styles.modalVideoPlayOverlay}>
+          <Icon name="play-circle-filled" size={64} color="rgba(255,255,255,0.9)" />
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+}
 
 export default function NewEnquiryCard({
   item,
@@ -98,6 +119,7 @@ export default function NewEnquiryCard({
   const status = (item?.CurrentStatus || 'pending').toLowerCase();
   const isCoral = user?.role === 'coral';
   const isCad = user?.role === 'cad';
+  const isClientHandler = user?.role === 'client_handler';
 
   // Fix status matching to match actual database values
   const isJustCreated =
@@ -141,6 +163,7 @@ export default function NewEnquiryCard({
         const results = await Promise.all(referenceImages.map(async img => {
           const imageKey = img?.Key;
           if (!imageKey) return null;
+          const isVideo = typeof img?.MimeType === 'string' && img.MimeType.toLowerCase().startsWith('video/');
           try {
             const res = await fetch(`${FILE_BASE_URL}/api/enquiries/files/${encodeURIComponent(imageKey)}`, {
               headers: { Authorization: `Bearer ${token}` },
@@ -149,11 +172,12 @@ export default function NewEnquiryCard({
             const ct = res.headers.get('content-type') || '';
             if (ct.includes('application/json')) {
               const j = await res.json();
-              return j.url || j.imageUrl || null;
+              const uri = j.url || j.imageUrl || null;
+              return uri ? { uri, isVideo } : null;
             }
             const buf = await res.arrayBuffer();
             const b64 = btoa(new Uint8Array(buf).reduce((d, b) => d + String.fromCharCode(b), ''));
-            return `data:${ct};base64,${b64}`;
+            return { uri: `data:${ct};base64,${b64}`, isVideo: ct.startsWith('video/') };
           } catch { return null; }
         }));
         if (!cancelled) setImagesData(results.filter(Boolean));
@@ -215,7 +239,7 @@ export default function NewEnquiryCard({
   const shouldShowAdminCoralUpload     = isAdmin && isCoralPending;
   const shouldShowAdminCadUpload       = isAdmin && (isCadPending || isApprovedCad);
   const shouldShowAdminPlacement       = isAdmin && isPlacementStage;
-  const shouldShowAdminProduction      = isAdmin && isProduction;
+  const shouldShowAdminProduction      = (isAdmin || isClientHandler) && isProduction;
 
   // Designers: show upload for their stage regardless of how the enquiry was created
   const shouldShowCoralDesignerButtons = isCoral && isCoralPending;
@@ -239,8 +263,11 @@ export default function NewEnquiryCard({
       console.error('onUpdateEnquiry prop not provided');
       return false;
     }
+    const lastHistory = item?.StatusHistory?.at(-1);
     const payload = {
       id: item?.Id || item?._id || item?.id,
+      Status: lastHistory?.Status,
+      AssignedTo: lastHistory?.AssignedTo ?? null,
       ...updateData,
     };
     const result = await onUpdateEnquiry(payload);
@@ -288,7 +315,7 @@ export default function NewEnquiryCard({
   const handleApproveWithDesigner = async (designer) => {
     const design = getLatestDesign();
     if (!design) {
-      Alert.alert('Error', 'No design version found to approve.');
+      showAlert('Error', 'No design version found to approve.', 'warning', [{ text: 'OK' }]);
       return;
     }
     const clientId = item?.ClientId || item?.clientId;
@@ -315,9 +342,9 @@ export default function NewEnquiryCard({
       const msg = isApprovedCad
         ? 'CAD approved. Enquiry moved to Production.'
         : 'Design approved and assigned to CAD designer.';
-      Alert.alert('Approved', msg);
+      showAlert('Approved', msg, 'success', [{ text: 'OK' }]);
     } catch (e) {
-      Alert.alert('Failed', e?.data?.message || 'Could not approve the design. Please try again.');
+      showAlert('Failed', e?.data?.message || 'Could not approve the design. Please try again.', 'error', [{ text: 'OK' }]);
     } finally {
       setIsActionLoading(false);
     }
@@ -327,7 +354,7 @@ export default function NewEnquiryCard({
     if (!updateReason.trim()) return;
     const design = getLatestDesign();
     if (!design) {
-      Alert.alert('Error', 'No design version found.');
+      showAlert('Error', 'No design version found.', 'warning', [{ text: 'OK' }]);
       return;
     }
     setIsActionLoading(true);
@@ -350,9 +377,9 @@ export default function NewEnquiryCard({
       setShowQuotationActions(false);
       setShowReasonInput(false);
       setUpdateReason('');
-      Alert.alert('Update Requested', 'Your revision request has been sent. The design will be updated.');
+      showAlert('Update Requested', 'Your revision request has been sent. The design will be updated.', 'success', [{ text: 'OK' }]);
     } catch (e) {
-      Alert.alert('Failed', e?.data?.message || 'Could not send the update request. Please try again.');
+      showAlert('Failed', e?.data?.message || 'Could not send the update request. Please try again.', 'error', [{ text: 'OK' }]);
     } finally {
       setIsActionLoading(false);
     }
@@ -412,9 +439,26 @@ export default function NewEnquiryCard({
             ) : imagesData.length > 0 ? (
               <View style={styles.carouselContainer}>
                 <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} onScroll={handleScroll} scrollEventThrottle={16}>
-                  {imagesData.map((imageUri, index) => (
-                    <TouchableOpacity key={`image-${index}`} activeOpacity={0.9} onPress={() => handleImagePress(index)}>
-                      <ImageBackground source={{ uri: imageUri }} style={styles.carouselImage}>
+                  {imagesData.map((media, index) => (
+                    <TouchableOpacity key={`media-${index}`} activeOpacity={0.9} onPress={() => handleImagePress(index)}>
+                      <View style={styles.carouselImage}>
+                        {media.isVideo ? (
+                          <Video
+                            source={{ uri: media.uri }}
+                            style={StyleSheet.absoluteFill}
+                            resizeMode="cover"
+                            paused
+                            muted
+                            repeat={false}
+                          />
+                        ) : (
+                          <ImageBackground source={{ uri: media.uri }} style={StyleSheet.absoluteFill} />
+                        )}
+                        {media.isVideo && (
+                          <View style={styles.carouselPlayOverlay}>
+                            <Icon name="play-circle-filled" size={44} color="rgba(255,255,255,0.9)" />
+                          </View>
+                        )}
                         <View style={styles.StatusContainerStart}>
                           <View style={[styles.PriortyContainer, { backgroundColor: getPriorityColor(priority) }]}>
                             <Text style={styles.PriorityText} numberOfLines={1} ellipsizeMode="tail">{priority.toUpperCase()} Priority</Text>
@@ -430,7 +474,7 @@ export default function NewEnquiryCard({
                             )}
                           </View>
                         </View>
-                      </ImageBackground>
+                      </View>
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
@@ -740,7 +784,15 @@ export default function NewEnquiryCard({
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.QuickActionButton}
-              onPress={async () => { await updateEnquiryStatus({ Status: 'Shipped' }); }}
+              onPress={() => showAlert(
+                'Move to Shipped',
+                'Are you sure you want to mark this enquiry as Shipped?',
+                'warning',
+                [
+                  { text: 'Cancel', onPress: hideAlert },
+                  { text: 'Confirm', onPress: async () => { hideAlert(); await updateEnquiryStatus({ Status: 'Shipped' }); } },
+                ]
+              )}
             >
               <Icon name="local-shipping" size={16} color={colors.textWhite} />
               <Text style={styles.QuickActionButtonText}>Shipped</Text>
@@ -847,7 +899,7 @@ export default function NewEnquiryCard({
                           await updateEnquiryStatus({ Status: 'Order Placement' });
                           setShowQuotationActions(false);
                         } catch (e) {
-                          Alert.alert('Failed', e?.data?.message || 'Could not move to Order Placement.');
+                          showAlert('Failed', e?.data?.message || 'Could not move to Order Placement.', 'error', [{ text: 'OK' }]);
                         } finally {
                           setIsActionLoading(false);
                         }
@@ -1024,12 +1076,16 @@ export default function NewEnquiryCard({
             scrollEventThrottle={16}
             scrollEnabled={zoomedImageIndex === null}
             keyExtractor={(_, index) => `modal-img-${index}`}
-            renderItem={({ item: imageUri, index }) => (
+            renderItem={({ item: media, index }) => (
               <View style={styles.modalImageContainer}>
-                <TouchableOpacity activeOpacity={1} onPress={() => handleDoubleTap(index)} style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                  <Image source={{ uri: imageUri }} style={[styles.fullscreenImage, zoomedImageIndex === index && styles.fullscreenImageZoomed]} resizeMode="contain" />
-                </TouchableOpacity>
-                {zoomedImageIndex === index && (
+                {media.isVideo ? (
+                  <ModalVideoItem uri={media.uri} />
+                ) : (
+                  <TouchableOpacity activeOpacity={1} onPress={() => handleDoubleTap(index)} style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                    <Image source={{ uri: media.uri }} style={[styles.fullscreenImage, zoomedImageIndex === index && styles.fullscreenImageZoomed]} resizeMode="contain" />
+                  </TouchableOpacity>
+                )}
+                {!media.isVideo && zoomedImageIndex === index && (
                   <View style={styles.zoomHintContainer}>
                     <Text style={styles.zoomHintText}>Tap again to zoom out</Text>
                   </View>
@@ -1205,7 +1261,8 @@ const styles = StyleSheet.create({
   placeholderContainer: { width: '100%', height: 200, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.backgroundSecondary },
   placeholderText: { fontSize: 14, color: colors.textLight, fontFamily: fonts.regular, paddingHorizontal: 10 },
   carouselContainer: { width: '100%', height: 200, position: 'relative' },
-  carouselImage: { width: Dimensions.get('window').width - 60, height: '100%', marginRight: 3 },
+  carouselImage: { width: Dimensions.get('window').width - 60, height: 200, marginRight: 3, overflow: 'hidden', backgroundColor: '#000' },
+  carouselPlayOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.3)' },
   paginationContainer: { position: 'absolute', bottom: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
   paginationText: { fontSize: 12, color: colors.textWhite, fontFamily: fonts.medium },
   ButtonContainer: { borderTopColor: colors.border, borderTopWidth: 1, marginTop: 10, paddingTop: 8, flexDirection: 'column' },
@@ -1251,6 +1308,7 @@ const styles = StyleSheet.create({
   fullscreenImageZoomed: { width: Dimensions.get('window').width * 2.5, height: Dimensions.get('window').height * 2.5 },
   zoomHintContainer: { position: 'absolute', bottom: 100, alignSelf: 'center', backgroundColor: 'rgba(0,0,0,0.7)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
   zoomHintText: { color: colors.textWhite, fontSize: 12, fontFamily: fonts.medium },
+  modalVideoPlayOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center' },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',

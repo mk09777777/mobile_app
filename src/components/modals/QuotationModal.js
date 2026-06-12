@@ -37,7 +37,7 @@ import {
   useSavePricingMutation,
   useGetEnquiryByIdQuery,
 } from '../../store/api';
-import { generateCompareImagesHTML } from '../../utils/pdfGenerator';
+import CompareRefrences from './CompareRefrences';
 
 const METAL_QUALITY_OPTIONS = ['10K', '14K', '18K', '22K', 'Silver 925', 'Platinum'];
 
@@ -184,9 +184,7 @@ const QuotationModal = ({ visible, enquiryId, onClose }) => {
   const [showPdf,       setShowPdf]       = useState(false);
   const [isSharing,     setIsSharing]     = useState(false);
 
-  const [compareHtml,          setCompareHtml]          = useState(null);
-  const [showComparePdf,       setShowComparePdf]       = useState(false);
-  const [isGeneratingCompare,  setIsGeneratingCompare]  = useState(false);
+  const [showCompareModal, setShowCompareModal] = useState(false);
 
   const [clientMsg,     setClientMsg]     = useState('');
   const [copied,        setCopied]        = useState(false);
@@ -252,8 +250,7 @@ const QuotationModal = ({ visible, enquiryId, onClose }) => {
       setPricingResult(null);
       setPdfHtml(null);
       setShowPdf(false);
-      setCompareHtml(null);
-      setShowComparePdf(false);
+      setShowCompareModal(false);
       setCopied(false);
 
   }, [visible, isFetchingEnquiry, fullEnquiry, enquiryId, sourcePricing, metalPricesData]);
@@ -522,19 +519,9 @@ const QuotationModal = ({ visible, enquiryId, onClose }) => {
     }
   }, [pdfHtml, fullEnquiry, showAlert]);
 
-  const handleCompareImages = useCallback(async () => {
-    if (!fullEnquiry) return;
-    setIsGeneratingCompare(true);
-    try {
-      const html = await generateCompareImagesHTML(fullEnquiry);
-      setCompareHtml(html);
-      setShowComparePdf(true);
-    } catch (e) {
-      showAlert('Error', 'Could not generate image comparison.', 'error', [{ text: 'OK' }]);
-    } finally {
-      setIsGeneratingCompare(false);
-    }
-  }, [fullEnquiry, showAlert]);
+  const handleCompareImages = useCallback(() => {
+    setShowCompareModal(true);
+  }, []);
 
   const hasMissingStones = missingIndices.size > 0 || diamonds.length === 0;
 
@@ -547,7 +534,7 @@ const QuotationModal = ({ visible, enquiryId, onClose }) => {
 
   return (
     <>
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={() => { if (showComparePdf) { setShowComparePdf(false); } else if (showPdf) { setShowPdf(false); } else { onClose(); } }}>
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={() => { if (showPdf) { setShowPdf(false); } else { onClose(); } }}>
       <View style={s.overlay}>
         <View style={s.sheet}>
 
@@ -558,23 +545,13 @@ const QuotationModal = ({ visible, enquiryId, onClose }) => {
               {fullEnquiry?.Name ? <Text style={s.headerSub} numberOfLines={1}>{fullEnquiry.Name}</Text> : null}
             </View>
             {isFetchingEnquiry && <ActivityIndicator size="small" color="#fff" style={{ marginRight: 6 }} />}
-            <TouchableOpacity style={s.closeBtn} onPress={showComparePdf ? () => setShowComparePdf(false) : showPdf ? () => setShowPdf(false) : onClose} activeOpacity={0.7}>
-              <Icon name={(showPdf || showComparePdf) ? 'arrow-back' : 'close'} size={22} color="#fff" />
+            <TouchableOpacity style={s.closeBtn} onPress={showPdf ? () => setShowPdf(false) : onClose} activeOpacity={0.7}>
+              <Icon name={showPdf ? 'arrow-back' : 'close'} size={22} color="#fff" />
             </TouchableOpacity>
           </View>
 
-          {/* ── Compare Images PDF overlay ───────────────────────────── */}
-          {showComparePdf ? (
-            <View style={{ flex: 1 }}>
-              <PdfViewer html={compareHtml} style={{ flex: 1 }} />
-              <View style={s.pdfBar}>
-                <TouchableOpacity style={s.pdfBarBtn} onPress={() => setShowComparePdf(false)} activeOpacity={0.8}>
-                  <Icon name="arrow-back" size={18} color="#fff" />
-                  <Text style={s.pdfBarBtnText}>Back</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ) : showPdf ? (
+          {/* ── PDF full-screen overlay ──────────────────────────────── */}
+          {showPdf ? (
             <View style={{ flex: 1 }}>
               <PdfViewer html={pdfHtml} style={{ flex: 1 }} />
               <View style={s.pdfBar}>
@@ -724,14 +701,12 @@ const QuotationModal = ({ visible, enquiryId, onClose }) => {
 
               {/* ── COMPARE IMAGES ────────────────────────────────────── */}
               <TouchableOpacity
-                style={[s.calcBtn, { backgroundColor: '#7C3AED', marginBottom: 10 }, isGeneratingCompare && s.calcBtnDisabled]}
+                style={[s.calcBtn, { backgroundColor: '#7C3AED', marginBottom: 10 }]}
                 onPress={handleCompareImages}
-                disabled={isGeneratingCompare}
                 activeOpacity={0.85}
               >
-                {isGeneratingCompare
-                  ? <><ActivityIndicator size="small" color="#fff" /><Text style={s.calcBtnText}>Loading Images...</Text></>
-                  : <><Icon name="compare" size={18} color="#fff" /><Text style={s.calcBtnText}>Compare Images</Text></>}
+                <Icon name="compare" size={18} color="#fff" />
+                <Text style={s.calcBtnText}>Compare Images</Text>
               </TouchableOpacity>
 
               {/* ── CALCULATE ─────────────────────────────────────────── */}
@@ -820,6 +795,13 @@ const QuotationModal = ({ visible, enquiryId, onClose }) => {
       </Modal>
 
     </Modal>
+
+    <CompareRefrences
+      visible={showCompareModal}
+      onClose={() => setShowCompareModal(false)}
+      fullEnquiry={fullEnquiry}
+      isFetchingEnquiry={isFetchingEnquiry}
+    />
 
     {/* ── DiamondEditModal — outside parent Modal so iOS events work ── */}
     <DiamondEditModal

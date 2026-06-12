@@ -71,6 +71,7 @@ const SORT_OPTIONS = [
   { key: 'date_asc',      label: 'Oldest First',        icon: 'history'        },
 ];
 
+
 const PRIORITY_ORDER = { high: 0, medium: 1, low: 2 };
 const getPriorityRank = p => PRIORITY_ORDER[String(p || '').toLowerCase()] ?? 1;
 
@@ -166,46 +167,17 @@ const renderMdSummary = (input, s) => {
 };
 
 // ─── Checklist field definitions ─────────────────────────────────────────────
-//
-//  type:
-//    'text'    – free text, any input accepted
-//    'numeric' – must be a positive number or the literal "NA"
-//    'date'    – must match DD/MM/YYYY, MM/DD/YYYY, YYYY-MM-DD or "NA"
-//
 const CL_FIELDS = [
-  { key: 'Engraving',           label: 'Engraving',             multiline: false, type: 'text',    keyboardType: 'default',     placeholder: 'e.g. Custom text or NA' },
-  { key: 'SizeLength',          label: 'Size (Length)',          multiline: false, type: 'numeric', keyboardType: 'decimal-pad', placeholder: 'e.g. 18.5 or NA'        },
-  { key: 'SizeRingSize',        label: 'Size (Ring Size)',       multiline: false, type: 'numeric', keyboardType: 'decimal-pad', placeholder: 'e.g. 7 or NA'           },
-  { key: 'DimensionsThickness', label: 'Dimensions (Thickness)', multiline: false, type: 'numeric', keyboardType: 'decimal-pad', placeholder: 'e.g. 2.5 or NA'         },
-  { key: 'DeliveryDate',        label: 'Delivery Date',          multiline: false, type: 'date',    keyboardType: 'default',     placeholder: 'DD/MM/YYYY or NA'        },
-  { key: 'EnamelPaintwork',     label: 'Enamel / Paintwork',     multiline: true,  type: 'text',    keyboardType: 'default',     placeholder: 'Describe or NA'          },
-  { key: 'RhodiumInstructions', label: 'Rhodium Instructions',   multiline: true,  type: 'text',    keyboardType: 'default',     placeholder: 'Describe or NA'          },
-  { key: 'Components',          label: 'Components',             multiline: true,  type: 'text',    keyboardType: 'default',     placeholder: 'List components or NA'   },
-  { key: 'Findings',            label: 'Findings',               multiline: true,  type: 'text',    keyboardType: 'default',     placeholder: 'Describe findings or NA' },
+  { key: 'Engraving',           label: 'Engraving',             multiline: false, type: 'text', keyboardType: 'default',     placeholder: 'e.g. Custom text or NA' },
+  { key: 'SizeLength',          label: 'Size (Length)',          multiline: false, type: 'text', keyboardType: 'decimal-pad', placeholder: 'e.g. 18.5 or NA'        },
+  { key: 'SizeRingSize',        label: 'Size (Ring Size)',       multiline: false, type: 'text', keyboardType: 'decimal-pad', placeholder: 'e.g. 7 or NA'           },
+  { key: 'DimensionsThickness', label: 'Dimensions (Thickness)', multiline: false, type: 'text', keyboardType: 'decimal-pad', placeholder: 'e.g. 2.5 or NA'         },
+  { key: 'DeliveryDate',        label: 'Delivery Date',          multiline: false, type: 'text', keyboardType: 'default',     placeholder: 'DD/MM/YYYY or NA'        },
+  { key: 'EnamelPaintwork',     label: 'Enamel / Paintwork',     multiline: true,  type: 'text', keyboardType: 'default',     placeholder: 'Describe or NA'          },
+  { key: 'RhodiumInstructions', label: 'Rhodium Instructions',   multiline: true,  type: 'text', keyboardType: 'default',     placeholder: 'Describe or NA'          },
+  { key: 'Components',          label: 'Components',             multiline: true,  type: 'text', keyboardType: 'default',     placeholder: 'List components or NA'   },
+  { key: 'Findings',            label: 'Findings',               multiline: true,  type: 'text', keyboardType: 'default',     placeholder: 'Describe findings or NA' },
 ];
-
-// Returns an error string or null
-const validateClField = (type, value) => {
-  const v = String(value ?? '').trim();
-  if (v === '' || v.toUpperCase() === 'NA') return null; // empty / NA always valid
-  switch (type) {
-    case 'numeric': {
-      const n = Number(v);
-      if (isNaN(n) || n < 0) return 'Must be a positive number or NA';
-      return null;
-    }
-    case 'date': {
-      // Accept DD/MM/YYYY, MM/DD/YYYY, YYYY-MM-DD, or any parseable date string
-      const ddmm  = /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(v);
-      const isoFmt = /^\d{4}-\d{2}-\d{2}$/.test(v);
-      const parsed = new Date(v);
-      if (!ddmm && !isoFmt && isNaN(parsed.getTime())) return 'Enter a valid date (DD/MM/YYYY) or NA';
-      return null;
-    }
-    default:
-      return null;
-  }
-};
 
 // ─── Card with action bar ─────────────────────────────────────────────────────
 const EnquiryCardItem = React.memo(({
@@ -270,10 +242,9 @@ const ClientHandlerEnquiryScreen = ({ navigation, route }) => {
 
   // ── Modal state ───────────────────────────────────────────────────────────
   const [previewEnquiry,     setPreviewEnquiry]     = useState(null);
-  const [summaryEnquiryId,   setSummaryEnquiryId]   = useState(null);
+  const [summaryEnquiryId, setSummaryEnquiryId] = useState(null);
   const [checklistEnquiryId, setChecklistEnquiryId] = useState(null);
   const [editableChecklist,  setEditableChecklist]  = useState({});  // live-edit state
-  const [checklistErrors,    setChecklistErrors]    = useState({});  // field-level validation errors
   const [checklistDirty,     setChecklistDirty]     = useState(false);
   const [checklistSaving,    setChecklistSaving]    = useState(false);
   const [showCreateModal,    setShowCreateModal]    = useState(false);
@@ -434,8 +405,8 @@ const ClientHandlerEnquiryScreen = ({ navigation, route }) => {
   }, [isFetching, data, page]);
 
   // ── Card handlers ─────────────────────────────────────────────────────────
-  const handleUpdate = useCallback(async (id, updates) => {
-    try { await updateEnquiry({ id, ...updates }).unwrap(); }
+  const handleUpdate = useCallback(async (payload) => {
+    try { await updateEnquiry(payload).unwrap(); }
     catch (e) { showAlert('Error', e?.data?.message || 'Update failed', 'error'); }
   }, [updateEnquiry, showAlert]);
 
@@ -457,15 +428,39 @@ const ClientHandlerEnquiryScreen = ({ navigation, route }) => {
   const { data: summaryData,   isLoading: summaryLoading   } = useGetEnquiryByIdQuery(summaryEnquiryId,    { skip: !summaryEnquiryId });
   const { data: checklistData, isLoading: checklistLoading } = useGetEnquiryByIdQuery(checklistEnquiryId, { skip: !checklistEnquiryId });
 
-  // Seed editable checklist whenever fresh data arrives
+  // ── Refs to prevent seed effect from overwriting just-saved data ──────────
+  const savedChecklistRef = useRef(null);
+
+  // Seed editable checklist whenever fresh data arrives (skip if we just saved)
   useEffect(() => {
     if (!checklistData) return;
     const cl =
       (checklistData?.Checklist && typeof checklistData.Checklist === 'object' && checklistData.Checklist) ||
       (checklistData?._originalData?.Checklist && typeof checklistData._originalData.Checklist === 'object' && checklistData._originalData.Checklist) || null;
+    console.log('[Checklist] seed effect fired, cl:', JSON.stringify(cl), 'checklistData keys:', Object.keys(checklistData));
+    console.log('[Checklist] savedChecklistRef:', JSON.stringify(savedChecklistRef.current));
+    if (savedChecklistRef.current) {
+      // A save just happened — check if this refetch matches what we saved
+      const saved = savedChecklistRef.current;
+      savedChecklistRef.current = null;
+      const clStr = JSON.stringify(cl);
+      const savedStr = JSON.stringify(saved);
+      if (clStr === savedStr) {
+        console.log('[Checklist] refetch matches saved data — skipping seed');
+        return; // Data is already up-to-date from the save
+      }
+      console.log('[Checklist] refetch differs from saved — allowing seed');
+    }
     if (cl) {
       const seed = {};
       CL_FIELDS.forEach(f => { seed[f.key] = cl[f.key] != null ? String(cl[f.key]) : ''; });
+      console.log('[Checklist] seeded editableChecklist from backend:', JSON.stringify(seed));
+      setEditableChecklist(seed);
+      setChecklistDirty(false);
+    } else {
+      console.log('[Checklist] no cl from backend, seeding with NA defaults');
+      const seed = {};
+      CL_FIELDS.forEach(f => { seed[f.key] = 'NA'; });
       setEditableChecklist(seed);
       setChecklistDirty(false);
     }
@@ -475,7 +470,6 @@ const ClientHandlerEnquiryScreen = ({ navigation, route }) => {
   useEffect(() => {
     if (!checklistEnquiryId) {
       setEditableChecklist({});
-      setChecklistErrors({});
       setChecklistDirty(false);
       setChecklistSaving(false);
     }
@@ -484,38 +478,18 @@ const ClientHandlerEnquiryScreen = ({ navigation, route }) => {
   const handleChecklistFieldChange = useCallback((key, value) => {
     setEditableChecklist(prev => ({ ...prev, [key]: value }));
     setChecklistDirty(true);
-    // Validate on every keystroke so error clears as soon as input becomes valid
-    const field = CL_FIELDS.find(f => f.key === key);
-    const err = field ? validateClField(field.type, value) : null;
-    setChecklistErrors(prev => {
-      if (!err) {
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      }
-      return { ...prev, [key]: err };
-    });
   }, []);
-
-  const checklistHasErrors = useMemo(
-    () => Object.keys(checklistErrors).length > 0,
-    [checklistErrors],
-  );
 
   const handleSaveChecklist = useCallback(async () => {
     if (!checklistEnquiryId || !checklistDirty) return;
 
-    // Full validation pass before submit
-    const allErrors = {};
-    CL_FIELDS.forEach(f => {
-      const err = validateClField(f.type, editableChecklist[f.key]);
-      if (err) allErrors[f.key] = err;
+    console.log('[Checklist] handleSaveChecklist start', {
+      checklistEnquiryId,
+      editableChecklist,
+      checklistDataKeys: Object.keys(checklistData || {}),
+      hasChecklist: !!checklistData?.Checklist,
+      hasOriginalData: !!checklistData?._originalData?.Checklist,
     });
-    if (Object.keys(allErrors).length > 0) {
-      setChecklistErrors(allErrors);
-      showAlert('Validation Error', 'Please fix the highlighted fields before saving.', 'warning', [{ text: 'OK' }]);
-      return;
-    }
 
     setChecklistSaving(true);
     try {
@@ -523,16 +497,67 @@ const ClientHandlerEnquiryScreen = ({ navigation, route }) => {
       const existingCl =
         (checklistData?.Checklist && typeof checklistData.Checklist === 'object' && checklistData.Checklist) ||
         (checklistData?._originalData?.Checklist && typeof checklistData._originalData.Checklist === 'object' && checklistData._originalData.Checklist) || {};
-      const updatedChecklist = { ...existingCl, ...editableChecklist };
-      await updateEnquiry({ id: checklistEnquiryId, Checklist: updatedChecklist }).unwrap();
+      console.log('[Checklist] existingCl:', JSON.stringify(existingCl), 'source:', checklistData?.Checklist ? 'Checklist' : '_originalData');
+      let updatedChecklist = { ...existingCl, ...editableChecklist };
+      // Add GeneratedAt if missing (new checklist created from scratch)
+      if (!updatedChecklist.GeneratedAt) {
+        updatedChecklist.GeneratedAt = new Date().toISOString();
+      }
+      const lastHistory = checklistData?._originalData?.StatusHistory?.at?.(-1) || {};
+      const currentStatus = checklistData?._originalData?.CurrentStatus || lastHistory.Status;
+      const currentAssignedTo = lastHistory.AssignedTo;
+      console.log('[Checklist] sending — status:', currentStatus, 'assignedTo:', currentAssignedTo);
+      const result = await updateEnquiry({
+        id: checklistEnquiryId,
+        Status: currentStatus,
+        AssignedTo: currentAssignedTo,
+        Checklist: updatedChecklist,
+      }).unwrap();
+      console.log('[Checklist] save result:', JSON.stringify(result));
+      // Store saved data so the seed effect can skip if refetch matches
+      savedChecklistRef.current = updatedChecklist;
+      setEditableChecklist(prev => {
+        // Directly merge saved values into editable state so UI updates immediately
+        const merged = { ...prev, ...editableChecklist };
+        Object.keys(updatedChecklist).forEach(k => {
+          if (CL_FIELDS.some(f => f.key === k)) {
+            merged[k] = String(updatedChecklist[k] ?? '');
+          }
+        });
+        return merged;
+      });
       setChecklistDirty(false);
       showAlert('Saved', 'Checklist updated successfully.', 'success', [{ text: 'OK' }]);
     } catch (e) {
+      console.error('[Checklist] save error:', e?.data || e?.message || e);
       showAlert('Error', e?.data?.message || 'Failed to save checklist. Please try again.', 'error');
     } finally {
       setChecklistSaving(false);
     }
-  }, [checklistEnquiryId, checklistDirty, editableChecklist, checklistErrors, checklistData, updateEnquiry, showAlert]);
+  }, [checklistEnquiryId, checklistDirty, editableChecklist, checklistData, updateEnquiry, showAlert]);
+
+  // ── Quotation handler ─────────────────────────────────────────────────────
+  const handleViewQuotation = useCallback((enquiry) => {
+    const id = enquiry?._id || enquiry?.id || enquiry?.Id;
+    setQuotationEnquiryId(id);
+    setShowQuotationModal(true);
+  }, []);
+
+  // ── Final Look handler ────────────────────────────────────────────────────
+  const handleFinalLook = useCallback((enquiry) => {
+    const id = enquiry?._id || enquiry?.id || enquiry?.Id;
+    const name = enquiry?.clientName || enquiry?.ClientName || '';
+    setFinalLookEnquiryId(id);
+    setFinalLookClientName(name);
+    setShowFinalLookModal(true);
+  }, []);
+
+
+  const handleApproveWithoutDesigner = useCallback(async (enquiryId) => {
+    const prodStatus = statusesData?.find(s => s.name?.toLowerCase() === 'production');
+    const statusName = prodStatus?.name || 'Production';
+    await updateEnquiry({ id: enquiryId, Status: statusName, ApprovedDate: new Date().toISOString() }).unwrap();
+  }, [updateEnquiry, statusesData]);
 
   // ── Quotation handler ─────────────────────────────────────────────────────
   const handleViewQuotation = useCallback((enquiry) => {
@@ -949,74 +974,36 @@ const ClientHandlerEnquiryScreen = ({ navigation, route }) => {
                   contentContainerStyle={{ paddingBottom: 12 }}
                   keyboardShouldPersistTaps="handled"
                 >
-                  {CL_FIELDS.map(f => {
-                    const hasErr = !!checklistErrors[f.key];
-                    return (
-                      <View key={f.key} style={styles.clEditRow}>
-                        {/* Label row — shows type badge for numeric/date fields */}
-                        <View style={styles.clEditLabelRow}>
-                          <Text style={styles.clEditLabel}>{f.label}</Text>
-                          {f.type === 'numeric' && (
-                            <View style={styles.clTypeBadge}>
-                              <Text style={styles.clTypeBadgeText}>Numeric</Text>
-                            </View>
-                          )}
-                          {f.type === 'date' && (
-                            <View style={[styles.clTypeBadge, styles.clTypeBadgeDate]}>
-                              <Text style={styles.clTypeBadgeText}>Date</Text>
-                            </View>
-                          )}
-                        </View>
-
-                        <TextInput
-                          style={[
-                            styles.clEditInput,
-                            f.multiline    && styles.clEditInputMulti,
-                            hasErr         && styles.clEditInputError,
-                          ]}
-                          value={editableChecklist[f.key] ?? ''}
-                          onChangeText={v => handleChecklistFieldChange(f.key, v)}
-                          placeholder={f.placeholder}
-                          placeholderTextColor={colors.textSecondary}
-                          keyboardType={f.keyboardType}
-                          multiline={f.multiline}
-                          numberOfLines={f.multiline ? 3 : 1}
-                          textAlignVertical={f.multiline ? 'top' : 'center'}
-                          returnKeyType={f.multiline ? 'default' : 'next'}
-                          autoCorrect={false}
-                          autoCapitalize={f.type === 'text' ? 'sentences' : 'none'}
-                        />
-
-                        {/* Inline error */}
-                        {hasErr && (
-                          <View style={styles.clErrorRow}>
-                            <Icon name="error-outline" size={13} color={colors.error || '#EF4444'} />
-                            <Text style={styles.clErrorText}>{checklistErrors[f.key]}</Text>
-                          </View>
-                        )}
-                      </View>
-                    );
-                  })}
+                  {CL_FIELDS.map(f => (
+                    <View key={f.key} style={styles.clEditRow}>
+                      <Text style={styles.clEditLabel}>{f.label}</Text>
+                      <TextInput
+                        style={[
+                          styles.clEditInput,
+                          f.multiline && styles.clEditInputMulti,
+                        ]}
+                        value={editableChecklist[f.key] ?? ''}
+                        onChangeText={v => handleChecklistFieldChange(f.key, v)}
+                        placeholder={f.placeholder}
+                        placeholderTextColor={colors.textSecondary}
+                        keyboardType={f.keyboardType}
+                        multiline={f.multiline}
+                        numberOfLines={f.multiline ? 3 : 1}
+                        textAlignVertical={f.multiline ? 'top' : 'center'}
+                        returnKeyType={f.multiline ? 'default' : 'next'}
+                        autoCorrect={false}
+                      />
+                    </View>
+                  ))}
                 </ScrollView>
-
-                {/* Save button */}
-                {/* Error summary */}
-                {checklistHasErrors && (
-                  <View style={styles.clErrorBanner}>
-                    <Icon name="warning" size={15} color={colors.error || '#EF4444'} />
-                    <Text style={styles.clErrorBannerText}>
-                      Fix {Object.keys(checklistErrors).length} validation error{Object.keys(checklistErrors).length > 1 ? 's' : ''} before saving
-                    </Text>
-                  </View>
-                )}
 
                 <TouchableOpacity
                   style={[
                     styles.clSaveBtn,
-                    (!checklistDirty || checklistSaving || checklistHasErrors) && styles.clSaveBtnDisabled,
+                    (!checklistDirty || checklistSaving) && styles.clSaveBtnDisabled,
                   ]}
                   onPress={handleSaveChecklist}
-                  disabled={!checklistDirty || checklistSaving || checklistHasErrors}
+                  disabled={!checklistDirty || checklistSaving}
                   activeOpacity={0.85}
                 >
                   {checklistSaving ? (
@@ -1025,7 +1012,7 @@ const ClientHandlerEnquiryScreen = ({ navigation, route }) => {
                     <>
                       <Icon name="save" size={17} color="#fff" />
                       <Text style={styles.clSaveBtnText}>
-                        {checklistHasErrors ? 'Fix Errors to Save' : checklistDirty ? 'Save Changes' : 'Saved'}
+                        {checklistDirty ? 'Save Changes' : 'Saved'}
                       </Text>
                     </>
                   )}
