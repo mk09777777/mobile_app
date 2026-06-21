@@ -25,7 +25,7 @@ const requestStoragePermission = async () => {
 };
 
 export default function UploadExcelScreen({ route, navigation }) {
-  const { enquiryId, designType, version, designCode, images, validationResul, cost } = route.params || {};
+  const { enquiryId, designType, version, designCode, images, validationResul, cost, isFinalVersion } = route.params || {};
   const [selectedExcel, setSelectedExcel] = useState(null);
   const [uploadType, setUploadType] = useState(null);
   const [uploadDesign, { isLoading: isUploading }] = useUploadDesignMutation();
@@ -185,6 +185,7 @@ export default function UploadExcelScreen({ route, navigation }) {
         excel: skipExcel ? null : selectedExcel,
         designCode: designCode || '',
         cost: cost || 0,
+        isFinalVersion: isFinalVersion || false,
       }).unwrap();
 
       showAlert(
@@ -196,7 +197,7 @@ export default function UploadExcelScreen({ route, navigation }) {
             text: 'OK',
             onPress: () => {
               setSelectedExcel(null);
-              navigation.navigate('MainTabs', { screen: 'Enquiries' });
+              navigation.pop(2);
             },
           },
         ],

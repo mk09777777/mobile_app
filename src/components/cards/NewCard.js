@@ -38,6 +38,7 @@ import {
   useRejectDesignVersionMutation,
   useUpdateEnquiryMutation,
 } from '../../store/api';
+import { actionsFor, resolveRoleCode, ACTION, SUBSTATUS, STATUS, ROLE } from '../../constants/enquiry';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -72,6 +73,7 @@ export default function NewEnquiryCard({
   onDeleteEnquiry,
   isExpandedAll = false,
   onFinalLook,
+  onSummary,
 }) {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
@@ -94,10 +96,18 @@ export default function NewEnquiryCard({
   const [isRemarkExpanded, setIsRemarkExpanded] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // ── Assign modal state ────────────────────────────────────────────────────
+  const [assignModalVisible, setAssignModalVisible] = useState(false);
+  const [assignType, setAssignType] = useState(null);
+  const [selectedAssignee, setSelectedAssignee] = useState(null);
+  const [isAssigning, setIsAssigning] = useState(false);
+
   // ── Quotation action sheet state ──────────────────────────────────────────
   const [showQuotationActions, setShowQuotationActions]   = useState(false);
   const [showReasonInput,      setShowReasonInput]        = useState(false);
   const [showCadPicker,        setShowCadPicker]          = useState(false);
+  const [isRejectingQuotation, setIsRejectingQuotation]    = useState(false);
+  const [isRejectingApproval,  setIsRejectingApproval]     = useState(false);
   const [selectedCadDesigner,  setSelectedCadDesigner]    = useState(null);
   const [updateReason,         setUpdateReason]           = useState('');
   const [isActionLoading,      setIsActionLoading]        = useState(false);
@@ -106,6 +116,10 @@ export default function NewEnquiryCard({
     setAlertCfg({ visible: true, title, message, type, buttons }), []);
   const hideAlert = useCallback(() => setAlertCfg(p => ({ ...p, visible: false })), []);
 
+  const coralDesigners = useMemo(
+    () => (users || []).filter(u => u.role === 2 || u.roleId === 2 || u.roleNumber === 2),
+    [users],
+  );
   const cadDesigners = useMemo(
     () => (users || []).filter(u => u.role === 3 || u.roleId === 3 || u.roleNumber === 3),
     [users],
@@ -117,22 +131,42 @@ export default function NewEnquiryCard({
 
   const priority = (item?.Priority || 'medium').toLowerCase();
   const status = (item?.CurrentStatus || 'pending').toLowerCase();
-  const isCoral = user?.role === 'coral';
-  const isCad = user?.role === 'cad';
-  const isClientHandler = user?.role === 'client_handler';
+  const subStatus = item?.CurrentSubStatus || '';
 
-  // Fix status matching to match actual database values
-  const isJustCreated =
-    status === 'enquiry created' ||
-    status === 'created' ||
-    status === 'new' ||
-    status === 'pending';
-  const isCoralPending = status === 'coral';
-  const isCadPending = status === 'cad';
-  const isQuotation = status === 'quotation';
+  // ── Resolve role code for actionsFor() ───────────────────────────────────
+  const roleCode = useMemo(() => {
+    const raw = resolveRoleCode(user);
+    if (raw) return raw;
+    const r = String(user?.role || '').toLowerCase();
+    if (r === 'admin' || r === 'ad') return ROLE.AD;
+    if (r === 'coral' || r === 'co') return ROLE.CO;
+    if (r === 'cad'   || r === 'cd') return ROLE.CD;
+    if (r === 'client_handler' || r === 'ch') return ROLE.CH;
+    if (r === 'client' || r === 'cl') return ROLE.CL;
+    return null;
+  }, [user]);
+
+  const isAdminCh = roleCode === ROLE.AD || roleCode === ROLE.CH;
+
+  // ── All button visibility driven by actionsFor (Status + SubStatus aware) ─
+  const cardActions = useMemo(() => actionsFor(item, roleCode), [item, roleCode]);
+  const actionButtons = cardActions?.buttons || [];
+  const has = (a) => actionButtons.includes(a);
+
+  // Convenience status booleans (still needed for left-border colour etc.)
+  const isCoralPending  = status === 'coral';
+  const isCadPending    = status === 'cad';
+  const isProduction    = status === 'production';
   const isApprovalPending = status === 'design approval pending';
+  const isApprovedCad   = status === 'approved cad';
+  const isQuotation     = status === 'quotation';
   const isPlacementStage = status === 'order placement';
-  const isProduction = status === 'production';
+  const isJustCreated   = status === 'enquiry created' || status === 'created' || status === 'new' || status === 'pending';
+
+  // SubStatus booleans
+  const isCostMissing     = subStatus === SUBSTATUS.CM;
+  const isQuotationReview = subStatus === SUBSTATUS.QR;
+  const isAssignPending   = subStatus === SUBSTATUS.AP;
 
   // Fetch full enquiry (with Coral/Cad arrays + StatusHistory).
   // The list API strips these arrays in its $project — getEnquiryById returns the full doc.
@@ -200,7 +234,7 @@ export default function NewEnquiryCard({
 
   // Check if item already has an assigned user
   const raw = item._originalData || item;
-  const assignedVal = item.AssignedTo || item.assignedTo || raw.AssignedTo || raw.assignedTo;
+  const assignedVal = item.AssignedTo || item.assignedTo || raw.AssignedTo || raw.assignedTo || fullSrc?.AssignedTo || fullSrc?.assignedTo;
 
   // Extract the raw ID string from whatever shape assignedVal is
   const assignedIdStr = useMemo(() => {
@@ -215,6 +249,17 @@ export default function NewEnquiryCard({
   }, [assignedVal]);
 
   const hasAssignedUser = assignedIdStr.length > 0;
+
+  // Extract the raw ID string from whatever shape AssignedTo value is
+  const resolveAssignedId = (val) => {
+    if (!val) return null;
+    if (typeof val === 'object') {
+      return String(val.id || val.Id || val._id || val.userId || '').trim() || null;
+    }
+    const s = String(val).trim();
+    if (!s || s === 'null' || s === 'undefined' || s === '0' || s === 'false') return null;
+    return s;
+  };
 
   // Resolve assigned user's display name
   const assignedUserName = useMemo(() => {
@@ -232,22 +277,18 @@ export default function NewEnquiryCard({
     return null;
   }, [assignedIdStr, assignedVal, users]);
 
-  // Button visibility based on user role and status
-  const isApprovedCad = status === 'approved cad';
-
-  // Admin: show upload button for whichever design stage is active
-  const shouldShowAdminCoralUpload     = isAdmin && isCoralPending;
-  const shouldShowAdminCadUpload       = isAdmin && (isCadPending || isApprovedCad);
-  const shouldShowAdminPlacement       = isAdmin && isPlacementStage;
-  const shouldShowAdminProduction      = (isAdmin || isClientHandler) && isProduction;
-
-  // Designers: show upload for their stage regardless of how the enquiry was created
-  const shouldShowCoralDesignerButtons = isCoral && isCoralPending;
-  const shouldShowCadDesignerButtons   = isCad   && (isCadPending || isApprovedCad);
-  const shouldShowAdminApprovedCad     = isAdmin && isApprovedCad;
-  const shouldShowQuotationButtons     = isQuotation || isApprovalPending;
-
-  // Log bearer token on component mount
+  // Button visibility — all driven by actionsFor() + has()
+  const shouldShowAdminCoralUpload     = has(ACTION.UPLOAD_CORAL);
+  const shouldShowAdminCadUpload       = has(ACTION.UPLOAD_CAD);
+  const shouldShowAdminApprovedCad     = has(ACTION.UPLOAD_FINAL_CAD);
+  const shouldShowAdminPlacement       = false; // ORDER_PLACEMENT no longer has a card button
+  const shouldShowAdminProduction      = has(ACTION.CHAT) && isProduction;
+  const shouldShowCoralDesignerButtons = has(ACTION.UPLOAD_CORAL);
+  const shouldShowCadDesignerButtons   = has(ACTION.UPLOAD_CAD) || has(ACTION.UPLOAD_FINAL_CAD);
+  const shouldShowQuotationButtons     = has(ACTION.VIEW_QUOTATION) || has(ACTION.MOVE_TO_APPROVAL) || has(ACTION.UPDATE_QUOTATION);
+  const shouldShowAssignCoral          = has(ACTION.ASSIGN) && !hasAssignedUser && (cardActions?.assignType === 'coral' || isJustCreated || (isCoralPending && isAssignPending));
+  const shouldShowAssignCad            = has(ACTION.ASSIGN) && !hasAssignedUser && (cardActions?.assignType === 'cad' || (isCadPending && isAssignPending));
+  const shouldShowApprovalButtons      = has(ACTION.ACCEPT_APPROVAL) || has(ACTION.FINAL_LOOK) || has(ACTION.REJECT_APPROVAL);
 
 
 
@@ -263,11 +304,8 @@ export default function NewEnquiryCard({
       console.error('onUpdateEnquiry prop not provided');
       return false;
     }
-    const lastHistory = item?.StatusHistory?.at(-1);
     const payload = {
       id: item?.Id || item?._id || item?.id,
-      Status: lastHistory?.Status,
-      AssignedTo: lastHistory?.AssignedTo ?? null,
       ...updateData,
     };
     const result = await onUpdateEnquiry(payload);
@@ -352,6 +390,7 @@ export default function NewEnquiryCard({
 
   const handleRequestUpdate = async () => {
     if (!updateReason.trim()) return;
+
     const design = getLatestDesign();
     if (!design) {
       showAlert('Error', 'No design version found.', 'warning', [{ text: 'OK' }]);
@@ -366,7 +405,7 @@ export default function NewEnquiryCard({
         reason:     updateReason.trim(),
       }).unwrap();
       if (design.type === 'cad') {
-        const currentAssignedTo = item?.AssignedTo || item?.assignedTo;
+        const currentAssignedTo = resolveAssignedId(item?.AssignedTo || item?.assignedTo || fullSrc?.AssignedTo || fullSrc?.assignedTo);
         await updateEnquiryDirect({
           id: enquiryId,
           Status: 'CAD',
@@ -374,12 +413,77 @@ export default function NewEnquiryCard({
           ...(currentAssignedTo ? { AssignedTo: currentAssignedTo } : {}),
         }).unwrap();
       }
-      setShowQuotationActions(false);
-      setShowReasonInput(false);
-      setUpdateReason('');
+      closeQuotationActions();
       showAlert('Update Requested', 'Your revision request has been sent. The design will be updated.', 'success', [{ text: 'OK' }]);
     } catch (e) {
       showAlert('Failed', e?.data?.message || 'Could not send the update request. Please try again.', 'error', [{ text: 'OK' }]);
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleRejectApproval = async () => {
+    if (!updateReason.trim()) return;
+    const design = getLatestDesign();
+    if (!design) {
+      showAlert('Error', 'No design version found.', 'warning', [{ text: 'OK' }]);
+      return;
+    }
+    setIsActionLoading(true);
+    try {
+      await rejectDesignVersion({
+        enquiryId,
+        designType: design.type,
+        version:    design.version,
+        reason:     updateReason.trim(),
+      }).unwrap();
+      const currentAssignedTo = resolveAssignedId(item?.AssignedTo || item?.assignedTo || fullSrc?.AssignedTo || fullSrc?.assignedTo);
+      const rejectStatus = design.type === 'cad' ? STATUS.CAD : STATUS.CORAL;
+      await updateEnquiryDirect({
+        id: enquiryId,
+        Status: rejectStatus,
+        CurrentSubStatus: SUBSTATUS.RR,
+        ClientId: item?.ClientId || item?.clientId,
+        ...(currentAssignedTo ? { AssignedTo: currentAssignedTo } : {}),
+      }).unwrap();
+      closeQuotationActions();
+      setIsRejectingApproval(false);
+      showAlert('Rejected', 'Design rejected. Sent back for redo.', 'success', [{ text: 'OK' }]);
+    } catch (e) {
+      showAlert('Failed', e?.data?.message || 'Could not reject. Please try again.', 'error', [{ text: 'OK' }]);
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleRejectQuotation = async () => {
+    if (!updateReason.trim()) return;
+    const design = getLatestDesign();
+    if (!design) {
+      showAlert('Error', 'No design version found.', 'warning', [{ text: 'OK' }]);
+      return;
+    }
+    setIsActionLoading(true);
+    try {
+      await rejectDesignVersion({
+        enquiryId,
+        designType: design.type,
+        version:    design.version,
+        reason:     updateReason.trim(),
+      }).unwrap();
+      const currentStatus = item?.CurrentStatus || item?.currentStatus || '';
+      const currentAssignedTo = resolveAssignedId(item?.AssignedTo || item?.assignedTo || fullSrc?.AssignedTo || fullSrc?.assignedTo);
+      await updateEnquiryDirect({
+        id: enquiryId,
+        Status: currentStatus,
+        CurrentSubStatus: SUBSTATUS.RR,
+        ClientId: item?.ClientId || item?.clientId,
+        ...(currentAssignedTo ? { AssignedTo: currentAssignedTo } : {}),
+      }).unwrap();
+      closeQuotationActions();
+      showAlert('Rejected', 'Quotation rejected. Enquiry moved back for redo.', 'success', [{ text: 'OK' }]);
+    } catch (e) {
+      showAlert('Failed', e?.data?.message || 'Could not reject.', 'error', [{ text: 'OK' }]);
     } finally {
       setIsActionLoading(false);
     }
@@ -416,12 +520,38 @@ export default function NewEnquiryCard({
     );
   };
 
+  const handleConfirmAssign = async () => {
+    if (!selectedAssignee || !enquiryId) return;
+    setIsAssigning(true);
+    try {
+      const targetStatus = assignType === 'coral' ? STATUS.CORAL : STATUS.CAD;
+      const designerLabel = assignType === 'coral' ? 'Coral' : 'CAD';
+      const res = await onUpdateEnquiry({
+        id: enquiryId,
+        Status: targetStatus,
+        CurrentStatus: targetStatus,
+        CurrentSubStatus: SUBSTATUS.AS,
+        AssignedTo: selectedAssignee.id,
+        ClientId: item?.ClientId || item?.clientId,
+      });
+      if (!res) throw new Error('Update failed');
+      setAssignModalVisible(false);
+      setSelectedAssignee(null);
+      showAlert('Assigned', `${designerLabel} designer assigned successfully.`, 'success', [{ text: 'OK' }]);
+    } catch (e) {
+      showAlert('Failed', 'Could not assign designer.', 'error', [{ text: 'OK' }]);
+    } finally {
+      setIsAssigning(false);
+    }
+  };
+
   const closeQuotationActions = () => {
     setShowQuotationActions(false);
     setShowReasonInput(false);
     setShowCadPicker(false);
     setSelectedCadDesigner(null);
     setUpdateReason('');
+    setIsRejectingQuotation(false);
   };
 
  
@@ -459,21 +589,6 @@ export default function NewEnquiryCard({
                             <Icon name="play-circle-filled" size={44} color="rgba(255,255,255,0.9)" />
                           </View>
                         )}
-                        <View style={styles.StatusContainerStart}>
-                          <View style={[styles.PriortyContainer, { backgroundColor: getPriorityColor(priority) }]}>
-                            <Text style={styles.PriorityText} numberOfLines={1} ellipsizeMode="tail">{priority.toUpperCase()} Priority</Text>
-                          </View>
-                          <View style={styles.StatusContainerEnd}>
-                            <View style={[styles.statusContainer, { backgroundColor: getStatusColor(status) }]}>
-                              <Text style={styles.StatusText} numberOfLines={1} ellipsizeMode="tail">{status.toUpperCase()}</Text>
-                            </View>
-                            {isAdmin && (
-                              <TouchableOpacity style={styles.moreOptionsButton} onPress={() => setShowMoreOptions(true)}>
-                                <Icon name="more-vert" size={20} color={colors.textWhite} />
-                              </TouchableOpacity>
-                            )}
-                          </View>
-                        </View>
                       </View>
                     </TouchableOpacity>
                   ))}
@@ -486,21 +601,6 @@ export default function NewEnquiryCard({
               </View>
             ) : (
               <View style={styles.placeholderContainer}>
-                <View style={[styles.StatusContainerStart, { position: 'absolute', top: 0, left: 0, right: 0 }]}>
-                  <View style={[styles.PriortyContainer, { backgroundColor: getPriorityColor(priority) }]}>
-                    <Text style={styles.PriorityText} numberOfLines={1} ellipsizeMode="tail">{priority.toUpperCase()} Priority</Text>
-                  </View>
-                  <View style={styles.StatusContainerEnd}>
-                    <View style={[styles.statusContainer, { backgroundColor: getStatusColor(status) }]}>
-                      <Text style={styles.StatusText} numberOfLines={1} ellipsizeMode="tail">{status.toUpperCase()}</Text>
-                    </View>
-                    {isAdmin && (
-                      <TouchableOpacity style={styles.moreOptionsButton} onPress={() => setShowMoreOptions(true)}>
-                        <Icon name="more-vert" size={20} color={colors.textWhite} />
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                </View>
                 <Text style={styles.placeholderText}>No Image</Text>
               </View>
             )}
@@ -519,13 +619,16 @@ export default function NewEnquiryCard({
             </View>
             
             <View style={[styles.badge, { backgroundColor: getStatusColor(status) }]}>
-              <Text style={styles.badgeText} numberOfLines={1}>{status.toUpperCase()}</Text>
+              <Text style={styles.badgeText} numberOfLines={1}>
+                {item?.CurrentStatus || status.toUpperCase()}
+                {item?.CurrentSubStatus ? ` · ${item.CurrentSubStatus}` : ''}
+              </Text>
             </View>
-            {/* {isAdmin && (
+            {isAdmin && (
               <TouchableOpacity style={styles.moreOptionsButton} onPress={() => setShowMoreOptions(true)}>
                 <Icon name="more-vert" size={18} color={colors.textSecondary} />
               </TouchableOpacity>
-            )} */}
+            )}
           </View>
         </View>
         <Text style={styles.remarkText} numberOfLines={1}>
@@ -537,8 +640,14 @@ export default function NewEnquiryCard({
           <Text style={styles.metaDot}>·</Text>
           <Icon name="schedule" size={12} color={colors.textSecondary} />
           <Text style={styles.metaText}>{formatDate(item?.CreatedDate) || '—'}</Text>
+          {onSummary && (
+            <TouchableOpacity style={styles.summaryBtn} onPress={() => onSummary(item)} activeOpacity={0.7}>
+              <Icon name="description" size={12} color={colors.primary} />
+              <Text style={styles.summaryBtnText}>Summary</Text>
+            </TouchableOpacity>
+          )}
         </View>
-        {hasAssignedUser && !isAdmin && (
+        {hasAssignedUser && (
           <View style={styles.AssignedRow}>
             <Icon name="person-add" size={13} color={colors.background} />
             <Text style={styles.AssignedName} numberOfLines={1}>
@@ -570,7 +679,29 @@ export default function NewEnquiryCard({
             )}
           </View>
 
-        {shouldShowAdminCoralUpload ? (
+        {shouldShowAssignCoral ? (
+          <View style={styles.QuickButtonContainer}>
+            <TouchableOpacity style={styles.ChatButton} onPress={() => navigation.navigate('ChatDetail', { enquiryId: item?.id || item?._id })}>
+              <Icon name="chat" size={16} color={colors.primaryDark} />
+              <Text style={styles.ChatButtonText}>Chat</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.QuickActionButton, { backgroundColor: colors.primary }]} onPress={() => { setAssignType('coral'); setSelectedAssignee(null); setAssignModalVisible(true); }}>
+              <Icon name="person-add" size={16} color={colors.textWhite} />
+              <Text style={styles.QuickActionButtonText}>Assign Coral</Text>
+            </TouchableOpacity>
+          </View>
+        ) : shouldShowAssignCad ? (
+          <View style={styles.QuickButtonContainer}>
+            <TouchableOpacity style={styles.ChatButton} onPress={() => navigation.navigate('ChatDetail', { enquiryId: item?.id || item?._id })}>
+              <Icon name="chat" size={16} color={colors.primaryDark} />
+              <Text style={styles.ChatButtonText}>Chat</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.QuickActionButton, { backgroundColor: colors.primary }]} onPress={() => { setAssignType('cad'); setSelectedAssignee(null); setAssignModalVisible(true); }}>
+              <Icon name="person-add" size={16} color={colors.textWhite} />
+              <Text style={styles.QuickActionButtonText}>Assign CAD</Text>
+            </TouchableOpacity>
+          </View>
+        ) : shouldShowAdminCoralUpload ? (
           <View style={styles.QuickButtonContainer}>
             <TouchableOpacity
               style={styles.ChatButton}
@@ -671,67 +802,91 @@ export default function NewEnquiryCard({
                   enquiryId: item?.id || item?._id,
                   designType: 'cad',
                   enquiry: item,
+                  isFinalVersion: has(ACTION.UPLOAD_FINAL_CAD),
                 })
               }
             >
               <Icon name="cloud-upload" size={16} color={colors.textWhite} />
-              <Text style={styles.QuickActionButtonText}>Upload CAD</Text>
+              <Text style={styles.QuickActionButtonText}>{has(ACTION.UPLOAD_FINAL_CAD) ? 'Upload Final CAD' : 'Upload CAD'}</Text>
             </TouchableOpacity>
           </View>
-        ) : isRevisedQuotation ? (
+        ) : has(ACTION.UPDATE_QUOTATION) ? (
+          // Cost Missing — update quotation or reject
           <View style={styles.QuickButtonContainer}>
+            <TouchableOpacity style={styles.QuickActionButton} onPress={() => onViewQuotation && onViewQuotation(item)}>
+              <Icon name="edit" size={16} color={colors.textWhite} />
+              <Text style={styles.QuickActionButtonText}>Update Quotation</Text>
+            </TouchableOpacity>
+            {has(ACTION.REJECT_QUOTATION) && (
+              <TouchableOpacity
+                style={[styles.QuickActionButton, { backgroundColor: '#DC2626' }]}
+                disabled={isActionLoading}
+                onPress={() => { setIsRejectingQuotation(true); setShowQuotationActions(true); setShowReasonInput(true); setUpdateReason(''); }}
+              >
+                <Icon name="close" size={16} color={colors.textWhite} />
+                <Text style={styles.QuickActionButtonText}>Reject</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        ) : has(ACTION.VIEW_QUOTATION) && has(ACTION.MOVE_TO_APPROVAL) ? (
+          // Quotation Review — view + move to approval
+          <View style={styles.QuickButtonContainer}>
+            <TouchableOpacity style={styles.ChatButton} onPress={() => onViewQuotation && onViewQuotation(item)}>
+              <Icon name="picture-as-pdf" size={16} color={colors.primaryDark} />
+              <Text style={styles.ChatButtonText}>View Quotation</Text>
+            </TouchableOpacity>
             <TouchableOpacity
-              style={styles.ChatButton}
-              onPress={() => {
-                if (onFinalLook) {
-                  onFinalLook(item);
-                }
-              }}
+              style={[styles.QuickActionButton, { backgroundColor: '#059669' }]}
+              disabled={isActionLoading}
+                onPress={() => showAlert(
+                  'Confirm Move to Approval',
+                  'Are you sure you want to move this enquiry to Approval Pending?',
+                  'info',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Confirm', onPress: async () => { hideAlert(); setIsActionLoading(true); try { const assignedTo = resolveAssignedId(item?.AssignedTo || item?.assignedTo || fullSrc?.AssignedTo || fullSrc?.assignedTo); const token = await secureStorage.getItem('token'); const r = await fetch(`${API_BASE_URL}/api/enquiries/${enquiryId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ Status: STATUS.DESIGN_APPROVAL_PENDING, ClientId: item?.ClientId || item?.clientId, ...(assignedTo ? { AssignedTo: assignedTo } : {}) }) }); if (!r.ok) throw new Error((await r.json())?.message || 'Failed'); showAlert('Success', 'Enquiry moved to Approval Pending.', 'success', [{ text: 'OK' }]); } catch (e) { showAlert('Failed', e?.message || 'Could not move to approval.', 'error', [{ text: 'OK' }]); } finally { setIsActionLoading(false); } } },
+                  ]
+                )}
             >
+              {isActionLoading
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <><Icon name="check-circle" size={16} color={colors.textWhite} /><Text style={styles.QuickActionButtonText}>Move to Approval</Text></>}
+            </TouchableOpacity>
+          </View>
+        ) : shouldShowApprovalButtons ? (
+          // Design Approval Pending
+          <View style={styles.QuickButtonContainer}>
+            <TouchableOpacity style={styles.ChatButton} onPress={() => onFinalLook && onFinalLook(item)}>
               <Icon name="visibility" size={16} color={colors.primaryDark} />
               <Text style={styles.ChatButtonText}>Final Look</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.QuickActionButton}
-              onPress={handleApproveWithoutDesigner}
+              style={[styles.QuickActionButton, { backgroundColor: '#059669' }]}
+              disabled={isActionLoading}
+                onPress={() => showAlert(
+                  'Confirm Accept',
+                  'Are you sure you want to accept this design?',
+                  'info',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Confirm', onPress: async () => { hideAlert(); setIsActionLoading(true); try { const design = getLatestDesign(); const assignedTo = item?.AssignedTo || item?.assignedTo || fullSrc?.AssignedTo || fullSrc?.assignedTo; const token = await secureStorage.getItem('token'); let nextStatus, nextSubStatus; if (!design || design.type === 'coral') { nextStatus = STATUS.CAD; nextSubStatus = SUBSTATUS.AP; } else { nextStatus = STATUS.CAD; nextSubStatus = SUBSTATUS.FU; } const r = await fetch(`${API_BASE_URL}/api/enquiries/${enquiryId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ Status: nextStatus, CurrentSubStatus: nextSubStatus, ClientId: item?.ClientId || item?.clientId, ...(assignedTo ? { AssignedTo: assignedTo } : {}) }) }); if (!r.ok) throw new Error((await r.json())?.message || 'Failed'); showAlert('Accepted', design?.type === 'coral' ? 'Coral approved. Assign a CAD designer.' : 'CAD approved. Upload final CAD.', 'success', [{ text: 'OK' }]); } catch (e) { showAlert('Failed', e?.message || 'Could not accept.', 'error', [{ text: 'OK' }]); } finally { setIsActionLoading(false); } } },
+                  ]
+                )}
             >
-              <Icon name="check-circle" size={16} color={colors.textWhite} />
-              <Text style={styles.QuickActionButtonText}>
-                Approve
-              </Text>
+              {isActionLoading
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <><Icon name="check" size={16} color={colors.textWhite} /><Text style={styles.QuickActionButtonText}>Accept</Text></>}
             </TouchableOpacity>
-          </View>
-        ) : shouldShowQuotationButtons ? (
-          <View style={styles.QuickButtonContainer}>
-            <TouchableOpacity
-              style={styles.ChatButton}
-              onPress={() => {
-                if (onViewQuotation) {
-                
-                  onViewQuotation(item);
-                } else {
-                  navigation.navigate('ChatDetail', {
-                    enquiryId: item?.id || item?._id,
-                  });
-                }
-              }}
-            >
-              <Icon
-                name="picture-as-pdf"
-                size={16}
-                color={colors.primaryDark}
-              />
-              <Text style={styles.ChatButtonText}>View Quotation</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.QuickActionButton}
-              onPress={() => setShowQuotationActions(true)}
-            >
-              <Icon name="more-vert" size={16} color={colors.textWhite} />
-              <Text style={styles.QuickActionButtonText}>
-                Actions
-              </Text>
-            </TouchableOpacity>
+            {has(ACTION.REJECT_APPROVAL) && (
+              <TouchableOpacity
+                style={[styles.QuickActionButton, { backgroundColor: '#DC2626' }]}
+                disabled={isActionLoading}
+                onPress={() => { setShowQuotationActions(true); setShowReasonInput(true); setIsRejectingApproval(true); setUpdateReason(''); }}
+              >
+                <Icon name="close" size={16} color={colors.textWhite} />
+                <Text style={styles.QuickActionButtonText}>Reject</Text>
+              </TouchableOpacity>
+            )}
           </View>
         ) : shouldShowAdminApprovedCad ? (
           <View style={styles.QuickButtonContainer}>
@@ -790,7 +945,7 @@ export default function NewEnquiryCard({
                 'warning',
                 [
                   { text: 'Cancel', onPress: hideAlert },
-                  { text: 'Confirm', onPress: async () => { hideAlert(); await updateEnquiryStatus({ Status: 'Shipped' }); } },
+                  { text: 'Confirm', onPress: async () => { hideAlert(); await updateEnquiryStatus({ Status: 'Shipped' }); showAlert('Shipped', 'Enquiry marked as Shipped.', 'success', [{ text: 'OK' }]); } },
                 ]
               )}
             >
@@ -986,7 +1141,7 @@ export default function NewEnquiryCard({
                 <View style={styles.qaReasonActions}>
                   <TouchableOpacity
                     style={styles.qaReasonBack}
-                    onPress={() => { setShowReasonInput(false); setUpdateReason(''); }}
+                    onPress={() => { setShowReasonInput(false); setUpdateReason(''); setIsRejectingQuotation(false); setIsRejectingApproval(false); }}
                     disabled={isActionLoading}
                     activeOpacity={0.8}
                   >
@@ -998,7 +1153,7 @@ export default function NewEnquiryCard({
                       styles.qaReasonSubmit,
                       (!updateReason.trim() || isActionLoading) && { opacity: 0.4 },
                     ]}
-                    onPress={handleRequestUpdate}
+                    onPress={isRejectingQuotation ? handleRejectQuotation : isRejectingApproval ? handleRejectApproval : handleRequestUpdate}
                     disabled={!updateReason.trim() || isActionLoading}
                     activeOpacity={0.8}
                   >
@@ -1038,6 +1193,14 @@ export default function NewEnquiryCard({
         >
           <View style={styles.dropdownModalContent}>
             <Text style={styles.dropdownModalTitle}>Options</Text>
+            {onSummary && (
+              <TouchableOpacity
+                style={styles.dropdownModalItem}
+                onPress={() => { setShowMoreOptions(false); onSummary(item); }}
+              >
+                <Text style={styles.dropdownModalItemText}>View Summary</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               style={styles.dropdownModalItem}
               onPress={handleDeleteEnquiry}
@@ -1094,6 +1257,82 @@ export default function NewEnquiryCard({
             )}
           />
         </View>
+      </Modal>
+
+      {/* ══ Assign Designer Modal ════════════════════════════════════════════ */}
+      <Modal
+        visible={assignModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setAssignModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.qaOverlay}
+          activeOpacity={1}
+          onPress={() => setAssignModalVisible(false)}
+        >
+          <TouchableOpacity activeOpacity={1} style={styles.qaSheet}>
+            <View style={styles.qaHeader}>
+              <View style={styles.qaDragHandle} />
+              <TouchableOpacity
+                style={{ position: 'absolute', top: 12, right: 16, zIndex: 10, padding: 4 }}
+                onPress={() => setAssignModalVisible(false)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Icon name="close" size={22} color={colors.textSecondary} />
+              </TouchableOpacity>
+              <Text style={styles.qaTitle}>
+                {assignType === 'coral' ? 'Assign Coral Designer' : 'Assign CAD Designer'}
+              </Text>
+              <Text style={styles.qaSubtitle} numberOfLines={1}>
+                {item?.Name || ''}
+              </Text>
+            </View>
+
+            <ScrollView style={{ maxHeight: 400 }} contentContainerStyle={styles.qaOptions}>
+              {(assignType === 'coral' ? coralDesigners : cadDesigners).length === 0 ? (
+                <Text style={[styles.qaOptionDesc, { textAlign: 'center', paddingVertical: 16 }]}>
+                  No {assignType === 'coral' ? 'Coral' : 'CAD'} designers found.
+                </Text>
+              ) : (
+                (assignType === 'coral' ? coralDesigners : cadDesigners).map(designer => (
+                  <TouchableOpacity
+                    key={designer.id}
+                    style={[styles.qaOption, selectedAssignee?.id === designer.id && { borderColor: colors.primary, backgroundColor: colors.primaryExtraLight }]}
+                    onPress={() => setSelectedAssignee(designer)}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.qaIconWrap}>
+                      <Icon name="person" size={20} color={selectedAssignee?.id === designer.id ? colors.primary : colors.textSecondary} />
+                    </View>
+                    <View style={styles.qaOptionText}>
+                      <Text style={[styles.qaOptionTitle, selectedAssignee?.id === designer.id && { color: colors.primary }]}>
+                        {designer.name}
+                      </Text>
+                      {!!designer.email && designer.email !== 'N/A' && (
+                        <Text style={styles.qaOptionDesc}>{designer.email}</Text>
+                      )}
+                    </View>
+                    {selectedAssignee?.id === designer.id && (
+                      <Icon name="check-circle" size={18} color={colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                ))
+              )}
+              <TouchableOpacity
+                style={[styles.QuickActionButton, { justifyContent: 'center', opacity: (!selectedAssignee || isAssigning) ? 0.4 : 1 }]}
+                onPress={handleConfirmAssign}
+                disabled={!selectedAssignee || isAssigning}
+                activeOpacity={0.8}
+              >
+                {isAssigning
+                  ? <ActivityIndicator size="small" color={colors.textWhite} />
+                  : <Text style={styles.QuickActionButtonText}>Confirm & Assign</Text>
+                }
+              </TouchableOpacity>
+            </ScrollView>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
 
       <BrandedAlert
@@ -1225,6 +1464,21 @@ const styles = StyleSheet.create({
   metaDot: {
     fontSize: 11,
     color: colors.textSecondary,
+  },
+  summaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  summaryBtnText: {
+    fontSize: 10,
+    fontFamily: fonts.medium,
+    color: colors.primary,
   },
   assignedChip: {
     flexDirection: 'row',
