@@ -31,7 +31,7 @@ import { useAuth } from '../../context/AuthContext';
 import BrandedAlert from '../../components/common/BrandedAlert';
 
 const UploadDesignScreen = ({ route, navigation }) => {
-  const { designType, enquiry, enquiryId } = route.params || {};
+  const { designType, enquiry, enquiryId, returnRoute, isFinalVersion } = route.params || {};
 
   const { user } = useAuth();
 
@@ -433,6 +433,8 @@ const UploadDesignScreen = ({ route, navigation }) => {
                 images: selectedImages,
                 validationResult: result,
                 cost: cost,
+                returnRoute,
+                isFinalVersion,
               });
             },
           },
