@@ -1469,8 +1469,8 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
     const cadVersions   = src?.Cad   || [];
     const coralVersions = src?.Coral || [];
 
-    // Follow the flow: prefer the latest CAD version (Quotation → Approved Cad),
-    // fall back to Coral only if no CAD versions exist.
+    console.log('[handleApprove] cadVersions:', cadVersions.length, 'coralVersions:', coralVersions.length, 'status:', status);
+
     let designType, versions;
     if (cadVersions.length > 0) {
       designType = 'cad';
@@ -1488,6 +1488,8 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
     const currentStatus = (status || '').toLowerCase();
     const isApprovedCadStatus = currentStatus === 'approved cad';
 
+    console.log('[handleApprove] designType:', designType, 'version:', version, 'isApprovedCadStatus:', isApprovedCadStatus);
+
     showAlert(
       'Approve Design Version',
       `Approve ${designType.toUpperCase()} ${version}?`,
@@ -1502,6 +1504,7 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
 
               if (isApprovedCadStatus) {
                 // Quotation approved → Final Cad Upload
+                console.log('[handleApprove] CAD approved status → intent: approveDesign');
                 await approveDesignVersion({
                   enquiryId: eid,
                   designType,
@@ -1510,11 +1513,13 @@ const SingleEnquiryScreen = ({ route, navigation }) => {
                 }).unwrap();
               } else {
                 // First approval — send for approval (Quotation → Approved Cad)
+                const intent = designType === 'cad' ? 'forApproval' : 'approveDesign';
+                console.log('[handleApprove] First approval → intent:', intent, 'designType:', designType);
                 await approveDesignVersion({
                   enquiryId: eid,
                   designType,
                   version,
-                  intent: designType === 'cad' ? 'forApproval' : undefined,
+                  intent,
                 }).unwrap();
               }
 

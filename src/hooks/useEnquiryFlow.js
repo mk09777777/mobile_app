@@ -89,105 +89,42 @@ export const useEnquiryState = (enquiry) => {
   return state;
 };
 
+// useEnquiryFlow: Main flow resolver hook.
+// Takes enquiry + user, returns available buttons, primary action, tab, modal phase, etc.
+// Uses actionsFor() from constants/enquiry.js to determine what actions are available.
+// Uses NEXT_STATE for state machine transitions.
+// TODO: Redesign — this is the core flow resolution logic
 export const useEnquiryFlow = (enquiry, user) => {
   const roleCode = useMemo(() => resolveRoleCode(user), [user]);
   const enquiryState = useEnquiryState(enquiry);
 
-  // If CurrentSubStatus is not set but enquiry has an assigned user,
-  // treat it as "Assigned" — the backend may not persist CurrentSubStatus.
   const assignedTo = useMemo(() => enquiry?.AssignedTo || enquiry?.assignedTo, [enquiry]);
   const inferredSubStatus = useMemo(
     () => !enquiryState?.subStatus && assignedTo ? SUBSTATUS.AS : enquiryState?.subStatus,
     [enquiryState?.subStatus, assignedTo],
   );
 
+  // TODO: Redesign flow resolution logic here
+  // Previously:
+  // 1. Called actionsFor(miniEnquiry, roleCode) to get buttons/primaryAction/tab
+  // 2. Checked if substatus is FU to swap Upload CAD -> Upload Final CAD
+  // 3. Checked Cad versions to show/hide Final Look button
+  // 4. Mapped buttons to actionConfigs with label/icon/color
+  // 5. Looked up NEXT_STATE for state machine transitions
   const config = useMemo(() => {
-    if (!enquiryState || !roleCode) {
-      return {
-        buttons: [],
-        primaryAction: null,
-        actions: [],
-        tab: null,
-        modalPhase: null,
-        assignType: null,
-        actionConfigs: [],
-        enquiryState: null,
-        nextState: null,
-        displaySubStatus: null,
-      };
-    }
-
-    const miniEnquiry = {
-      CurrentStatus: enquiryState.status,
-      CurrentSubStatus: inferredSubStatus,
-    };
-
-    const flow = actionsFor(miniEnquiry, roleCode);
-    let buttons = flow.buttons || [];
-
-    // Check if substatus is FU (Final Cad Upload) — backend sets this after first CAD acceptance
-    const isFinalCadUpload = inferredSubStatus === SUBSTATUS.FU;
-
-    // Show Final Look in Design Approval Pending status.
-    // handleAcceptApproval independently determines first-vs-final CAD cycle
-    // using StatusHistory fetched via getEnquiryById.
-    const src = enquiry?._originalData || enquiry;
-    const cadVersions = Array.isArray(src?.Cad) ? src.Cad : [];
-    const hasCadVersions = cadVersions.length > 0;
-    const isDesignApprovalPending =
-      enquiry?.CurrentStatus === STATUS.DESIGN_APPROVAL_PENDING ||
-      enquiry?.status === 'approval_pending';
-    const hasFinalCadVersion = isDesignApprovalPending
-      ? true
-      : cadVersions.some(v => v.IsFinalVersion === true || v.IsFinalVersion === 'true');
-
-    // If substatus is FU, swap Upload CAD → Upload Final CAD
-    if (isFinalCadUpload) {
-      buttons = buttons.map(a => (a === ACTION.UPLOAD_CAD ? ACTION.UPLOAD_FINAL_CAD : a));
-    }
-
-    // Show Final Look only when a Final CAD version has been uploaded
-    if (!hasFinalCadVersion) {
-      buttons = buttons.filter(a => a !== ACTION.FINAL_LOOK);
-    }
-    const actionConfigs = (buttons || []).map(action => ({
-      action,
-      label: ACTION_LABELS[action] || action,
-      icon: ACTION_ICONS[action] || 'help',
-      color: ACTION_COLORS[action] || '#6B7280',
-    }));
-
-    const finalPrimaryAction = flow.primaryAction === ACTION.UPLOAD_CAD && hasCadVersions
-      ? ACTION.UPLOAD_FINAL_CAD
-      : flow.primaryAction;
-
-    const primaryActionConfig = finalPrimaryAction
-      ? {
-          action: finalPrimaryAction,
-          label: ACTION_LABELS[finalPrimaryAction] || finalPrimaryAction,
-          icon: ACTION_ICONS[finalPrimaryAction] || 'help',
-          color: ACTION_COLORS[finalPrimaryAction] || '#6B7280',
-        }
-      : null;
-
-    let nextState = null;
-    if (enquiryState.status && NEXT_STATE[enquiryState.status]) {
-      nextState = NEXT_STATE[enquiryState.status];
-    }
-
     return {
-      buttons,
-      primaryAction: finalPrimaryAction,
-      actions: buttons,
-      tab: flow.tab,
-      modalPhase: flow.modalPhase || null,
-      assignType: flow.assignType || null,
-      actionConfigs,
-      primaryActionConfig,
+      buttons: [],
+      primaryAction: null,
+      actions: [],
+      tab: null,
+      modalPhase: null,
+      assignType: null,
+      actionConfigs: [],
+      primaryActionConfig: null,
       enquiryState,
-      nextState,
+      nextState: null,
       displaySubStatus: inferredSubStatus,
-      displayStatus: enquiryState.status,
+      displayStatus: enquiryState?.status,
     };
   }, [enquiryState, roleCode, inferredSubStatus]);
 

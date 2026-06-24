@@ -25,7 +25,7 @@ const requestStoragePermission = async () => {
 };
 
 export default function UploadExcelScreen({ route, navigation }) {
-  const { enquiryId, designType, version, designCode, images, validationResul, cost, isFinalVersion } = route.params || {};
+  const { enquiryId, designType, designCode, images, validationResul, cost, isFinalVersion, version } = route.params || {};
   const [selectedExcel, setSelectedExcel] = useState(null);
   const [uploadType, setUploadType] = useState(null);
   const [uploadDesign, { isLoading: isUploading }] = useUploadDesignMutation();
@@ -187,6 +187,8 @@ export default function UploadExcelScreen({ route, navigation }) {
         cost: cost || 0,
         isFinalVersion: isFinalVersion || false,
       }).unwrap();
+
+      console.log('[uploadExcel] uploadDesign succeeded, isFinalVersion:', isFinalVersion, 'version:', version, 'result:', JSON.stringify(result));
 
       showAlert(
         'Success',

@@ -303,6 +303,7 @@ export default function CreateEnquiryModal({ visible, onClose, onEnquiryCreated,
         const isCoralAssign = projectType === 'coral';
         finalData.Status = isCoralAssign ? 'Coral' : 'Cad';
         finalData.CurrentSubStatus = 'Assigned';
+        finalData.SubStatus = 'Assigned';
       }
 
       // Preview shows BEFORE submission so the user can review and Cancel without
