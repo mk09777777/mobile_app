@@ -277,15 +277,16 @@ export default function EnquiryListScreen({ navigation }) {
     ? (approvalQ.data?.pagination?.total ?? approvalQ.data?.data?.length ?? 0)
     : (buckets?.approvalPending ?? 0);
 
-  // Designers: see all enquiries in their department
+  // Designers: see enquiries in their department with relevant substatuses
   const designerStatus = roleKind === ROLE_KIND.CORAL ? STATUS.CORAL : STATUS.CAD;
+  const designerSubstatuses = [SUBSTATUS.AS, SUBSTATUS.RR, SUBSTATUS.FU];
   const designerMineArg = buildArg({
     ...baseArgs,
-    tabFilter: { status: [designerStatus], assignedTo: userId },
+    tabFilter: { status: [designerStatus], subStatus: designerSubstatuses, assignedTo: userId },
   });
   const designerWipArg = buildArg({
     ...baseArgs,
-    tabFilter: { status: [designerStatus] },
+    tabFilter: { status: [designerStatus], subStatus: designerSubstatuses },
   });
   const designerMineQ = useGetEnquiriesQuery(designerMineArg, {
     skip: isAdminCh || isClient || !isDesigner,
@@ -344,6 +345,12 @@ export default function EnquiryListScreen({ navigation }) {
       refetch: approvalQ.refetch,
     };
   }, [isAdminCh, isClient, activeTab, isUnassignedOnly, unassignedQ1, unassignedQ2, wipQ, approvalQ, designerMineQ, designerWipQ, designerTab, clientQ, clientNameMap]);
+
+  useEffect(() => {
+    if (__DEV__ && activeQuery.rows.length > 0) {
+      console.log('[EnquiryListScreen] enquiryData =', JSON.stringify(activeQuery.rows, null, 2));
+    }
+  }, [activeQuery.rows]);
 
   // Per-tab counts for designer view (so inactive tab also shows a badge)
   const designerMineCount = designerMineQ.data?.pagination?.total ?? (designerMineQ.data?.data?.length || 0);
