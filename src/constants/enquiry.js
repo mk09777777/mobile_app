@@ -35,7 +35,7 @@ export const SUBSTATUS = {
   AP: 'Assign Pending',
   AS: 'Assigned',
   RR: 'Rejected - Redo',
-  DS: 'Design Submitted',
+
   CM: 'Cost Missing',
   QR: 'Quotation Review',
   FU: 'Final Cad Upload',
@@ -48,10 +48,14 @@ export const TAB = {
   PRODUCTION: 'production',
 };
 
+// paramsForTab: Returns query parameters for each tab's enquiry search.
+// UNASSIGNED → unassigned flag + Assign Pending substatus + Enquiry Created status
+// WIP → Coral, Cad, or Enquiry Created status
+// APPROVAL → Design Approval Pending status
+// PRODUCTION → Production status
 export const paramsForTab = (tab) => {
+  // TODO: Redesign tab filtering if tab logic changes
   switch (tab) {
-    case TAB.UNASSIGNED:
-      return [{ unassigned: true }, { subStatus: SUBSTATUS.AP }, { status: STATUS.ENQUIRY_CREATED }];
     case TAB.WIP:
       return [{ status: [STATUS.CORAL, STATUS.CAD, STATUS.ENQUIRY_CREATED] }];
     case TAB.APPROVAL:
@@ -77,6 +81,7 @@ export const ACTION = {
   ACCEPT_APPROVAL: 'ACCEPT_APPROVAL',
   REJECT_APPROVAL: 'REJECT_APPROVAL',
   FINAL_LOOK: 'FINAL_LOOK',
+  MOVE_TO_ORDER_PLACEMENT: 'MOVE_TO_ORDER_PLACEMENT',
 };
 
 export const MODAL_PHASE = {
@@ -91,197 +96,141 @@ export const DESIGN_TYPE = {
 
 const can = (roleCode, allowed) => allowed.includes(roleCode);
 
+// NEXT_STATE: State machine transition map.
+// Defines valid transitions from each Status+SubStatus combination.
+// Keys: action name → value: { status, subStatus } to transition to.
 export const NEXT_STATE = {
-  [STATUS.CORAL]: {
-    [SUBSTATUS.AP]: { assign: { status: STATUS.CORAL, subStatus: SUBSTATUS.AS } },
-    [SUBSTATUS.AS]: { upload: { status: STATUS.CORAL, subStatus: SUBSTATUS.CM } },
-    [SUBSTATUS.RR]: { upload: { status: STATUS.CORAL, subStatus: SUBSTATUS.CM } },
-    [SUBSTATUS.CM]: { saveQuotation: { status: STATUS.CORAL, subStatus: SUBSTATUS.QR }, reject: { status: STATUS.CORAL, subStatus: SUBSTATUS.RR } },
-    [SUBSTATUS.QR]: { moveToApproval: { status: STATUS.DESIGN_APPROVAL_PENDING, subStatus: null } },
-  },
-  [STATUS.CAD]: {
-    [SUBSTATUS.AP]: { assign: { status: STATUS.CAD, subStatus: SUBSTATUS.AS } },
-    [SUBSTATUS.AS]: { upload: { status: STATUS.CAD, subStatus: SUBSTATUS.CM } },
-    [SUBSTATUS.FU]: { upload: { status: STATUS.CAD, subStatus: SUBSTATUS.CM } },
-    [SUBSTATUS.RR]: { upload: { status: STATUS.CAD, subStatus: SUBSTATUS.CM } },
-    [SUBSTATUS.CM]: { saveQuotation: { status: STATUS.CAD, subStatus: SUBSTATUS.QR }, reject: { status: STATUS.CAD, subStatus: SUBSTATUS.RR } },
-    [SUBSTATUS.QR]: { moveToApproval: { status: STATUS.DESIGN_APPROVAL_PENDING, subStatus: null } },
-  },
-  [STATUS.DESIGN_APPROVAL_PENDING]: {
-    accept: {
-      coral: { action: 'assignCad', status: STATUS.CAD, subStatus: SUBSTATUS.AP },
-      cad: { action: 'uploadFinalCad', status: STATUS.CAD, subStatus: SUBSTATUS.FU },
-    },
-    reject: { status: STATUS.CAD, subStatus: SUBSTATUS.RR },
-  },
+  // TODO: Redesign state transitions based on new lifecycle flow
 };
 
+// actionsFor: Determines available buttons and primary action for an enquiry
+// based on its CurrentStatus, CurrentSubStatus, and the user's role.
+// Returns { buttons: ACTION[], primaryAction: ACTION, tab: TAB, modalPhase?, assignType? }
 export const actionsFor = (enquiry, roleCode) => {
   const status = enquiry?.CurrentStatus;
   const sub = enquiry?.CurrentSubStatus;
   const isAdmin = can(roleCode, [ROLE.AD]);
   const isClientHandler = can(roleCode, [ROLE.CH]);
   const isAdminCh = isAdmin || isClientHandler;
-  const isCoral = can(roleCode, [ROLE.CO]);
-  const isCad = can(roleCode, [ROLE.CD]);
 
   if (status === STATUS.ENQUIRY_CREATED) {
     return {
       buttons: isAdminCh ? [ACTION.ASSIGN] : [],
       primaryAction: ACTION.ASSIGN,
-      tab: TAB.WIP,
+      assignType: DESIGN_TYPE.CORAL,
+
     };
   }
 
   if (status === STATUS.CORAL) {
-    const isAssigned = !!(enquiry.AssignedTo || enquiry.assignedTo);
-
-    if (!sub) {
-      if (isAssigned) {
-        return {
-          buttons: isAdmin || isCoral ? [ACTION.CHAT, ACTION.UPLOAD_CORAL] : isCad ? [ACTION.CHAT] : [],
-          primaryAction: ACTION.UPLOAD_CORAL,
-          tab: TAB.WIP,
-        };
-      }
+    if (sub === SUBSTATUS.AP || !sub) {
       return {
-        buttons: isAdminCh ? [ACTION.CHAT, ACTION.ASSIGN] : [],
+        buttons: isAdminCh ? [ACTION.ASSIGN] : [],
         primaryAction: ACTION.ASSIGN,
         assignType: DESIGN_TYPE.CORAL,
         tab: TAB.WIP,
       };
     }
-    if (sub === SUBSTATUS.AP) {
-      if (isAssigned) {
-        return {
-          buttons: isAdmin || isCoral ? [ACTION.CHAT, ACTION.UPLOAD_CORAL] : isCad ? [ACTION.CHAT] : [],
-          primaryAction: ACTION.UPLOAD_CORAL,
-          tab: TAB.WIP,
-        };
-      }
+    if (sub === SUBSTATUS.AS || sub === SUBSTATUS.RR) {
       return {
-        buttons: isAdminCh ? [ACTION.CHAT, ACTION.ASSIGN] : [],
-        primaryAction: ACTION.ASSIGN,
+        buttons: isAdminCh ? [ACTION.UPLOAD_CORAL] : roleCode === ROLE.CO ? [ACTION.UPLOAD_CORAL] : [],
+        tab: TAB.WIP,
+        primaryAction: ACTION.UPLOAD_CORAL,
         assignType: DESIGN_TYPE.CORAL,
-        tab: TAB.WIP,
       };
     }
-    if (sub === SUBSTATUS.AS) {
+    if ( sub === SUBSTATUS.CM) {
       return {
-        buttons: isAdmin || isCoral ? [ACTION.CHAT, ACTION.UPLOAD_CORAL] : isCad ? [ACTION.CHAT] : [],
-        primaryAction: ACTION.UPLOAD_CORAL,
+        buttons: isAdminCh ? [ ACTION.UPDATE_QUOTATION, ACTION.REJECT_QUOTATION] : [],
         tab: TAB.WIP,
-      };
-    }
-    if (sub === SUBSTATUS.RR) {
-      return {
-        buttons: isAdmin || isCoral ? [ACTION.CHAT, ACTION.UPLOAD_CORAL] : isCad ? [ACTION.CHAT] : [],
-        primaryAction: ACTION.UPLOAD_CORAL,
-        tab: TAB.WIP,
-      };
-    }
-    if (sub === SUBSTATUS.CM) {
-      return {
-        buttons: isAdminCh ? [ACTION.UPDATE_QUOTATION, ACTION.REJECT_QUOTATION] : [],
         primaryAction: ACTION.UPDATE_QUOTATION,
-        modalPhase: MODAL_PHASE.EDIT,
-        tab: TAB.WIP,
       };
     }
-    if (sub === SUBSTATUS.QR) {
-      return {
-        buttons: isAdminCh ? [ACTION.VIEW_QUOTATION, ACTION.MOVE_TO_APPROVAL] : [],
-        primaryAction: ACTION.MOVE_TO_APPROVAL,
-        modalPhase: MODAL_PHASE.REVIEW,
+    if ( sub === SUBSTATUS.QR ) {
+      const finalCad = enquiry?._originalData?.finalCad || enquiry?.finalCad;
+      const hasFinalCad = !!finalCad?.Version;
+
+      if (hasFinalCad) {
+        return {
+          buttons: isAdminCh ? [ACTION.FINAL_LOOK, ACTION.MOVE_TO_ORDER_PLACEMENT] : [],
+          tab: TAB.WIP,
+          primaryAction: ACTION.MOVE_TO_ORDER_PLACEMENT,
+        };
+      }
+
+      return{
+        buttons: isAdminCh ? [ACTION.VIEW_QUOTATION,ACTION.MOVE_TO_APPROVAL]
+        : [],
         tab: TAB.WIP,
-      };
+        primaryAction: ACTION.MOVE_TO_APPROVAL,
+      }
     }
   }
 
   if (status === STATUS.CAD) {
-    const isAssigned = !!(enquiry.AssignedTo || enquiry.assignedTo);
-
-    if (!sub) {
-      if (isAssigned) {
-        return {
-          buttons: isAdmin || isCad ? [ACTION.CHAT, ACTION.UPLOAD_CAD] : isCoral ? [ACTION.CHAT] : [],
-          primaryAction: ACTION.UPLOAD_CAD,
-          tab: TAB.WIP,
-        };
-      }
+    if (sub === SUBSTATUS.AP || !sub) {
       return {
-        buttons: isAdminCh ? [ACTION.CHAT, ACTION.ASSIGN] : [],
+        buttons: isAdminCh ? [ACTION.ASSIGN] : [],
         primaryAction: ACTION.ASSIGN,
         assignType: DESIGN_TYPE.CAD,
         tab: TAB.WIP,
       };
     }
-    if (sub === SUBSTATUS.AP) {
-      if (isAssigned) {
-        return {
-          buttons: isAdmin || isCad ? [ACTION.CHAT, ACTION.UPLOAD_CAD] : isCoral ? [ACTION.CHAT] : [],
-          primaryAction: ACTION.UPLOAD_CAD,
-          tab: TAB.WIP,
-        };
-      }
+    if (sub === SUBSTATUS.AS || sub === SUBSTATUS.RR) {
       return {
-        buttons: isAdminCh ? [ACTION.CHAT, ACTION.ASSIGN] : [],
-        primaryAction: ACTION.ASSIGN,
-        assignType: DESIGN_TYPE.CAD,
+        buttons: isAdminCh ? [ACTION.UPLOAD_CAD] : roleCode === ROLE.CD ? [ACTION.UPLOAD_CAD] : [],
         tab: TAB.WIP,
-      };
-    }
-    if (sub === SUBSTATUS.AS) {
-      return {
-        buttons: isAdmin || isCad ? [ACTION.CHAT, ACTION.UPLOAD_CAD] : isCoral ? [ACTION.CHAT] : [],
         primaryAction: ACTION.UPLOAD_CAD,
-        tab: TAB.WIP,
+        assignType: DESIGN_TYPE.CAD,
       };
+    }
+    if ( sub === SUBSTATUS.CM ) {
+      return {
+        buttons: isAdminCh ? [ACTION.VIEW_QUOTATION, ACTION.UPDATE_QUOTATION, ACTION.REJECT_QUOTATION, ACTION.MOVE_TO_APPROVAL] : [],
+        tab: TAB.WIP,
+        primaryAction: ACTION.UPDATE_QUOTATION,
+      };
+    }
+    if ( sub === SUBSTATUS.QR ) {
+      const finalCad = enquiry?._originalData?.finalCad || enquiry?.finalCad;
+      const hasFinalCad = !!finalCad?.Version;
+
+      if (hasFinalCad) {
+        return {
+          buttons: isAdminCh ? [ACTION.FINAL_LOOK, ACTION.MOVE_TO_ORDER_PLACEMENT] : [],
+          tab: TAB.WIP,
+          primaryAction: ACTION.MOVE_TO_ORDER_PLACEMENT,
+        };
+      }
+
+      return{
+        buttons: isAdminCh ? [ACTION.VIEW_QUOTATION,ACTION.MOVE_TO_APPROVAL]
+        : [],
+        tab: TAB.WIP,
+        primaryAction: ACTION.MOVE_TO_APPROVAL,
+      }
     }
     if (sub === SUBSTATUS.FU) {
       return {
-        buttons: isAdmin ? [ACTION.CHAT, ACTION.UPLOAD_FINAL_CAD] : isCoral || isCad ? [ACTION.CHAT] : [],
+        buttons: isAdminCh ? [ACTION.UPLOAD_FINAL_CAD] : roleCode === ROLE.CD ? [ACTION.UPLOAD_FINAL_CAD] : [],
+        tab: TAB.WIP,
         primaryAction: ACTION.UPLOAD_FINAL_CAD,
-        tab: TAB.WIP,
-      };
-    }
-    if (sub === SUBSTATUS.RR) {
-      return {
-        buttons: isAdmin || isCad ? [ACTION.CHAT, ACTION.UPLOAD_CAD] : isCoral ? [ACTION.CHAT] : [],
-        primaryAction: ACTION.UPLOAD_CAD,
-        tab: TAB.WIP,
-      };
-    }
-    if (sub === SUBSTATUS.CM) {
-      return {
-        buttons: isAdminCh ? [ACTION.UPDATE_QUOTATION, ACTION.REJECT_QUOTATION] : [],
-        primaryAction: ACTION.UPDATE_QUOTATION,
-        modalPhase: MODAL_PHASE.EDIT,
-        tab: TAB.WIP,
-      };
-    }
-    if (sub === SUBSTATUS.QR) {
-      return {
-        buttons: isAdminCh ? [ACTION.VIEW_QUOTATION, ACTION.MOVE_TO_APPROVAL] : [],
-        primaryAction: ACTION.MOVE_TO_APPROVAL,
-        modalPhase: MODAL_PHASE.REVIEW,
-        tab: TAB.WIP,
       };
     }
   }
 
   if (status === STATUS.DESIGN_APPROVAL_PENDING) {
     return {
-      buttons: isAdminCh ? [ACTION.FINAL_LOOK, ACTION.ACCEPT_APPROVAL, ACTION.REJECT_APPROVAL] : [],
-      primaryAction: ACTION.ACCEPT_APPROVAL,
+      buttons: isAdminCh ? [ACTION.ACCEPT_APPROVAL, ACTION.REJECT_APPROVAL] : [],
       tab: TAB.APPROVAL,
+      primaryAction: ACTION.ACCEPT_APPROVAL,
     };
   }
 
   if (status === STATUS.ORDER_PLACEMENT) {
     return {
-      buttons: isAdminCh ? [ACTION.CHAT] : [],
-      tab: TAB.PRODUCTION,
+      buttons: [],
+      tab: TAB.WIP,
     };
   }
 
@@ -289,6 +238,7 @@ export const actionsFor = (enquiry, roleCode) => {
     return {
       buttons: isAdminCh ? [ACTION.CHAT] : [],
       tab: TAB.PRODUCTION,
+      primaryAction: ACTION.CHAT,
     };
   }
 

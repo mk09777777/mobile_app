@@ -601,9 +601,13 @@ export const api = createApi({
         const assignedTo =
           typeof arg === 'object' ? arg?.assignedTo : undefined;
         const filters = typeof arg === 'object' ? arg?.filters : undefined;
+        const idParam = typeof arg === 'object' ? arg?.id : undefined;
 
         // Build query string
         let queryString = `page=${page}`;
+        if (idParam) {
+          queryString += `&id=${encodeURIComponent(idParam)}`;
+        }
         if (limit) {
           queryString += `&limit=${limit}`;
         }
@@ -828,26 +832,16 @@ export const api = createApi({
 
         // Normalize enquiry data from aggregated endpoint
         const normalizedEnquiries = enquiriesArray.map((enquiry, index) => {
-          // Debug: Log first enquiry before normalization
-          if (__DEV__ && index === 0) {
-            console.log('ðŸ” ========== API NORMALIZATION DEBUG ==========');
-            console.log('ðŸ” Raw first enquiry _id:', enquiry._id);
-            console.log('ðŸ” Raw first enquiry Name:', enquiry.Name);
-            console.log(
-              'ðŸ” Raw first enquiry AssignedTo:',
-              enquiry.AssignedTo,
-            );
-            console.log('ðŸ” Raw first enquiry ClientId:', enquiry.ClientId);
-            console.log(
-              'ðŸ” Raw first enquiry CurrentStatus:',
-              enquiry.CurrentStatus,
-            );
-            console.log('ðŸ” ==============================================');
-          }
-
-          // Use CurrentStatus directly from aggregated response
+          // Derive from StatusHistory or use flat fields directly
+          const history = enquiry?.StatusHistory;
+          const latestEntry =
+            Array.isArray(history) && history.length > 0
+              ? history[history.length - 1]
+              : null;
           const currentStatus =
-            enquiry.CurrentStatus || enquiry.Status || 'pending';
+            latestEntry?.Status || enquiry?.CurrentStatus || 'pending';
+          const currentSubStatus =
+            latestEntry?.SubStatus || enquiry?.CurrentSubStatus || null;
           const createdAt =
             enquiry.CreatedDate ||
             enquiry.CreatedAt ||
@@ -980,8 +974,8 @@ export const api = createApi({
                 ? enquiry.AssignedTo
                 : enquiry.assignedTo,
             AssignedDate: enquiry.AssignedDate,
-            CurrentStatus: enquiry.CurrentStatus,
-            CurrentSubStatus: enquiry.CurrentSubStatus,
+            CurrentStatus: currentStatus,
+            CurrentSubStatus: currentSubStatus,
             CreatedDate: enquiry.CreatedDate,
             Summary: enquiry.Summary,
             ReferenceImages: enquiry.ReferenceImages || [],
@@ -989,6 +983,13 @@ export const api = createApi({
             Videos: enquiry.Videos || [],
             CoralCode: enquiry.CoralCode,
             CadCode: enquiry.CadCode,
+            Coral: enquiry?.Coral || [],
+            Cad: enquiry?.Cad || [],
+            lastCoral: enquiry?.lastCoral || null,
+            lastCad: enquiry?.lastCad || null,
+            finalCad: enquiry?.finalCad || null,
+            approvedCoral: enquiry?.approvedCoral || null,
+            approvedCad: enquiry?.approvedCad || null,
             _originalData: enquiry,
           };
 
@@ -1073,34 +1074,16 @@ export const api = createApi({
         // Additional safety check - ensure enquiry has expected structure
         try {
           // Same normalization logic as getEnquiries for single enquiry
-          let currentStatus = 'pending';
+          // Derive from StatusHistory — last entry is the current state
+          const singleHistory = enquiry?.StatusHistory;
+          const singleLatest =
+            Array.isArray(singleHistory) && singleHistory.length > 0
+              ? singleHistory[singleHistory.length - 1]
+              : null;
+          let currentStatus =
+            singleLatest?.Status || enquiry?.CurrentStatus || 'pending';
           let createdAt = new Date().toISOString();
           let updatedAt = new Date().toISOString();
-
-          // Prefer CurrentStatus directly (same field the list endpoint returns)
-          if (enquiry?.CurrentStatus || enquiry?.Status) {
-            currentStatus = enquiry.CurrentStatus || enquiry.Status;
-          } else if (
-            enquiry?.StatusHistory &&
-            Array.isArray(enquiry.StatusHistory) &&
-            enquiry.StatusHistory.length > 0
-          ) {
-            // Fallback: derive from StatusHistory sorted newest-first
-            const sortedHistory = [...enquiry.StatusHistory].sort(
-              (a, b) =>
-                new Date(b.Timestamp || b.timestamp || 0) -
-                new Date(a.Timestamp || a.timestamp || 0),
-            );
-            const latestStatus = sortedHistory[0];
-            currentStatus =
-              latestStatus.Status || latestStatus.status || 'pending';
-            updatedAt =
-              latestStatus.Timestamp || latestStatus.timestamp || updatedAt;
-
-            const firstStatus = sortedHistory[sortedHistory.length - 1];
-            createdAt =
-              firstStatus.Timestamp || firstStatus.timestamp || createdAt;
-          }
 
           let normalizedPriority = 'medium';
           const priority = (
@@ -1344,11 +1327,15 @@ export const api = createApi({
             ShippingDate: enquiry?.ShippingDate,
             ClientId: enquiry?.ClientId,
             AssignedTo: enquiry?.AssignedTo,
+            CurrentStatus: singleLatest?.Status,
+            CurrentSubStatus: singleLatest?.SubStatus,
             CoralCode: enquiry?.CoralCode,
             CadCode: enquiry?.CadCode,
             // CRITICAL: Preserve Coral and Cad arrays with Pricing data
             Coral: enquiry?.Coral || [],
             Cad: enquiry?.Cad || [],
+            lastCoral: enquiry?.lastCoral || null,
+            lastCad: enquiry?.lastCad || null,
             // Preserve ReferenceVideos if they exist
             ReferenceVideos: enquiry?.ReferenceVideos || [],
             Videos: enquiry?.Videos || [],
@@ -1977,9 +1964,13 @@ export const api = createApi({
 
           // Normalize enquiries (updated for aggregated endpoint response)
           const normalizedEnquiries = enquiries.map(enquiry => {
-            // Use CurrentStatus directly from aggregated response
-            const currentStatus =
-              enquiry.CurrentStatus || enquiry.Status || 'pending';
+            // Derive from StatusHistory — last entry is the current state
+            const dashHistory = enquiry?.StatusHistory;
+            const dashLatest =
+              Array.isArray(dashHistory) && dashHistory.length > 0
+                ? dashHistory[dashHistory.length - 1]
+                : null;
+            const currentStatus = dashLatest?.Status || 'pending';
             const createdAt =
               enquiry.CreatedDate ||
               enquiry.CreatedAt ||
@@ -3089,18 +3080,28 @@ export const api = createApi({
           ? `?version=${encodeURIComponent(version)}`
           : '';
 
-        let body;
-        if (designType === 'cad') {
-          if (intent === 'forApproval') {
-            body = { SendForApproval: true }; // Cad → Design Approval Pending
-          } else if (intent === 'approveDesign') {
-            body = { IsApprovedVersion: true }; // Quotation approved → Final Cad Upload
-          } else {
-            body = { IsFinalVersion: true }; // Final CAD approved → Order Placement
-          }
-        } else {
-          body = { IsApprovedVersion: true }; // Coral approved → Cad
-        }
+    let body;
+    if (designType.toLowerCase() === 'cad') {
+      if (intent === 'forApproval') {
+        body = { SendForApproval: true };
+      } else if (intent === 'approveDesign') {
+        body = { IsApprovedVersion: true };
+      } else {
+        body = { IsFinalVersion: true };
+      }
+    } else if (designType.toLowerCase() === 'coral') {
+      if (intent === 'forApproval') {
+        body = { SendForApproval: true };
+      } else if (intent === 'approveDesign') {
+        body = { IsApprovedVersion: true };
+      } else {
+        body = { IsApprovedVersion: true };
+      }
+    } else {
+      body = { IsApprovedVersion: true };
+    }
+
+    console.log('[approveDesignVersion] enquiryId:', enquiryId, 'designType:', designType, 'version:', version, 'intent:', intent, 'body:', JSON.stringify(body));
 
         return {
           url: `/api/enquiries/${enquiryId}/upload/${designType}${versionParam}`,
@@ -3126,7 +3127,6 @@ export const api = createApi({
         };
       },
     }),
-
     // Save pricing for coral/CAD design
     savePricing: builder.mutation({
       query: ({ enquiryId, designType, version, pricingData }) => {
@@ -3393,35 +3393,34 @@ export const api = createApi({
 
     // Reject design version
     rejectDesignVersion: builder.mutation({
-      query: ({ enquiryId, designType, version, reason }) => {
-        const versionParam = version
-          ? `?version=${encodeURIComponent(version)}`
-          : '';
-        return {
-          url: `/api/enquiries/${enquiryId}/upload/${designType}${versionParam}`,
-          method: 'PUT',
-          body: { IsApprovedVersion: false, ReasonForRejection: reason || '' },
-        };
-      },
-      invalidatesTags: (result, error, { enquiryId }) => [
-        { type: 'Enquiry', id: enquiryId },
-        'Enquiry',
-      ],
-      transformResponse: response => {
-        return response;
-      },
-      transformErrorResponse: response => {
-        return {
-          status: response.status,
-          data: response.data,
-          error:
-            response.data?.message ||
-            response.data?.error ||
-            'Failed to reject design version',
-        };
-      },
-    }),
-
+  query: ({ enquiryId, designType, version, reason }) => {
+    const versionParam = version
+      ? `?version=${encodeURIComponent(version)}`
+      : '';
+    return {
+      url: `/api/enquiries/${enquiryId}/upload/${designType}${versionParam}`,
+      method: 'PUT',
+      body: { IsApprovedVersion: false, ReasonForRejection: reason || '' },
+    };
+  },
+  invalidatesTags: (result, error, { enquiryId }) => [
+    { type: 'Enquiry', id: enquiryId },
+    'Enquiry',
+  ],
+  transformResponse: response => {
+    return response;
+  },
+  transformErrorResponse: response => {
+    return {
+      status: response.status,
+      data: response.data,
+      error:
+        response.data?.message ||
+        response.data?.error ||
+        'Failed to reject design version',
+    };
+  },
+}),
     // Show to Client - Toggle visibility for clients
     updateShowToClient: builder.mutation({
       query: ({ enquiryId, designType, version, showToClient }) => {
@@ -4341,7 +4340,7 @@ export const api = createApi({
         return { gold: [], silver: [], platinum: [] };
       },
     }),
-//============= Jwellery Estimation =============
+    //============= Jwellery Estimation =============
     JwelleryPriceData: builder.mutation({
       query: ({
         imageFrontView,
