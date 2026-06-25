@@ -65,7 +65,7 @@ function ModalVideoItem({ uri }) {
   );
 }
 
-export default function cNewEnquiryCard({
+export default function NewEnquiryCard({
   item,
   navigation,
   onViewQuotation,
