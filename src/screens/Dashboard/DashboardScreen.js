@@ -125,13 +125,6 @@ const DashboardScreen = ({ navigation }) => {
       <View style={styles.NewEnquiryPricingButtonContainer}>
         <TouchableOpacity
           style={styles.NewEnquiryButton}
-          onPress={() => navigation.navigate('AddEnquiryStep1')}
-        >
-          <Icon name="add-circle" size={20} color={colors.textWhite} />
-          <Text style={styles.NewEnquiryText}>Create New Enquiry</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.NewEnquiryButton}
           onPress={() => navigation.navigate('PricingCalci')}
         >
           <Icon name="attach-money" size={20} color={colors.textWhite} />
@@ -143,7 +136,7 @@ const DashboardScreen = ({ navigation }) => {
           onPress={() => navigation.navigate('EstimateJwellery')}
         >
           <Icon name="attach-money" size={20} color={colors.textWhite} />
-          <Text style={styles.NewEnquiryText}>Jwellery Price</Text>
+          <Text style={styles.NewEnquiryText}>Approx Pricing</Text>
         </TouchableOpacity>
 
           <TouchableOpacity
@@ -820,7 +813,7 @@ const DashboardScreen = ({ navigation }) => {
       {(user?.role === 'admin' || user?.role === 'client') && (
         <TouchableOpacity
           style={styles.fab}
-          onPress={() => navigation.navigate('AddEnquiryStep1')}
+          onPress={() => navigation.navigate('AllClientsDashboard', { showAll: true })}
           activeOpacity={0.8}
         >
           <Icon name="add-circle" size={24} color={colors.textWhite} />
