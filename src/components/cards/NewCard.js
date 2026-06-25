@@ -38,7 +38,6 @@ import {
   useApproveDesignVersionMutation,
   useRejectDesignVersionMutation,
   useUpdateEnquiryMutation,
-  useLazyGetEnquiryByIdQuery,
 } from '../../store/api';
 import { actionsFor, resolveRoleCode, ACTION, SUBSTATUS, STATUS, ROLE } from '../../constants/enquiry';
 import { useEnquiryActions } from '../../hooks/useEnquiryActions';
@@ -130,30 +129,15 @@ export default function cNewEnquiryCard({
   const [approveDesignVersion] = useApproveDesignVersionMutation();
   const [rejectDesignVersion] = useRejectDesignVersionMutation();
   const [updateEnquiryDirect] = useUpdateEnquiryMutation();
-  const [fetchEnquiryById] = useLazyGetEnquiryByIdQuery();
-
   const { handleAcceptApproval, handleUploadFinalCad, handleMoveToOrderPlacement, isLoading: isHookLoading } = useEnquiryActions({ onAlert: showAlert });
 
-  const getVersionForEnquiry = useCallback(async (id, preferredType) => {
-    const { data: full } = await fetchEnquiryById(id);
-    const src = full?._originalData || full;
-
-    const getMaxVersion = (dataset) => {
-      if (!Array.isArray(dataset) || dataset.length === 0) return 0;
-      return Math.max(...dataset.map(item => parseInt(item?.Version || 0, 10)));
-    };
-
-    const maxCadVersion = getMaxVersion(src?.Cad);
-    const maxCoralVersion = getMaxVersion(src?.Coral);
-
-    if (preferredType === 'cad' && maxCadVersion > 0) return maxCadVersion;
-    if (preferredType === 'coral' && maxCoralVersion > 0) return maxCoralVersion;
-
-    if (maxCadVersion > 0) return maxCadVersion;
-    if (maxCoralVersion > 0) return maxCoralVersion;
-
-    return 1;
-  }, [fetchEnquiryById]);
+  const getVersionFromLast = useCallback((designType) => {
+    const src = fullEnquiryData?._originalData || fullEnquiryData || item;
+    const rawObj = designType === 'cad'
+      ? (src?.lastCad || item?.lastCad)
+      : (src?.lastCoral || item?.lastCoral);
+    return parseInt(rawObj?.Version || rawObj?.version || '1', 10);
+  }, [fullEnquiryData, item]);
 
   const priority = (item?.Priority || 'medium').toLowerCase();
 
@@ -404,7 +388,7 @@ export default function cNewEnquiryCard({
     if (!updateReason.trim() || !activeDesignType) return;
     setIsActionLoading(true);
     try {
-      const numericVersion = await getVersionForEnquiry(enquiryId, activeDesignType);
+      const numericVersion = getVersionFromLast(activeDesignType);
       await rejectDesignVersion({
         enquiryId,
         designType: activeDesignType,
@@ -435,7 +419,7 @@ export default function cNewEnquiryCard({
     if (!updateReason.trim() || !activeDesignType) return;
     setIsActionLoading(true);
     try {
-      const numericVersion = await getVersionForEnquiry(enquiryId, activeDesignType);
+      const numericVersion = getVersionFromLast(activeDesignType);
       await rejectDesignVersion({
         enquiryId,
         designType: activeDesignType,
@@ -467,7 +451,7 @@ export default function cNewEnquiryCard({
     if (!updateReason.trim() || !activeDesignType) return;
     setIsActionLoading(true);
     try {
-      const numericVersion = await getVersionForEnquiry(enquiryId, activeDesignType);
+      const numericVersion = getVersionFromLast(activeDesignType);
       await rejectDesignVersion({
         enquiryId,
         designType: activeDesignType,
@@ -784,7 +768,7 @@ export default function cNewEnquiryCard({
                       hideAlert();
                       setIsActionLoading(true);
                       try {
-                        const numericVersion = await getVersionForEnquiry(enquiryId, targetType);
+                        const numericVersion = getVersionFromLast(targetType);
                         await approveDesignVersion({
                           enquiryId,
                           designType: targetType,
