@@ -30,7 +30,6 @@ import { useSelector } from 'react-redux';
 
 
 export default function CreateEnquiryModal({ visible, onClose, onEnquiryCreated, onUpdate, route }) {
-export default function CreateEnquiryModal({ visible, onClose, onEnquiryCreated, onUpdate, route }) {
   const { user } = useAuth();
   const [parseEnquiry, { isLoading: isParsing }] = useParseEnquiryMutation();
   const [submitEnquiry, { isLoading: isSubmitting }] = useSubmitEnquiryMutation();
@@ -59,8 +58,6 @@ export default function CreateEnquiryModal({ visible, onClose, onEnquiryCreated,
   const [dynamicMissingFields, setDynamicMissingFields] = useState([]);
   const [missingFieldsData, setMissingFieldsData] = useState({});
   const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [showPreviewModal, setShowPreviewModal] = useState(false);
-  const [createdEnquiryData, setCreatedEnquiryData] = useState(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [createdEnquiryData, setCreatedEnquiryData] = useState(null);
   const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
@@ -142,8 +139,6 @@ export default function CreateEnquiryModal({ visible, onClose, onEnquiryCreated,
       setDynamicMissingFields([]);
       setMissingFieldsData({});
       setShowConfirmModal(false);
-      setShowPreviewModal(false);
-      setCreatedEnquiryData(null);
       setShowPreviewModal(false);
       setCreatedEnquiryData(null);
     }
@@ -332,50 +327,9 @@ export default function CreateEnquiryModal({ visible, onClose, onEnquiryCreated,
       setShowPreviewModal(false);
       onClose();
       if (onEnquiryCreated) onEnquiryCreated(enquiryId, finalData);
-      const enquiryId = result?.id || result?._id || result?.data?.id || result?.data?._id || result?.enquiry?.id || result?.enquiry?._id || result?.insertedId;
-      setShowPreviewModal(false);
-      onClose();
-      if (onEnquiryCreated) onEnquiryCreated(enquiryId, finalData);
     } catch (error) {
       showAlert('Error', 'Failed to create enquiry. Please try again.', 'error');
     }
-  };
-
-  const renderPreviewDetails = (data, s) => {
-    const clientName = clients.find(c => (c.id || c._id) === data.ClientId)?.name || data.ClientId;
-    const rows = [
-      { label: 'Name', value: data.Name },
-      { label: 'Client', value: clientName },
-      { label: 'Status', value: data.Status },
-      { label: 'Priority', value: data.Priority },
-      { label: 'Category', value: data.Category },
-      { label: 'Quantity', value: data.Quantity },
-      { label: 'Metal Color', value: data.Metal?.Color },
-      { label: 'Metal Quality', value: data.Metal?.Quality },
-      { label: 'Stone Type', value: data.StoneType },
-      { label: 'Stamping', value: data.Stamping },
-      { label: 'Budget', value: data.Budget },
-      { label: 'Remarks', value: data.Remarks },
-      { label: 'Special Remarks', value: data.SpecialRemarks },
-      { label: 'Style Number', value: data.StyleNumber },
-      { label: 'Gati Order No', value: data.GatiOrderNumber },
-      { label: 'Shipping Date', value: data.ShippingDate },
-      { label: 'Coral Code', value: data.CoralCode },
-      { label: 'Cad Code', value: data.CadCode },
-      { label: 'Approved Date', value: data.ApprovedDate },
-    ];
-    if (data.MetalWeight) {
-      rows.push({ label: 'Metal Weight', value: [data.MetalWeight.From, data.MetalWeight.To, data.MetalWeight.Exact].filter(Boolean).join(' / ') });
-    }
-    if (data.DiamondWeight) {
-      rows.push({ label: 'Diamond Weight', value: [data.DiamondWeight.From, data.DiamondWeight.To, data.DiamondWeight.Exact].filter(Boolean).join(' / ') });
-    }
-    return rows.filter(r => r.value).map((r, i) => (
-      <View key={i} style={s.previewDetailRow}>
-        <Text style={s.previewDetailLabel}>{r.label}</Text>
-        <Text style={s.previewDetailValue}>{String(r.value)}</Text>
-      </View>
-    ));
   };
 
   const renderPreviewDetails = (data, s) => {
@@ -569,25 +523,17 @@ export default function CreateEnquiryModal({ visible, onClose, onEnquiryCreated,
 
           <View style={styles.designTypeRow}>
             {['coral', 'cad'].map(type => (
-            {['coral', 'cad'].map(type => (
               <TouchableOpacity
                 key={type}
-                activeOpacity={textSubmitted ? 1 : 0.85}
-                style={[styles.designTile, projectType === type && styles.designTileActive, textSubmitted && styles.designTileDisabled]}
-                onPress={textSubmitted ? undefined : () => setProjectType(type)}
                 activeOpacity={textSubmitted ? 1 : 0.85}
                 style={[styles.designTile, projectType === type && styles.designTileActive, textSubmitted && styles.designTileDisabled]}
                 onPress={textSubmitted ? undefined : () => setProjectType(type)}
               >
                 <IconComponent
                   name={type === 'coral' ? 'waves' : 'architecture'}
-                  name={type === 'coral' ? 'waves' : 'architecture'}
                   size={20}
                   color={textSubmitted ? colors.textLight : (projectType === type ? colors.textWhite : colors.primary)}
-                  color={textSubmitted ? colors.textLight : (projectType === type ? colors.textWhite : colors.primary)}
                 />
-                <Text style={[styles.designTileLabel, projectType === type && styles.designTileLabelActive, textSubmitted && { color: colors.textLight }]}>
-                  {type.toUpperCase()}
                 <Text style={[styles.designTileLabel, projectType === type && styles.designTileLabelActive, textSubmitted && { color: colors.textLight }]}>
                   {type.toUpperCase()}
                 </Text>
@@ -613,15 +559,10 @@ export default function CreateEnquiryModal({ visible, onClose, onEnquiryCreated,
                     <TouchableOpacity style={styles.assignBtn} onPress={() => setShowAssignModal(true)} activeOpacity={0.8}>
                       <Text style={styles.assignBtnText}>Assign To (optional)</Text>
                       <IconComponent name="arrow-drop-down" size={16} color={colors.primary} />
-                    <TouchableOpacity style={styles.assignBtn} onPress={() => setShowAssignModal(true)} activeOpacity={0.8}>
-                      <Text style={styles.assignBtnText}>Assign To (optional)</Text>
-                      <IconComponent name="arrow-drop-down" size={16} color={colors.primary} />
                     </TouchableOpacity>
                   )}
                 </View>
 
-                <TouchableOpacity onPress={handleSubmit} disabled={isSubmitting}>
-                  <View style={[styles.submitBtn, isSubmitting && styles.submitBtnDisabled]}>
                 <TouchableOpacity onPress={handleSubmit} disabled={isSubmitting}>
                   <View style={[styles.submitBtn, isSubmitting && styles.submitBtnDisabled]}>
                     {isSubmitting ? (
@@ -758,40 +699,6 @@ export default function CreateEnquiryModal({ visible, onClose, onEnquiryCreated,
             </View>
           </View>
         </Modal>
-
-        <Modal visible={showPreviewModal} transparent animationType="slide" onRequestClose={() => {}}>
-          <View style={styles.previewOverlay}>
-            <View style={styles.previewBox}>
-              <ScrollView showsVerticalScrollIndicator={false}>
-                <Text style={styles.previewTitle}>Review Enquiry</Text>
-                <Text style={styles.previewSubtitle}>Confirm the details before creating.</Text>
-
-                {createdEnquiryData?.data && renderPreviewDetails(createdEnquiryData.data, styles)}
-              </ScrollView>
-
-              <View style={styles.previewActions}>
-                <TouchableOpacity
-                  style={[styles.previewBtn, styles.previewBtnSecondary]}
-                  onPress={() => setShowPreviewModal(false)}
-                  disabled={isSubmitting}
-                >
-                  <Text style={styles.previewBtnSecondaryText}>Close</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.previewBtn, styles.previewBtnPrimary, isSubmitting && { opacity: 0.5 }]}
-                  onPress={handleConfirmCreate}
-                  disabled={isSubmitting}
-                >
-                  {isSubmitting ? (
-                    <ActivityIndicator size="small" color={colors.textWhite} />
-                  ) : (
-                    <Text style={styles.previewBtnPrimaryText}>Create Enquiry</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -853,11 +760,6 @@ const styles = StyleSheet.create({
   designTileActive: {
     backgroundColor: colors.primary,
     borderColor: colors.primaryDark || colors.primary,
-  },
-  designTileDisabled: {
-    opacity: 0.5,
-    backgroundColor: colors.backgroundSecondary,
-    borderColor: colors.borderLight,
   },
   designTileDisabled: {
     opacity: 0.5,
@@ -1249,86 +1151,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 2,
     textTransform: 'capitalize',
-  },
-
-  // Preview modal
-  previewOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  previewBox: {
-    backgroundColor: colors.background,
-    borderRadius: 16,
-    padding: 24,
-    width: '100%',
-    maxWidth: 400,
-    maxHeight: '80%',
-  },
-  previewTitle: {
-    fontSize: fonts.lg,
-    fontFamily: fonts.bold,
-    color: colors.textPrimary,
-    textAlign: 'center',
-    marginBottom: 4,
-  },
-  previewSubtitle: {
-    fontSize: fonts.sm,
-    fontFamily: fonts.regular,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  previewDetailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderLight || colors.border,
-  },
-  previewDetailLabel: {
-    fontSize: fonts.sm,
-    fontFamily: fonts.medium,
-    color: colors.textSecondary,
-    flex: 1,
-  },
-  previewDetailValue: {
-    fontSize: fonts.sm,
-    fontFamily: fonts.regular,
-    color: colors.textPrimary,
-    flex: 1.5,
-    textAlign: 'right',
-  },
-  previewActions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 20,
-  },
-  previewBtn: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  previewBtnPrimary: {
-    backgroundColor: colors.primary,
-  },
-  previewBtnPrimaryText: {
-    fontSize: fonts.base,
-    fontFamily: fonts.medium,
-    color: colors.textWhite,
-  },
-  previewBtnSecondary: {
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  previewBtnSecondaryText: {
-    fontSize: fonts.base,
-    fontFamily: fonts.medium,
-    color: colors.textPrimary,
   },
 
   // Preview modal

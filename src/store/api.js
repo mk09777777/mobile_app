@@ -1,4 +1,4 @@
-﻿import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
+import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import { Platform } from 'react-native';
 import secureStorage from '../utils/secureStorage';
 import {
@@ -311,16 +311,11 @@ export const api = createApi({
     // Create user/register endpoint
     createUser: builder.mutation({
       query: data => ({
-      query: data => ({
         url: '/api/users',
         method: 'POST',
         body: data,
       }),
       transformResponse: response => {
-        console.log(
-          'ðŸ†• [createUser] Raw API Response:',
-          JSON.stringify(response, null, 2),
-        );
         console.log(
           'ðŸ†• [createUser] Raw API Response:',
           JSON.stringify(response, null, 2),
@@ -346,10 +341,6 @@ export const api = createApi({
     getUserById: builder.query({
       query: userId => `/api/users/${userId}`,
       transformResponse: response => {
-        console.log(
-          'ðŸ‘¤ [getUserById] Raw API Response:',
-          JSON.stringify(response, null, 2),
-        );
         console.log(
           'ðŸ‘¤ [getUserById] Raw API Response:',
           JSON.stringify(response, null, 2),
@@ -381,13 +372,7 @@ export const api = createApi({
     updateUser: builder.mutation({
       query: ({ userId, ...data }) => {
         console.log(
-          'ðŸ“¤ [updateUser] userId:',
-          userId,
-          'payload:',
-          JSON.stringify(data, null, 2),
-        );
-        console.log(
-          'ðŸ“¤ [updateUser] userId:',
+          'ðŸ"¤ [updateUser] userId:',
           userId,
           'payload:',
           JSON.stringify(data, null, 2),
@@ -404,10 +389,6 @@ export const api = createApi({
           'âœ… [updateUser] Response:',
           JSON.stringify(response, null, 2),
         );
-        console.log(
-          'âœ… [updateUser] Response:',
-          JSON.stringify(response, null, 2),
-        );
         return {
           success: true,
           user: response.user || response,
@@ -415,10 +396,6 @@ export const api = createApi({
         };
       },
       transformErrorResponse: response => {
-        console.log(
-          'âŒ [updateUser] Error:',
-          JSON.stringify(response, null, 2),
-        );
         console.log(
           'âŒ [updateUser] Error:',
           JSON.stringify(response, null, 2),
@@ -689,20 +666,6 @@ export const api = createApi({
           if (filters.unassigned === true || filters.unassigned === 'true') {
             queryString += `&unassigned=true`;
           }
-          if (filters.subStatus) {
-            if (Array.isArray(filters.subStatus)) {
-              filters.subStatus.forEach(s => {
-                queryString += `&subStatus=${encodeURIComponent(s)}`;
-              });
-            } else {
-              queryString += `&subStatus=${encodeURIComponent(
-                filters.subStatus,
-              )}`;
-            }
-          }
-          if (filters.unassigned === true || filters.unassigned === 'true') {
-            queryString += `&unassigned=true`;
-          }
           if (filters.category && filters.category !== 'all') {
             queryString += `&category=${encodeURIComponent(filters.category)}`;
           }
@@ -788,7 +751,6 @@ export const api = createApi({
         const finalUrl = `/api/enquiries/search?${queryString}`;
         return finalUrl;
       },
-      providesTags: ['Enquiry'],
       transformResponse: (data, meta, arg) => {
         const role = typeof arg === 'object' ? arg?.role : arg;
         const argUserId = typeof arg === 'object' ? arg?.userId : undefined;
@@ -914,10 +876,6 @@ export const api = createApi({
             status.includes('design approval') ||
             (status.includes('approval') && status.includes('pending'))
           ) {
-          } else if (
-            status.includes('design approval') ||
-            (status.includes('approval') && status.includes('pending'))
-          ) {
             normalizedStatus = 'approval_pending';
           } else if (status.includes('approved') && status.includes('cad')) {
             normalizedStatus = 'approved_cad';
@@ -933,10 +891,6 @@ export const api = createApi({
             normalizedStatus = 'production';
           } else if (status.includes('shipped')) {
             normalizedStatus = 'shipped';
-          } else if (
-            status.includes('completed') ||
-            status.includes('approved')
-          ) {
           } else if (
             status.includes('completed') ||
             status.includes('approved')
@@ -1018,10 +972,6 @@ export const api = createApi({
               enquiry.AssignedTo !== undefined
                 ? enquiry.AssignedTo
                 : enquiry.assignedTo,
-            AssignedTo:
-              enquiry.AssignedTo !== undefined
-                ? enquiry.AssignedTo
-                : enquiry.assignedTo,
             AssignedDate: enquiry.AssignedDate,
             CurrentStatus: currentStatus,
             CurrentSubStatus: currentSubStatus,
@@ -1046,10 +996,6 @@ export const api = createApi({
           if (__DEV__ && index === 0) {
             console.log('ðŸ” ========== AFTER NORMALIZATION ==========');
             console.log('ðŸ” Normalized first enquiry id:', normalized.id);
-            console.log(
-              'ðŸ” Normalized first enquiry title:',
-              normalized.title,
-            );
             console.log(
               'ðŸ” Normalized first enquiry title:',
               normalized.title,
@@ -1089,26 +1035,7 @@ export const api = createApi({
       },
       transformResponse: async (rawResponse, meta, arg) => {
         // Unwrap common backend wrapper shapes, including nested envelopes.
-        // Unwrap common backend wrapper shapes, including nested envelopes.
         let enquiry = rawResponse;
-        if (
-          rawResponse &&
-          typeof rawResponse === 'object' &&
-          !rawResponse._id &&
-          !rawResponse.id
-        ) {
-          const candidate =
-            rawResponse.enquiry ||
-            rawResponse.data?.enquiry ||
-            rawResponse.data?.data ||
-            rawResponse.data ||
-            rawResponse.result?.enquiry ||
-            rawResponse.result?.data ||
-            rawResponse.result ||
-            rawResponse.response?.enquiry ||
-            rawResponse.response?.data ||
-            rawResponse;
-          enquiry = candidate;
         if (
           rawResponse &&
           typeof rawResponse === 'object' &&
@@ -1179,10 +1106,6 @@ export const api = createApi({
             status.includes('design approval') ||
             (status.includes('approval') && status.includes('pending'))
           ) {
-          } else if (
-            status.includes('design approval') ||
-            (status.includes('approval') && status.includes('pending'))
-          ) {
             normalizedStatus = 'approval_pending';
           } else if (status.includes('approved') && status.includes('cad')) {
             normalizedStatus = 'approved_cad';
@@ -1198,10 +1121,6 @@ export const api = createApi({
             normalizedStatus = 'production';
           } else if (status.includes('shipped')) {
             normalizedStatus = 'shipped';
-          } else if (
-            status.includes('completed') ||
-            status.includes('approved')
-          ) {
           } else if (
             status.includes('completed') ||
             status.includes('approved')
@@ -1594,12 +1513,6 @@ export const api = createApi({
             'Dashboard',
             'StatusStatistics',
           ];
-          return [
-            { type: 'Enquiry', id },
-            'Enquiry',
-            'Dashboard',
-            'StatusStatistics',
-          ];
         }
         return ['Dashboard', 'StatusStatistics']; // Only refresh dashboard stats
       },
@@ -1689,25 +1602,6 @@ export const api = createApi({
       },
     }),
 
-    getDepartments: builder.query({
-      query: () => '/api/departments',
-      providesTags: ['Client'],
-      transformResponse: data => {
-        let arr = [];
-        if (Array.isArray(data)) arr = data;
-        else if (data?.departments && Array.isArray(data.departments))
-          arr = data.departments;
-        else if (data?.data && Array.isArray(data.data)) arr = data.data;
-        else return [];
-        return arr.map(dept => ({
-          id: dept._id || dept.Id || dept.id,
-          _id: dept._id || dept.Id || dept.id,
-          name: dept.Name || dept.name || 'Unknown Department',
-          email: dept.Email || dept.email || 'N/A',
-        }));
-      },
-    }),
-
     getClientById: builder.query({
       query: clientId => `/api/clients/${clientId}`,
       providesTags: (result, error, clientId) => [
@@ -1740,19 +1634,6 @@ export const api = createApi({
         // Invalidate Dashboard cache as it may show pricing-related data
         'Dashboard',
       ],
-    }),
-
-    getEnquiryBuckets: builder.query({
-      query: clientId => {
-        const base = '/api/enquiries/aggregate?groupBy=buckets';
-        return clientId ? `${base}&clientId=${clientId}` : base;
-      },
-      providesTags: ['Enquiry', 'StatusStatistics'],
-      transformResponse: data => ({
-        unassigned: data?.unassigned ?? 0,
-        wip: data?.wip ?? 0,
-        approvalPending: data?.approvalPending ?? 0,
-      }),
     }),
 
     getEnquiryBuckets: builder.query({
@@ -1820,11 +1701,11 @@ export const api = createApi({
     // Uses /api/enquiries/aggregate?groupBy=status and groupBy=client
     getDashboardData: builder.query({
       queryFn: async (arg, { dispatch, getState }, extraOptions, baseQuery) => {
-        try {
           // Extract role, userId, and clientId from argument
           const role = typeof arg === 'object' ? arg?.role : arg;
           const userId = typeof arg === 'object' ? arg?.userId : undefined;
           const clientId = typeof arg === 'object' ? arg?.clientId : undefined;
+        try {
 
           const isAdmin = role === 'admin' || role === 'AD';
           const isClient = role === 'client' || role === 'CL' || role === 4;
@@ -2120,10 +2001,6 @@ export const api = createApi({
               status.includes('design approval') ||
               (status.includes('approval') && status.includes('pending'))
             ) {
-            } else if (
-              status.includes('design approval') ||
-              (status.includes('approval') && status.includes('pending'))
-            ) {
               normalizedStatus = 'approval_pending';
             } else if (status.includes('approved') && status.includes('cad')) {
               normalizedStatus = 'approved_cad';
@@ -2139,10 +2016,6 @@ export const api = createApi({
               normalizedStatus = 'production';
             } else if (status.includes('shipped')) {
               normalizedStatus = 'shipped';
-            } else if (
-              status.includes('completed') ||
-              status.includes('approved')
-            ) {
             } else if (
               status.includes('completed') ||
               status.includes('approved')
@@ -2541,16 +2414,6 @@ export const api = createApi({
           cost,
           isFinalVersion,
         },
-        {
-          enquiryId,
-          designType,
-          version,
-          images,
-          excel,
-          designCode,
-          cost,
-          isFinalVersion,
-        },
         { dispatch },
         extraOptions,
         baseQuery,
@@ -2622,7 +2485,6 @@ export const api = createApi({
                 : null,
               designCode,
               cost,
-              cost,
             });
           }
 
@@ -2667,10 +2529,6 @@ export const api = createApi({
             formData.append('cost', String(cost));
           }
 
-          // Add isFinalVersion flag for Final CAD uploads
-          if (isFinalVersion) {
-            formData.append('isFinalVersion', 'true');
-          }
           // Add isFinalVersion flag for Final CAD uploads
           if (isFinalVersion) {
             formData.append('isFinalVersion', 'true');
@@ -2885,9 +2743,6 @@ export const api = createApi({
               formDataFields: {
                 version: versionValue.toString(),
                 ...(designCode ? { code: designCode.trim() } : {}),
-                ...(cost !== undefined && cost !== null && cost !== ''
-                  ? { cost: String(cost) }
-                  : {}),
                 ...(cost !== undefined && cost !== null && cost !== ''
                   ? { cost: String(cost) }
                   : {}),
@@ -3218,10 +3073,7 @@ export const api = createApi({
     // Approve design version
     // intent: 'forApproval' (Cad QR → Design Approval Pending) | 'final' (Cad DAP → Order Placement)
     // Coral always uses IsApprovedVersion (transitions Coral → Cad).
-    // intent: 'forApproval' (Cad QR → Design Approval Pending) | 'final' (Cad DAP → Order Placement)
-    // Coral always uses IsApprovedVersion (transitions Coral → Cad).
     approveDesignVersion: builder.mutation({
-      query: ({ enquiryId, designType, version, intent }) => {
       query: ({ enquiryId, designType, version, intent }) => {
         const versionParam = version
           ? `?version=${encodeURIComponent(version)}`
@@ -3253,7 +3105,6 @@ export const api = createApi({
         return {
           url: `/api/enquiries/${enquiryId}/upload/${designType}${versionParam}`,
           method: 'PUT',
-          body,
           body,
         };
       },
@@ -3886,26 +3737,6 @@ export const api = createApi({
                 totalFiles: imageFiles.length + videoFiles.length,
               },
             );
-            console.log(
-              'ðŸ“¤ [uploadReferenceImages] Preparing HTTP Request:',
-              {
-                method: 'POST',
-                url: fullUrl,
-                endpoint: endpoint,
-                formDataFields: {
-                  images:
-                    imageFiles.length > 0
-                      ? `${imageFiles.length} file(s)`
-                      : 'none',
-                  videos:
-                    videoFiles.length > 0
-                      ? `${videoFiles.length} file(s)`
-                      : 'none',
-                },
-                totalFiles: imageFiles.length + videoFiles.length,
-              },
-            );
-
             console.log('ðŸ“‹ [uploadReferenceImages] FormData Summary:', {
               images: imageFiles.map(
                 (f, i) => `${i + 1}. ${f.name} (${f.type})`,
@@ -6092,7 +5923,6 @@ export const {
   useGetEnquiriesQuery,
   useGetEnquiryByIdQuery,
   useLazyGetEnquiryByIdQuery,
-  useLazyGetEnquiryByIdQuery,
   useCreateEnquiryMutation,
   useUpdateEnquiryMutation,
   useDeleteEnquiryMutation,
@@ -6100,12 +5930,10 @@ export const {
   // Clients
   useGetClientsQuery,
   useGetDepartmentsQuery,
-  useGetDepartmentsQuery,
   useGetClientByIdQuery,
   useCreateClientMutation,
   useUpdateClientPricingMutation,
   useImagepriceDataMutation,
-  useJwelleryPriceDataMutation,
   useJwelleryPriceDataMutation,
 
   // Dashboard
@@ -6113,7 +5941,6 @@ export const {
 
   // Status Statistics
   useGetStatusStatisticsQuery,
-  useGetEnquiryBucketsQuery,
   useGetEnquiryBucketsQuery,
 
   // Metal Prices
