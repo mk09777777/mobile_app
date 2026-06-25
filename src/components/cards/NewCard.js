@@ -77,6 +77,7 @@ export default function cNewEnquiryCard({
   isExpandedAll = false,
   onFinalLook,
   onSummary,
+  onSummary,
 }) {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
@@ -95,6 +96,12 @@ export default function cNewEnquiryCard({
   const [showMoreOptions, setShowMoreOptions] = useState(false);
   const [isRemarkExpanded, setIsRemarkExpanded] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // ── Assign modal state ────────────────────────────────────────────────────
+  const [assignModalVisible, setAssignModalVisible] = useState(false);
+  const [assignType, setAssignType] = useState(null);
+  const [selectedAssignee, setSelectedAssignee] = useState(null);
+  const [isAssigning, setIsAssigning] = useState(false);
 
   const [assignModalVisible, setAssignModalVisible] = useState(false);
   const [assignType, setAssignType] = useState(null);
@@ -117,6 +124,10 @@ export default function cNewEnquiryCard({
     setAlertCfg({ visible: true, title, message, type, buttons }), []);
   const hideAlert = useCallback(() => setAlertCfg(p => ({ ...p, visible: false })), []);
 
+  const coralDesigners = useMemo(
+    () => (users || []).filter(u => u.role === 2 || u.roleId === 2 || u.roleNumber === 2),
+    [users],
+  );
   const coralDesigners = useMemo(
     () => (users || []).filter(u => u.role === 2 || u.roleId === 2 || u.roleNumber === 2),
     [users],
@@ -275,6 +286,7 @@ export default function cNewEnquiryCard({
 
   const raw = item._originalData || item;
   const assignedVal = item.AssignedTo || item.assignedTo || raw.AssignedTo || raw.assignedTo || fullSrc?.AssignedTo || fullSrc?.assignedTo;
+  const assignedVal = item.AssignedTo || item.assignedTo || raw.AssignedTo || raw.assignedTo || fullSrc?.AssignedTo || fullSrc?.assignedTo;
 
   const assignedIdStr = useMemo(() => {
     if (!assignedVal) return '';
@@ -421,6 +433,7 @@ export default function cNewEnquiryCard({
           ...(currentAssignedTo ? { AssignedTo: currentAssignedTo } : {}),
         }).unwrap();
       }
+      closeQuotationActions();
       closeQuotationActions();
       showAlert('Update Requested', 'Your revision request has been sent. The design will be updated.', 'success', [{ text: 'OK' }]);
     } catch (e) {
@@ -595,9 +608,11 @@ export default function cNewEnquiryCard({
               </Text>
             </View>
             {isAdmin && (
+            {isAdmin && (
               <TouchableOpacity style={styles.moreOptionsButton} onPress={() => setShowMoreOptions(true)}>
                 <Icon name="more-vert" size={18} color={colors.textSecondary} />
               </TouchableOpacity>
+            )}
             )}
           </View>
         </View>
@@ -621,7 +636,14 @@ export default function cNewEnquiryCard({
               <Text style={styles.summaryBtnText}>Summary</Text>
             </TouchableOpacity>
           )}
+          {onSummary && (
+            <TouchableOpacity style={styles.summaryBtn} onPress={() => onSummary(item)} activeOpacity={0.7}>
+              <Icon name="description" size={12} color={colors.primary} />
+              <Text style={styles.summaryBtnText}>Summary</Text>
+            </TouchableOpacity>
+          )}
         </View>
+        {hasAssignedUser && (
         {hasAssignedUser && (
           <View style={styles.AssignedRow}>
             <Icon name="person-add" size={13} color={colors.background} />
@@ -812,6 +834,10 @@ export default function cNewEnquiryCard({
               <Icon name="visibility" size={16} color={colors.primaryDark} />
               <Text style={styles.ChatButtonText}>Final Look</Text>
             </TouchableOpacity>
+            <TouchableOpacity style={styles.ChatButton} onPress={() => onFinalLook && onFinalLook(item)}>
+              <Icon name="visibility" size={16} color={colors.primaryDark} />
+              <Text style={styles.ChatButtonText}>Final Look</Text>
+            </TouchableOpacity>
             <TouchableOpacity
               style={[styles.QuickActionButton, { backgroundColor: '#059669' }]}
               disabled={isActionLoading}
@@ -955,6 +981,7 @@ export default function cNewEnquiryCard({
                 'warning',
                 [
                   { text: 'Cancel', onPress: hideAlert },
+                  { text: 'Confirm', onPress: async () => { hideAlert(); await updateEnquiryStatus({ Status: 'Shipped' }); showAlert('Shipped', 'Enquiry marked as Shipped.', 'success', [{ text: 'OK' }]); } },
                   { text: 'Confirm', onPress: async () => { hideAlert(); await updateEnquiryStatus({ Status: 'Shipped' }); showAlert('Shipped', 'Enquiry marked as Shipped.', 'success', [{ text: 'OK' }]); } },
                 ]
               )}
@@ -1147,6 +1174,7 @@ export default function cNewEnquiryCard({
                   <TouchableOpacity
                     style={styles.qaReasonBack}
                     onPress={() => { setShowReasonInput(false); setUpdateReason(''); setIsRejectingQuotation(false); setIsRejectingApproval(false); }}
+                    onPress={() => { setShowReasonInput(false); setUpdateReason(''); setIsRejectingQuotation(false); setIsRejectingApproval(false); }}
                     disabled={isActionLoading}
                     activeOpacity={0.8}
                   >
@@ -1158,6 +1186,7 @@ export default function cNewEnquiryCard({
                       styles.qaReasonSubmit,
                       (!updateReason.trim() || isActionLoading) && { opacity: 0.4 },
                     ]}
+                    onPress={isRejectingQuotation ? handleRejectQuotation : isRejectingApproval ? handleRejectApproval : handleRequestUpdate}
                     onPress={isRejectingQuotation ? handleRejectQuotation : isRejectingApproval ? handleRejectApproval : handleRequestUpdate}
                     disabled={!updateReason.trim() || isActionLoading}
                     activeOpacity={0.8}
@@ -1196,6 +1225,14 @@ export default function cNewEnquiryCard({
         >
           <View style={styles.dropdownModalContent}>
             <Text style={styles.dropdownModalTitle}>Options</Text>
+            {onSummary && (
+              <TouchableOpacity
+                style={styles.dropdownModalItem}
+                onPress={() => { setShowMoreOptions(false); onSummary(item); }}
+              >
+                <Text style={styles.dropdownModalItemText}>View Summary</Text>
+              </TouchableOpacity>
+            )}
             {onSummary && (
               <TouchableOpacity
                 style={styles.dropdownModalItem}
@@ -1463,6 +1500,21 @@ const styles = StyleSheet.create({
   metaDot: {
     fontSize: 11,
     color: colors.textSecondary,
+  },
+  summaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  summaryBtnText: {
+    fontSize: 10,
+    fontFamily: fonts.medium,
+    color: colors.primary,
   },
   summaryBtn: {
     flexDirection: 'row',

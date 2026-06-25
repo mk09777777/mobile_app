@@ -440,6 +440,8 @@ const UploadDesignScreen = ({ route, navigation }) => {
                 cost: cost,
                 returnRoute,
                 isFinalVersion,
+                returnRoute,
+                isFinalVersion,
               });
             },
           },

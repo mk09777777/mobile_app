@@ -186,6 +186,7 @@ export default function UploadExcelScreen({ route, navigation }) {
         designCode: designCode || '',
         cost: cost || 0,
         isFinalVersion: isFinalVersion || false,
+        isFinalVersion: isFinalVersion || false,
       }).unwrap();
 
       console.log('[uploadExcel] uploadDesign succeeded, isFinalVersion:', isFinalVersion, 'version:', version, 'result:', JSON.stringify(result));
@@ -199,6 +200,7 @@ export default function UploadExcelScreen({ route, navigation }) {
             text: 'OK',
             onPress: () => {
               setSelectedExcel(null);
+              navigation.pop(2);
               navigation.pop(2);
             },
           },
