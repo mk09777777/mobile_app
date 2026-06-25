@@ -698,7 +698,7 @@ export default function JwelleryEstimate() {
               {isLoading ? (
                 <ActivityIndicator color={colors.textWhite || '#ffffff'} />
               ) : (
-                <Text style={styles.estimateButtonText}>Create Estimate</Text>
+                <Text style={styles.estimateButtonText}>Check Pricing</Text>
               )}
             </TouchableOpacity>
           </View>

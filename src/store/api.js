@@ -1,4 +1,4 @@
-﻿import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
+import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import { Platform } from 'react-native';
 import secureStorage from '../utils/secureStorage';
 import {
@@ -372,7 +372,7 @@ export const api = createApi({
     updateUser: builder.mutation({
       query: ({ userId, ...data }) => {
         console.log(
-          'ðŸ“¤ [updateUser] userId:',
+          'ðŸ"¤ [updateUser] userId:',
           userId,
           'payload:',
           JSON.stringify(data, null, 2),
@@ -751,7 +751,6 @@ export const api = createApi({
         const finalUrl = `/api/enquiries/search?${queryString}`;
         return finalUrl;
       },
-      providesTags: ['Enquiry'],
       transformResponse: (data, meta, arg) => {
         const role = typeof arg === 'object' ? arg?.role : arg;
         const argUserId = typeof arg === 'object' ? arg?.userId : undefined;
@@ -1702,11 +1701,11 @@ export const api = createApi({
     // Uses /api/enquiries/aggregate?groupBy=status and groupBy=client
     getDashboardData: builder.query({
       queryFn: async (arg, { dispatch, getState }, extraOptions, baseQuery) => {
-        try {
           // Extract role, userId, and clientId from argument
           const role = typeof arg === 'object' ? arg?.role : arg;
           const userId = typeof arg === 'object' ? arg?.userId : undefined;
           const clientId = typeof arg === 'object' ? arg?.clientId : undefined;
+        try {
 
           const isAdmin = role === 'admin' || role === 'AD';
           const isClient = role === 'client' || role === 'CL' || role === 4;
@@ -3738,7 +3737,6 @@ export const api = createApi({
                 totalFiles: imageFiles.length + videoFiles.length,
               },
             );
-
             console.log('ðŸ“‹ [uploadReferenceImages] FormData Summary:', {
               images: imageFiles.map(
                 (f, i) => `${i + 1}. ${f.name} (${f.type})`,

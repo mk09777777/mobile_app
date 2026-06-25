@@ -96,6 +96,7 @@ export default function cNewEnquiryCard({
   const [isRemarkExpanded, setIsRemarkExpanded] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // ── Assign modal state ────────────────────────────────────────────────────
   const [assignModalVisible, setAssignModalVisible] = useState(false);
   const [assignType, setAssignType] = useState(null);
   const [selectedAssignee, setSelectedAssignee] = useState(null);
@@ -961,7 +962,7 @@ export default function cNewEnquiryCard({
             >
               <Icon name="local-shipping" size={16} color={colors.textWhite} />
               <View style={{ width: 4 }} />
-              <Text style={styles.QuickActionButtonText}>Shipped</Text>
+              <Text style={styles.QuickActionButtonText}>Mark as Shipped</Text>
             </TouchableOpacity>
           </View>
         ) : null}
@@ -1147,6 +1148,7 @@ export default function cNewEnquiryCard({
                   <TouchableOpacity
                     style={styles.qaReasonBack}
                     onPress={() => { setShowReasonInput(false); setUpdateReason(''); setIsRejectingQuotation(false); setIsRejectingApproval(false); }}
+                    onPress={() => { setShowReasonInput(false); setUpdateReason(''); setIsRejectingQuotation(false); setIsRejectingApproval(false); }}
                     disabled={isActionLoading}
                     activeOpacity={0.8}
                   >
@@ -1158,6 +1160,7 @@ export default function cNewEnquiryCard({
                       styles.qaReasonSubmit,
                       (!updateReason.trim() || isActionLoading) && { opacity: 0.4 },
                     ]}
+                    onPress={isRejectingQuotation ? handleRejectQuotation : isRejectingApproval ? handleRejectApproval : handleRequestUpdate}
                     onPress={isRejectingQuotation ? handleRejectQuotation : isRejectingApproval ? handleRejectApproval : handleRequestUpdate}
                     disabled={!updateReason.trim() || isActionLoading}
                     activeOpacity={0.8}
@@ -1463,6 +1466,21 @@ const styles = StyleSheet.create({
   metaDot: {
     fontSize: 11,
     color: colors.textSecondary,
+  },
+  summaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  summaryBtnText: {
+    fontSize: 10,
+    fontFamily: fonts.medium,
+    color: colors.primary,
   },
   summaryBtn: {
     flexDirection: 'row',
