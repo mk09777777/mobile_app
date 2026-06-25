@@ -495,24 +495,8 @@ const QuotationModal = ({ visible, enquiryId, onClose }) => {
       });
 
       setClientMsg(prev => {
-        if (!prev) {
-          if (result.ClientPricingMessage) return result.ClientPricingMessage;
-          return prev;
-        }
-        const swaps = [
-          [num(sourcePricing?.MetalPrice),    num(result.MetalPrice)],
-          [num(sourcePricing?.DiamondsPrice), num(result.DiamondsPrice)],
-          [num(sourcePricing?.DutiesAmount),  num(result.DutiesAmount)],
-          [num(sourcePricing?.TotalPrice),    num(result.TotalPrice)],
-        ];
-        let updated = prev;
-        for (const [oldVal, newVal] of swaps) {
-          if (oldVal <= 0 && newVal <= 0) continue;
-          const escaped = oldVal.toFixed(2).replace('.', '\\.');
-          const pattern = new RegExp(`\\$?${escaped}`, 'g');
-          updated = updated.replace(pattern, `$${newVal.toFixed(2)}`);
-        }
-        return updated;
+        if (result.ClientPricingMessage) return result.ClientPricingMessage;
+        return prev;
       });
 
       const html = buildHtml({
